@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -10,9 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth, useUser, useFirestore } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, UserCheck } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
@@ -25,8 +24,11 @@ export default function LoginPage() {
   
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  
   const [registerEmail, setRegisterEmail] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
+  
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -51,14 +53,24 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      // 1. Check if username is unique
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('username', '==', registerUsername), limit(1));
+      const snapshot = await getDocs(q);
+      
+      if (!snapshot.empty) {
+        throw new Error('This username is already taken. Please choose another one.');
+      }
+
+      // 2. Create Firebase Auth user
       const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      // Create user profile document in Firestore
+      // 3. Create user profile document in Firestore
       const userRef = doc(db, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
-        username: registerEmail.split('@')[0],
+        username: registerUsername,
         email: newUser.email,
         createdAt: serverTimestamp(),
       };
@@ -72,7 +84,7 @@ export default function LoginPage() {
         errorEmitter.emit('permission-error', permissionError);
       });
 
-      toast({ title: "Account created!", description: "Welcome to the Literary Lounge." });
+      toast({ title: "Account created!", description: `Welcome to the Literary Lounge, ${registerUsername}!` });
       router.push('/');
     } catch (error: any) {
       toast({
@@ -151,6 +163,16 @@ export default function LoginPage() {
                   
                   <TabsContent value="register">
                     <form onSubmit={handleRegister} className="space-y-4">
+                      <div className="space-y-2">
+                        <Input 
+                          type="text" 
+                          placeholder="Unique Username" 
+                          value={registerUsername}
+                          onChange={(e) => setRegisterUsername(e.target.value)}
+                          required
+                          className="font-bold"
+                        />
+                      </div>
                       <div className="space-y-2">
                         <Input 
                           type="email" 
