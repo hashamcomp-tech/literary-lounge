@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, FileText, CheckCircle2, User, Book } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Upload, BookPlus, Loader2, FileText, CheckCircle2, User, Book, AlertCircle, ShieldCheck } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -110,7 +111,7 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
 export default function UploadPage() {
   const router = useRouter();
   const db = useFirestore();
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
   const [title, setTitle] = useState('');
@@ -121,6 +122,39 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
+  
+  const [isApprovedUser, setIsApprovedUser] = useState<boolean | null>(null);
+  const [checkingApproval, setCheckingApproval] = useState(true);
+
+  useEffect(() => {
+    if (isUserLoading) return;
+    
+    if (!user || user.isAnonymous) {
+      setIsApprovedUser(false);
+      setCheckingApproval(false);
+      return;
+    }
+
+    const checkApproval = async () => {
+      try {
+        const settingsRef = doc(db, 'settings', 'approvedEmails');
+        const snap = await getDoc(settingsRef);
+        if (snap.exists()) {
+          const emails = snap.data().emails || [];
+          setIsApprovedUser(emails.includes(user.email));
+        } else {
+          setIsApprovedUser(false);
+        }
+      } catch (e) {
+        console.error("Approval check failed", e);
+        setIsApprovedUser(false);
+      } finally {
+        setCheckingApproval(false);
+      }
+    };
+
+    checkApproval();
+  }, [user, isUserLoading, db]);
 
   const slugify = (text: string) => {
     return text
@@ -178,6 +212,15 @@ export default function UploadPage() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!isApprovedUser && user && !user.isAnonymous) {
+      toast({
+        variant: 'destructive',
+        title: 'Unauthorized',
+        description: 'Only approved users can upload to the cloud library.'
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -205,7 +248,7 @@ export default function UploadPage() {
         }];
       }
 
-      if (finalAuthor && finalTitle) {
+      if (finalAuthor && finalTitle && isApprovedUser) {
         if (!user) {
           toast({ variant: 'destructive', title: 'Error', description: 'Please log in for cloud storage.' });
           setLoading(false);
@@ -216,7 +259,6 @@ export default function UploadPage() {
         const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
         const bookRef = doc(db, 'books', docId);
         
-        // Metadata Structure: nested map for search + sub-document for details
         const metadataMap = {
           info: {
             author: finalAuthor,
@@ -229,7 +271,6 @@ export default function UploadPage() {
           }
         };
 
-        // Update root doc for searchability and ownership rules
         await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: bookRef.path,
@@ -238,7 +279,6 @@ export default function UploadPage() {
           }));
         });
 
-        // Update sub-document as per structure requirement: /books/{id}/metadata/info
         const infoRef = doc(db, 'books', docId, 'metadata', 'info');
         await setDoc(infoRef, metadataMap.info, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
@@ -248,7 +288,6 @@ export default function UploadPage() {
           }));
         });
 
-        // Upload Chapters to sub-collection: /books/{id}/chapters/{num}
         for (const ch of chapters) {
           const chRef = doc(db, 'books', docId, 'chapters', ch.chapterNumber.toString());
           const chData = {
@@ -271,7 +310,6 @@ export default function UploadPage() {
 
         router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
       } else {
-        // LOCAL storage fallback for guests
         setLoadingStatus('Saving locally...');
         const docId = crypto.randomUUID();
         const textToUse = content || "";
@@ -320,9 +358,26 @@ export default function UploadPage() {
           <div className="text-center mb-10">
             <h1 className="text-4xl font-headline font-black mb-4">Add to Library</h1>
             <p className="text-lg text-muted-foreground">
-              Add your own texts or EPUB files. If author and title are provided, we'll sync it to the cloud.
+              Add your own texts or EPUB files. Cloud storage is reserved for approved members.
             </p>
           </div>
+
+          {!checkingApproval && isApprovedUser === false && user && !user.isAnonymous && (
+             <Alert variant="destructive" className="mb-8 border-destructive/20 bg-destructive/5">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Cloud Upload Disabled</AlertTitle>
+                <AlertDescription>
+                  Your account ({user.email}) is not on the approved whitelist. Any uploads will be stored locally on this device only.
+                </AlertDescription>
+             </Alert>
+          )}
+
+          {!checkingApproval && isApprovedUser === true && (
+             <div className="flex items-center gap-2 mb-8 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-600">
+                <ShieldCheck className="h-5 w-5" />
+                <span className="text-sm font-bold">Cloud Privileges Active</span>
+             </div>
+          )}
 
           <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
             <CardHeader>
@@ -331,7 +386,7 @@ export default function UploadPage() {
                 New Novel
               </CardTitle>
               <CardDescription>
-                Provide metadata to enable cloud storage across your devices.
+                {isApprovedUser ? "Metadata provided here will link this novel to your cloud account." : "Guest uploads are stored locally in your browser cache."}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -426,7 +481,7 @@ export default function UploadPage() {
                 <Button 
                   type="submit" 
                   className="w-full py-6 text-lg bg-primary hover:bg-primary/90 rounded-xl"
-                  disabled={loading || (!title.trim() && !selectedFile) || (!content.trim() && !selectedFile)}
+                  disabled={loading || checkingApproval || (!title.trim() && !selectedFile) || (!content.trim() && !selectedFile)}
                 >
                   {loading ? (
                     <>
@@ -436,7 +491,7 @@ export default function UploadPage() {
                   ) : (
                     <>
                       <FileText className="mr-2 h-5 w-5" />
-                      Save Novel
+                      {isApprovedUser ? "Save to Cloud" : "Save Locally"}
                     </>
                   )}
                 </Button>

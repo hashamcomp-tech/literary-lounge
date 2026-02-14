@@ -140,6 +140,20 @@
         "currentChapterNumber",
         "lastReadAt"
       ]
+    },
+    "ApprovedEmails": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ApprovedEmails",
+      "type": "object",
+      "description": "A list of approved email addresses for sensitive operations.",
+      "properties": {
+        "emails": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "auth": {
@@ -188,6 +202,16 @@
             "$ref": "#/backend/entities/ReadingProgress"
           },
           "description": "Tracks a user's reading progress."
+        }
+      },
+      {
+        "path": "/settings/approvedEmails",
+        "definition": {
+          "entityName": "ApprovedEmails",
+          "schema": {
+            "$ref": "#/backend/entities/ApprovedEmails"
+          },
+          "description": "Global whitelist of approved emails. Expected values: [\"hashamcomp@gmail.com\", \"someone@example.com\"]"
         }
       }
     ]
