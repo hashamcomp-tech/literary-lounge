@@ -6,10 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { useUser } from '@/firebase';
 
 export default function Navbar() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
+  const { user } = useUser();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,6 +19,8 @@ export default function Navbar() {
       router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
     }
   };
+
+  const isLoggedIn = user && !user.isAnonymous;
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -50,9 +54,11 @@ export default function Navbar() {
               <Settings className="h-5 w-5" />
             </Button>
           </Link>
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
-            <User className="h-5 w-5" />
-          </Button>
+          <Link href="/login">
+            <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary`} title="Account">
+              <User className="h-5 w-5" />
+            </Button>
+          </Link>
         </div>
       </div>
     </nav>
