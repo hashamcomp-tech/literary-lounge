@@ -6,8 +6,6 @@ import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-// AI generation disabled
-// import { initialReadingPreferenceSetup, InitialReadingPreferenceSetupOutput } from '@/ai/flows/initial-reading-preference-setup-flow';
 import { Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -23,12 +21,8 @@ export default function SetupPage() {
 
     setLoading(true);
     try {
-      // AI generation disabled
-      /*
-      const output = await initialReadingPreferenceSetup({ preferences });
-      setResult(output);
-      */
-      alert("AI Preference analysis is currently disabled.");
+      // AI generation has been removed
+      alert("AI Preference analysis is currently unavailable.");
     } catch (error) {
       console.error("Setup failed", error);
     } finally {
@@ -45,7 +39,7 @@ export default function SetupPage() {
           <div className="text-center mb-10">
             <h1 className="text-4xl font-headline font-black mb-4">Set Your Preferences</h1>
             <p className="text-lg text-muted-foreground">
-              Tell us what you love to read, and our AI will curate your personal lounge.
+              Tell us what you love to read, and we'll help curate your personal lounge.
             </p>
           </div>
 
@@ -63,7 +57,7 @@ export default function SetupPage() {
               <CardContent>
                 <form onSubmit={handleSubmit} className="space-y-6">
                   <Textarea
-                    placeholder="e.g., I love fast-paced mystery novels set in historical cities, similar to Sherlock Holmes. I also enjoy dark, suspenseful thrillers about high-stakes technology..."
+                    placeholder="e.g., I love fast-paced mystery novels set in historical cities, similar to Sherlock Holmes..."
                     className="min-h-[150px] text-lg leading-relaxed p-4"
                     value={preferences}
                     onChange={(e) => setPreferences(e.target.value)}
@@ -79,7 +73,7 @@ export default function SetupPage() {
                         Analyzing Preferences...
                       </>
                     ) : (
-                      "Generate My Profile (Disabled)"
+                      "Submit Preferences"
                     )}
                   </Button>
                 </form>
@@ -92,34 +86,11 @@ export default function SetupPage() {
                 <CardHeader>
                   <div className="flex items-center gap-2 text-primary mb-2">
                     <CheckCircle2 className="h-5 w-5" />
-                    <span className="font-bold uppercase tracking-widest text-xs">Profile Generated</span>
+                    <span className="font-bold uppercase tracking-widest text-xs">Profile Saved</span>
                   </div>
-                  <CardTitle className="text-2xl font-headline font-bold">Your Reading DNA</CardTitle>
+                  <CardTitle className="text-2xl font-headline font-bold">Your Reading Profile</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-8">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preferred Genres</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {result.genres?.map((g: string, i: number) => <Badge key={i} variant="secondary">{g}</Badge>)}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Target Mood</h3>
-                      <Badge className="bg-accent text-white uppercase px-3 py-1">{result.mood}</Badge>
-                    </div>
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Favorite Themes</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {result.themes?.map((t: string, i: number) => <Badge key={i} variant="outline" className="border-primary/30 text-primary">{t}</Badge>)}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preferred Length</h3>
-                      <Badge variant="outline" className="capitalize">{result.preferredLength}</Badge>
-                    </div>
-                  </div>
-
                   <div className="pt-6 border-t">
                     <Button 
                       onClick={() => router.push('/')}
@@ -132,7 +103,7 @@ export default function SetupPage() {
                       onClick={() => setResult(null)}
                       className="w-full mt-2 text-muted-foreground"
                     >
-                      Redo Setup
+                      Update Setup
                     </Button>
                   </div>
                 </CardContent>

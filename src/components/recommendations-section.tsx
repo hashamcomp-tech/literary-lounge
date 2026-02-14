@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-// AI generation disabled
-// import { personalizedNovelRecommendations, PersonalizedNovelRecommendationsOutput } from '@/ai/flows/personalized-novel-recommendations-flow';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sparkles, BookOpen } from 'lucide-react';
@@ -10,29 +8,10 @@ import Link from 'next/link';
 
 export default function RecommendationsSection() {
   const [recommendations, setRecommendations] = useState<any[] | null>(null);
-  const [loading, setLoading] = useState(false); // Set to false since we aren't fetching
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // AI generation disabled
-    /*
-    async function fetchRecs() {
-      try {
-        const result = await personalizedNovelRecommendations({
-          readingHistory: [
-            { title: "The Whispering Woods", author: "Elena Vance", genre: "Fantasy" }
-          ],
-          preferredGenres: ["Mystery", "Sci-Fi"],
-          preferredAuthors: ["Julian Black"]
-        });
-        setRecommendations(result.recommendations);
-      } catch (error) {
-        console.error("Failed to fetch recommendations", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchRecs();
-    */
+    // AI recommendations logic removed
   }, []);
 
   if (loading) {
