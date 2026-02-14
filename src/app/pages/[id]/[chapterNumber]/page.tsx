@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -95,13 +94,8 @@ export default function CloudReader() {
           <div 
             className="prose prose-slate dark:prose-invert max-w-none leading-relaxed select-text"
             style={{ fontSize: `${fontSize}px` }}
-          >
-            {chapter.content?.split('\n\n').map((para: string, i: number) => (
-              <p key={i} className="mb-8">
-                {para}
-              </p>
-            )) || <p className="italic text-muted-foreground text-center">No content found for this chapter.</p>}
-          </div>
+            dangerouslySetInnerHTML={{ __html: chapter.content || '<p class="italic text-muted-foreground text-center">No content found for this chapter.</p>' }}
+          />
         </article>
 
         <section className="pb-12 border-t pt-12">

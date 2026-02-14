@@ -24,7 +24,6 @@ export default function UploadPage() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
-      // Try to auto-fill title if possible
       if (!title) {
         setTitle(file.name.replace(/\.[^/.]+$/, ""));
       }
@@ -45,19 +44,19 @@ export default function UploadPage() {
     const pagesData = [];
     const spine = book.spine;
     
-    // Iterate through items in the spine to get content
     let index = 1;
     for (const item of (spine as any).items) {
       try {
         const doc = await book.load(item.href);
         const body = (doc as Document).querySelector('body');
-        const textContent = body ? body.innerText || body.textContent || "" : "";
+        // Extract HTML to preserve formatting
+        const htmlContent = body ? body.innerHTML || "" : "";
         
-        if (textContent.trim().length > 50) { // Only add if it looks like actual content
+        if (htmlContent.trim().length > 50) {
           pagesData.push({
             id: crypto.randomUUID(),
             pageNumber: index++,
-            content: textContent.trim(),
+            content: htmlContent.trim(),
             title: item.idref || `Chapter ${index - 1}`,
           });
         }
@@ -94,12 +93,15 @@ export default function UploadPage() {
         }));
       } else {
         setLoadingStatus('Processing text...');
+        // For plain text, we convert newlines to <p> tags for HTML rendering
         const textToUse = content || "No content provided.";
+        const htmlContent = textToUse.split('\n\n').map(p => `<p>${p}</p>`).join('');
+        
         pagesData = [{
           id: crypto.randomUUID(),
           splitTextId: docId,
           pageNumber: 1,
-          content: textToUse,
+          content: htmlContent,
           title: "Full Text",
           createdAt: timestamp,
           updatedAt: timestamp

@@ -90,11 +90,10 @@ export default function LocalReader() {
           </header>
 
           <div 
-            className="prose prose-slate dark:prose-invert max-w-none leading-relaxed select-text whitespace-pre-wrap"
+            className="prose prose-slate dark:prose-invert max-w-none leading-relaxed select-text"
             style={{ fontSize: `${fontSize}px` }}
-          >
-            {currentPage.content}
-          </div>
+            dangerouslySetInnerHTML={{ __html: currentPage.content }}
+          />
         </article>
 
         <section className="pb-12 border-t pt-12">
