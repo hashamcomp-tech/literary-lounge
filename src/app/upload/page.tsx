@@ -251,7 +251,8 @@ export default function UploadPage() {
             ownerId: user.uid,
             totalChapters: chapters.length,
             genre: genre,
-            views: 0
+            views: 0,
+            isLocalOnly: false
           }
         };
 
@@ -278,9 +279,17 @@ export default function UploadPage() {
           }, { merge: true });
         }
 
-        // Also Cache Locally (Optional per requirements)
+        // Also Cache Locally
         setLoadingStatus('Caching locally...');
-        await saveLocalBook({ id: docId, title: finalTitle, author: finalAuthor, genre, totalChapters: chapters.length, lastUpdated: new Date().toISOString() });
+        await saveLocalBook({ 
+          id: docId, 
+          title: finalTitle, 
+          author: finalAuthor, 
+          genre, 
+          totalChapters: chapters.length, 
+          lastUpdated: new Date().toISOString(),
+          isLocalOnly: false 
+        });
         for (const ch of chapters) {
           await saveLocalChapter({ ...ch, bookId: docId });
         }
@@ -298,7 +307,7 @@ export default function UploadPage() {
           genre: genre,
           totalChapters: chapters.length,
           lastUpdated: new Date().toISOString(),
-          _isLocal: true
+          isLocalOnly: true
         };
 
         await saveLocalBook(bookData);

@@ -11,8 +11,9 @@ interface NovelCardProps {
 
 export default function NovelCard({ novel }: NovelCardProps) {
   // Determine route based on metadata
-  const isCloud = isNaN(Number(novel.id)) && !novel._isLocal;
-  const isLocal = novel._isLocal;
+  const isLocal = novel.isLocalOnly || novel._isLocal;
+  // If it's not local, it's either from mock data (numeric IDs) or Firestore
+  const isCloud = !isLocal && isNaN(Number(novel.id));
   
   let href = `/novel/${novel.id}`;
   if (isLocal) {
