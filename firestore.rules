@@ -11,12 +11,9 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isDataOwner() {
-      return isSignedIn() && resource.data.ownerId == request.auth.uid;
-    }
-
-    function willBeOwner() {
-      return isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    // Checks if the user is the owner of the book based on root metadata
+    function isBookOwner(bookId) {
+      return isSignedIn() && get(/databases/$(database)/documents/books/$(bookId)).data.metadata.info.ownerId == request.auth.uid;
     }
 
     match /users/{userId} {
@@ -35,19 +32,28 @@ service cloud.firestore {
     }
 
     match /books/{bookId} {
-      // Allow searching via the root document if metadata is mirrored there
-      allow get, list: if isSignedIn();
+      // Root document stores mirrored metadata for search/listing
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.metadata.info.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.metadata.info.ownerId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.metadata.info.ownerId == request.auth.uid;
 
       match /metadata/info {
-        allow get, list: if isSignedIn();
-        allow create, update: if willBeOwner();
-        allow delete: if isDataOwner();
+        allow get, list: if true;
+        allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+        allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
       }
 
       match /chapters/{chapterNumber} {
-        allow get, list: if isSignedIn();
-        allow create, update: if willBeOwner();
-        allow delete: if isDataOwner();
+        allow get, list: if true;
+        // Chapter writes are protected by checking ownership in the parent book metadata
+        allow write: if isSignedIn() && (
+          // If the book doc exists, check its owner
+          (exists(/databases/$(database)/documents/books/$(bookId)) && get(/databases/$(database)/documents/books/$(bookId)).data.metadata.info.ownerId == request.auth.uid) ||
+          // If it's a new upload, we allow the write if the ownerId is set correctly in the data
+          (!exists(/databases/$(database)/documents/books/$(bookId)) && request.resource.data.ownerId == request.auth.uid)
+        );
       }
     }
   }

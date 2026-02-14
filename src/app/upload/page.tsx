@@ -229,7 +229,7 @@ export default function UploadPage() {
           }
         };
 
-        // Update root doc for searchability (optional, mirrors metadata for list queries)
+        // Update root doc for searchability and ownership rules
         await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: bookRef.path,
@@ -271,7 +271,7 @@ export default function UploadPage() {
 
         router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
       } else {
-        // LOCAL storage for simple texts without metadata
+        // LOCAL storage fallback for guests
         setLoadingStatus('Saving locally...');
         const docId = crypto.randomUUID();
         const textToUse = content || "";
