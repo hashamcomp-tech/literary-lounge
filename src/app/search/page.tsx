@@ -28,7 +28,7 @@ function SearchResults() {
   const [localQuery, setLocalQuery] = useState(queryTerm);
   const [searchMethod, setSearchMethod] = useState<'firestore' | 'algolia'>('firestore');
   
-  const [suggestions, setSuggestions] = useState<{title: string, author: string, id: string}[]>([]);
+  const [suggestions, setSuggestions] = useState<{title: string, author: string, id: string, type: 'author' | 'book'}[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
@@ -62,7 +62,7 @@ function SearchResults() {
           collection(db, 'books'),
           where('title', '>=', localQuery),
           where('title', '<=', localQuery + '\uf8ff'),
-          limit(3)
+          limit(5)
         );
         
         // Query by author prefix
@@ -70,7 +70,7 @@ function SearchResults() {
           collection(db, 'books'),
           where('authorName', '>=', localQuery),
           where('authorName', '<=', localQuery + '\uf8ff'),
-          limit(3)
+          limit(5)
         );
 
         const [titleSnap, authorSnap] = await Promise.all([
@@ -81,7 +81,7 @@ function SearchResults() {
         const items: any[] = [];
         titleSnap.forEach(doc => {
           const data = doc.data();
-          items.push({ id: doc.id, title: data.title, author: data.authorName, type: 'title' });
+          items.push({ id: doc.id, title: data.title, author: data.authorName, type: 'book' });
         });
         authorSnap.forEach(doc => {
           const data = doc.data();
@@ -91,7 +91,9 @@ function SearchResults() {
           }
         });
 
-        setSuggestions(items);
+        // Remove duplicates and limit
+        const uniqueSuggestions = items.slice(0, 8);
+        setSuggestions(uniqueSuggestions);
       } catch (err) {
         console.error("Suggestions error", err);
       }
@@ -149,28 +151,55 @@ function SearchResults() {
         }
 
         setSearchMethod('firestore');
-        const q = query(
+        // Search by title prefix
+        const qTitle = query(
           collection(db, 'books'),
           where('title', '>=', queryTerm),
           where('title', '<=', queryTerm + '\uf8ff'),
           limit(24)
         );
 
-        const snapshot = await getDocs(q);
-        const firestoreResults = snapshot.docs.map(doc => {
+        // Search by author prefix
+        const qAuthor = query(
+          collection(db, 'books'),
+          where('authorName', '>=', queryTerm),
+          where('authorName', '<=', queryTerm + '\uf8ff'),
+          limit(24)
+        );
+
+        const [titleSnap, authorSnap] = await Promise.all([
+          getDocs(qTitle),
+          getDocs(qAuthor)
+        ]);
+
+        const combinedMap = new Map();
+        titleSnap.docs.forEach(doc => {
           const data = doc.data();
-          return {
+          combinedMap.set(doc.id, {
             id: doc.id,
             title: data.title,
             author: data.authorName || 'Unknown Author',
-            genre: data.genres?.[0] || 'Cloud Novel',
+            genre: data.genres?.[0] || 'Novel',
             summary: data.description || '',
             coverImage: data.coverImageUrl || '',
-            chapters: [] 
-          };
+          });
         });
 
-        setResults(firestoreResults);
+        authorSnap.docs.forEach(doc => {
+          if (!combinedMap.has(doc.id)) {
+            const data = doc.data();
+            combinedMap.set(doc.id, {
+              id: doc.id,
+              title: data.title,
+              author: data.authorName || 'Unknown Author',
+              genre: data.genres?.[0] || 'Novel',
+              summary: data.description || '',
+              coverImage: data.coverImageUrl || '',
+            });
+          }
+        });
+
+        setResults(Array.from(combinedMap.values()));
       } catch (error) {
         console.error("Search failed", error);
       } finally {
@@ -227,11 +256,15 @@ function SearchResults() {
               <div className="p-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b bg-muted/30">
                 Suggestions
               </div>
-              <div className="max-h-[300px] overflow-y-auto">
-                {suggestions.map((s: any) => (
+              <div className="max-h-[350px] overflow-y-auto">
+                {suggestions.map((s) => (
                   <button
                     key={s.id}
-                    onClick={() => handleSearch(undefined, s.type === 'author' ? s.author : s.title)}
+                    onClick={() => {
+                      const searchTerm = s.type === 'author' ? s.author : s.title;
+                      setLocalQuery(searchTerm);
+                      handleSearch(undefined, searchTerm);
+                    }}
                     className="w-full flex items-center gap-3 p-3 hover:bg-muted transition-colors text-left group"
                   >
                     <div className="bg-muted group-hover:bg-background p-1.5 rounded-lg">
