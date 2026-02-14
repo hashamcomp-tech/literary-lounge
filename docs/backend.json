@@ -148,6 +148,30 @@
           }
         }
       }
+    },
+    "PublishRequest": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PublishRequest",
+      "type": "object",
+      "description": "A request from a user to become an approved cloud contributor.",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        }
+      },
+      "required": [
+        "email",
+        "requestedAt"
+      ]
     }
   },
   "auth": {
@@ -205,7 +229,17 @@
           "schema": {
             "$ref": "#/backend/entities/ApprovedEmails"
           },
-          "description": "Global whitelist of approved emails. Expected values: [\"hashamcomp@gmail.com\", \"someone@example.com\"]"
+          "description": "Global whitelist of approved emails."
+        }
+      },
+      {
+        "path": "/publishRequests/{userId}",
+        "definition": {
+          "entityName": "PublishRequest",
+          "schema": {
+            "$ref": "#/backend/entities/PublishRequest"
+          },
+          "description": "Stores requests for publishing permissions."
         }
       }
     ]

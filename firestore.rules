@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -15,6 +16,11 @@ service cloud.firestore {
     match /settings/approvedEmails {
       allow get: if isSignedIn();
       allow write: if false;
+    }
+
+    match /publishRequests/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow get: if isSignedIn() && (request.auth.uid == userId || isApproved());
     }
 
     match /users/{userId} {

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, ShieldAlert, LogIn, Globe, Lock, Send } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, Globe, Lock, Send } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
@@ -171,11 +172,36 @@ export default function UploadPage() {
     }
   };
 
-  const handleRequestAccess = () => {
-    toast({
-      title: "Access Requested",
-      description: "Your request to become a contributor has been sent to the administrators.",
-    });
+  const handleRequestAccess = async () => {
+    if (!user || user.isAnonymous) return;
+    
+    setLoading(true);
+    try {
+      const requestRef = doc(db, 'publishRequests', user.uid);
+      const requestData = {
+        email: user.email,
+        requestedAt: serverTimestamp(),
+        status: 'pending'
+      };
+
+      await setDoc(requestRef, requestData).catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: requestRef.path,
+          operation: 'create',
+          requestResourceData: requestData
+        }));
+      });
+
+      toast({
+        title: "Access Requested",
+        description: "Your request to become a contributor has been sent to the administrators.",
+      });
+    } catch (error) {
+      console.error("Request failed", error);
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not send access request.' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const processEpub = async (file: File) => {
@@ -246,7 +272,6 @@ export default function UploadPage() {
 
       const docId = `${slugify(finalAuthor || 'anonymous')}_${slugify(finalTitle || 'untitled')}_${Date.now()}`;
 
-      // 1. Logic for Approved Users (Cloud + Local)
       if (isApprovedUser && user) {
         setLoadingStatus('Publishing to cloud...');
         const bookRef = doc(db, 'books', docId);
@@ -263,7 +288,6 @@ export default function UploadPage() {
           }
         };
 
-        // Cloud Writes
         await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: bookRef.path,
@@ -286,7 +310,6 @@ export default function UploadPage() {
           }, { merge: true });
         }
 
-        // Also Cache Locally
         setLoadingStatus('Caching locally...');
         await saveLocalBook({ 
           id: docId, 
@@ -303,9 +326,7 @@ export default function UploadPage() {
 
         toast({ title: "Successfully Published", description: "Novel is now live and cached locally." });
         router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
-      } 
-      // 2. Logic for Standard Users (Local Only)
-      else {
+      } else {
         setLoadingStatus('Saving locally...');
         const bookData = {
           id: docId,
@@ -381,9 +402,10 @@ export default function UploadPage() {
                       variant="outline" 
                       size="sm" 
                       onClick={handleRequestAccess}
+                      disabled={loading}
                       className="w-fit bg-blue-600/10 border-blue-600/20 text-blue-700 hover:bg-blue-600/20 rounded-lg gap-2"
                     >
-                      <Send className="h-3.5 w-3.5" />
+                      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                       Request Publish Access
                     </Button>
                   )}
