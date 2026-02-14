@@ -11,10 +11,10 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -23,6 +23,7 @@ export default function UploadPage() {
   
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
+  const [chapterNumber, setChapterNumber] = useState('1');
   const [content, setContent] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,7 +104,7 @@ export default function UploadPage() {
         const htmlContent = textToUse.split('\n\n').map(p => `<p>${p}</p>`).join('');
         
         chapters = [{
-          chapterNumber: 1,
+          chapterNumber: parseInt(chapterNumber) || 1,
           content: htmlContent,
           title: "Full Text",
         }];
@@ -139,7 +140,7 @@ export default function UploadPage() {
             pages: pagesData
           }
         }));
-        router.push(`/local-pages/${docId}/1`);
+        router.push(`/local-pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
       } else if (db) {
         setLoadingStatus('Uploading to Cloud...');
         
@@ -190,7 +191,7 @@ export default function UploadPage() {
             });
         }
 
-        router.push(`/pages/${docId}/1`);
+        router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
       }
     } catch (error) {
       console.error("Upload failed", error);
@@ -261,27 +262,39 @@ export default function UploadPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Title</Label>
-                    <Input 
-                      id="title"
-                      placeholder="The Great Adventure"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      required={!selectedFile}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="author">Author (Optional)</Label>
-                    <Input 
-                      id="author"
-                      placeholder="Jane Doe"
-                      value={author}
-                      onChange={(e) => setAuthor(e.target.value)}
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="author" className="text-base">Author</Label>
+                  <Input 
+                    id="author" 
+                    name="author" 
+                    type="text" 
+                    placeholder="Author Name" 
+                    value={author}
+                    onChange={(e) => setAuthor(e.target.value)}
+                    required 
+                  />
+
+                  <Label htmlFor="bookTitle" className="text-base">Book Title</Label>
+                  <Input 
+                    id="bookTitle" 
+                    name="bookTitle" 
+                    type="text" 
+                    placeholder="Book Title" 
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    required 
+                  />
+
+                  <Label htmlFor="chapterNumber" className="text-base">Chapter Number</Label>
+                  <Input 
+                    id="chapterNumber" 
+                    name="chapterNumber" 
+                    type="number" 
+                    min={1} 
+                    value={chapterNumber}
+                    onChange={(e) => setChapterNumber(e.target.value)}
+                    required 
+                  />
                 </div>
 
                 <div className="space-y-4 pt-4 border-t">
