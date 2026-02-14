@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Menu, Book, Type, Moon, Sun } from 'lucide-react';
+import { Menu, Type, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Slider } from '@/components/ui/slider';
-import { Novel, Chapter } from '@/lib/mock-data';
+import { Novel } from '@/lib/mock-data';
 import { Progress } from '@/components/ui/progress';
+import { ReaderControls } from './reader-controls';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -48,6 +49,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const goToPrevChapter = () => {
     if (currentChapterIndex > 0) {
       setCurrentChapterIndex(prev => prev - 1);
+    }
+  };
+
+  const handleChapterChange = (index: number) => {
+    if (index >= 0 && index < novel.chapters.length) {
+      setCurrentChapterIndex(index);
     }
   };
 
@@ -113,12 +120,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                 </SheetTrigger>
                 <SheetContent className="p-6">
                   <SheetHeader className="mb-6">
-                    <SheetTitle>Text Preferences</SheetTitle>
+                    <SheetTitle>Reading Settings</SheetTitle>
                   </SheetHeader>
                   <div className="space-y-8">
                     <div className="space-y-4">
                       <div className="flex justify-between text-sm">
-                        <span>Font Size</span>
+                        <span>Fine-tune Size</span>
                         <span className="font-bold">{fontSize}px</span>
                       </div>
                       <Slider
@@ -127,6 +134,18 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                         min={14}
                         max={32}
                         step={1}
+                      />
+                    </div>
+                    
+                    <div className="pt-4 border-t">
+                      <ReaderControls 
+                        chapterNumber={currentChapterIndex + 1}
+                        totalChapters={novel.chapters.length}
+                        onChapterChange={handleChapterChange}
+                        fontSize={fontSize}
+                        onFontSizeChange={setFontSize}
+                        isDarkMode={isDarkMode}
+                        onDarkModeToggle={() => setIsDarkMode(!isDarkMode)}
                       />
                     </div>
                   </div>
@@ -151,23 +170,37 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               ))}
             </div>
 
-            <div className="mt-12 pt-12 border-t flex items-center justify-between gap-4">
-              <Button 
-                variant="outline" 
-                onClick={goToPrevChapter} 
-                disabled={currentChapterIndex === 0}
-                className="flex-1 max-w-[150px]"
-              >
-                <ChevronLeft className="mr-2 h-4 w-4" /> Previous
-              </Button>
-              <Button 
-                variant="default" 
-                onClick={goToNextChapter} 
-                disabled={currentChapterIndex === novel.chapters.length - 1}
-                className="flex-1 max-w-[150px] bg-primary"
-              >
-                Next <ChevronRight className="ml-2 h-4 w-4" />
-              </Button>
+            <div className="mt-12 pt-12 border-t flex flex-col gap-8">
+              <div className="flex items-center justify-between gap-4">
+                <Button 
+                  variant="outline" 
+                  onClick={goToPrevChapter} 
+                  disabled={currentChapterIndex === 0}
+                  className="flex-1 max-w-[150px] rounded-xl"
+                >
+                  Previous
+                </Button>
+                <Button 
+                  variant="default" 
+                  onClick={goToNextChapter} 
+                  disabled={currentChapterIndex === novel.chapters.length - 1}
+                  className="flex-1 max-w-[150px] bg-primary rounded-xl"
+                >
+                  Next
+                </Button>
+              </div>
+
+              <div className="max-w-md mx-auto w-full">
+                <ReaderControls 
+                  chapterNumber={currentChapterIndex + 1}
+                  totalChapters={novel.chapters.length}
+                  onChapterChange={handleChapterChange}
+                  fontSize={fontSize}
+                  onFontSizeChange={setFontSize}
+                  isDarkMode={isDarkMode}
+                  onDarkModeToggle={() => setIsDarkMode(!isDarkMode)}
+                />
+              </div>
             </div>
           </div>
         </div>
