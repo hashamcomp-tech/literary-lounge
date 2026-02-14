@@ -110,6 +110,7 @@ export async function getLocalBook(id: string): Promise<any> {
 
 /**
  * Retrieves all chapters associated with a specific book ID.
+ * Uses the 'bookId' index for efficient querying.
  */
 export async function getLocalChapters(bookId: string): Promise<any[]> {
   const db = await openDB();
@@ -117,7 +118,10 @@ export async function getLocalChapters(bookId: string): Promise<any[]> {
     const tx = db.transaction("chapters", "readonly");
     const store = tx.objectStore("chapters");
     const index = store.index("bookId");
-    const request = index.getAll(IDBKeyRange.only(bookId));
+    
+    // index.getAll(bookId) efficiently finds all records matching the index value
+    const request = index.getAll(bookId);
+    
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
