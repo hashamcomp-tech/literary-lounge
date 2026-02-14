@@ -25,7 +25,7 @@ export default function CloudReader() {
   const [fontSize, setFontSize] = useState(18);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  // Fetch Metadata
+  // Fetch Metadata from /books/{id}/metadata/info
   useEffect(() => {
     if (!db || !id) return;
     const metaRef = doc(db, 'books', id, 'metadata', 'info');
@@ -36,7 +36,7 @@ export default function CloudReader() {
     });
   }, [db, id]);
 
-  // Fetch Current Chapter
+  // Fetch Current Chapter from /books/{id}/chapters/{num}
   useEffect(() => {
     if (!db || !id) return;
     setLoading(true);
@@ -60,7 +60,7 @@ export default function CloudReader() {
       });
   }, [id, chapterNumber, db]);
 
-  // Fetch All Chapters for Navigation
+  // Fetch All Chapters for Navigation from /books/{id}/chapters
   const chaptersQuery = useMemoFirebase(() => {
     if (!db || !id) return null;
     return query(collection(db, 'books', id, 'chapters'), orderBy('chapterNumber', 'asc'));

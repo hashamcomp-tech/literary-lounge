@@ -35,6 +35,9 @@ service cloud.firestore {
     }
 
     match /books/{bookId} {
+      // Allow searching via the root document if metadata is mirrored there
+      allow get, list: if isSignedIn();
+
       match /metadata/info {
         allow get, list: if isSignedIn();
         allow create, update: if willBeOwner();

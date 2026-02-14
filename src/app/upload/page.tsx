@@ -14,7 +14,7 @@ import ePub from 'epubjs';
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
+import { FirestorePermissionError } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
 
 interface AutocompleteInputProps {
@@ -117,6 +117,7 @@ export default function UploadPage() {
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
   const [content, setContent] = useState('');
+  const [genre, setGenre] = useState('Novel');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
@@ -180,8 +181,8 @@ export default function UploadPage() {
     setLoading(true);
 
     try {
-      let finalTitle = title;
-      let finalAuthor = author;
+      let finalTitle = title.trim();
+      let finalAuthor = author.trim();
       let chapters: any[] = [];
 
       if (selectedFile && selectedFile.name.endsWith('.epub')) {
@@ -222,11 +223,13 @@ export default function UploadPage() {
             bookTitle: finalTitle,
             lastUpdated: serverTimestamp(),
             ownerId: user.uid,
-            totalChapters: chapters.length
+            totalChapters: chapters.length,
+            genre: genre,
+            views: 0
           }
         };
 
-        // Update root doc for searchability
+        // Update root doc for searchability (optional, mirrors metadata for list queries)
         await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: bookRef.path,
@@ -235,7 +238,7 @@ export default function UploadPage() {
           }));
         });
 
-        // Update sub-document as per structure requirement
+        // Update sub-document as per structure requirement: /books/{id}/metadata/info
         const infoRef = doc(db, 'books', docId, 'metadata', 'info');
         await setDoc(infoRef, metadataMap.info, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
@@ -245,7 +248,7 @@ export default function UploadPage() {
           }));
         });
 
-        // Upload Chapters
+        // Upload Chapters to sub-collection: /books/{id}/chapters/{num}
         for (const ch of chapters) {
           const chRef = doc(db, 'books', docId, 'chapters', ch.chapterNumber.toString());
           const chData = {
@@ -352,6 +355,17 @@ export default function UploadPage() {
                       value={title} 
                       onChange={setTitle} 
                       placeholder="e.g. Pride and Prejudice"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="genre" className="text-base font-bold">Genre</Label>
+                    <Input 
+                      id="genre" 
+                      value={genre}
+                      onChange={(e) => setGenre(e.target.value)}
+                      className="bg-background/50"
+                      placeholder="e.g. Fantasy, Romance, Sci-Fi"
                     />
                   </div>
 
