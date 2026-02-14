@@ -13,8 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import algoliasearch from 'algoliasearch/lite';
 
-// Initialize Algolia client with placeholders for user keys
-// These should ideally be in environment variables
+// Initialize Algolia client with placeholders
 const ALGOLIA_APP_ID = process.env.NEXT_PUBLIC_ALGOLIA_APP_ID || '';
 const ALGOLIA_SEARCH_KEY = process.env.NEXT_PUBLIC_ALGOLIA_SEARCH_KEY || '';
 
@@ -62,8 +61,8 @@ function SearchResults() {
             
             if (hits.length > 0) {
               const algoliaResults = hits.map((hit: any) => ({
-                id: hit.objectID || hit.bookId || hit.id,
-                title: hit.bookTitle || hit.title,
+                id: hit.objectID || hit.id,
+                title: hit.title || hit.bookTitle,
                 author: hit.author || hit.authorName || 'Unknown Author',
                 genre: hit.genre || (hit.genres?.[0]) || 'Novel',
                 summary: hit.summary || hit.description || '',
@@ -96,7 +95,7 @@ function SearchResults() {
             id: doc.id,
             title: data.title,
             author: data.authorName || 'Unknown Author',
-            genre: data.genres?.[0] || 'Novel',
+            genre: data.genres?.[0] || 'Cloud Novel',
             summary: data.description || '',
             coverImage: data.coverImageUrl || '',
             chapters: [] 
@@ -171,7 +170,7 @@ function SearchResults() {
           </div>
           <h2 className="text-2xl font-headline font-bold mb-2">No matches found</h2>
           <p className="text-muted-foreground max-w-md mx-auto">
-            We couldn't find any cloud novels matching "{queryTerm}". Try searching for a specific book title or ensure your capitalization is correct.
+            We couldn't find any books matching "{queryTerm}". Try searching for a specific title or check your spelling.
           </p>
           <Button 
             variant="outline" 

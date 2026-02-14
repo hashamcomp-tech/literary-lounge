@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from 'next/link';
@@ -17,6 +18,7 @@ export default function Navbar() {
     e.preventDefault();
     if (searchQuery.trim()) {
       router.push(`/search?q=${encodeURIComponent(searchQuery)}`);
+      setSearchQuery('');
     }
   };
 
@@ -35,8 +37,8 @@ export default function Navbar() {
         <form onSubmit={handleSearch} className="flex-1 max-w-md relative group">
           <Input
             type="search"
-            placeholder="Search novels, authors, or genres..."
-            className="pl-10 h-10 bg-muted/50 border-transparent transition-all group-focus-within:bg-background group-focus-within:border-primary/30"
+            placeholder="Search novels or authors..."
+            className="pl-10 h-10 bg-muted/50 border-transparent transition-all group-focus-within:bg-background group-focus-within:border-primary/30 rounded-xl"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -45,17 +47,17 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2">
           <Link href="/upload">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary" title="Upload Novel">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
               <Upload className="h-5 w-5" />
             </Button>
           </Link>
           <Link href="/setup">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary" title="Settings">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Preferences">
               <Settings className="h-5 w-5" />
             </Button>
           </Link>
           <Link href="/login">
-            <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary`} title="Account">
+            <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
               <User className="h-5 w-5" />
             </Button>
           </Link>
