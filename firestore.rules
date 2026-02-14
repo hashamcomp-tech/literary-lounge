@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * LITERARY LOUNGE SECURITY RULES
+     *
+     * CORE PHILOSOPHY:
+     * This ruleset enforces a strict user-ownership model for personal data and an authenticated-access 
+     * model for literary content. It prioritizes path-based authorization to ensure high performance 
+     * and query scalability (Query-based Access Patterns).
+     *
+     * DATA STRUCTURE:
+     * - Private Data: All user-specific data (Profiles, Reading Progress, Preferences) is nested 
+     *   under `/users/{userId}/`. Access is strictly limited to the authenticated user matching the {userId}.
+     * - Public Content: Novels and Chapters are stored in top-level collections. These are readable 
+     *    by any authenticated user but are currently restricted for writes due to the absence of 
+     *    explicit owner/author UID fields in the initial schema.
+     *
+     * KEY SECURITY DECISIONS:
+     * - Relational Integrity: On creation of user-owned documents, rules enforce that the internal 
+     *   `userId` or `id` field matches the URL path and the user's Auth UID.
+     * - Immutability: Critical ownership fields (like `userId`) are made immutable after creation 
+     *   to prevent data hijacking.
+     * - Prototyping Flexibility: While authorization is strictly enforced, data types and non-critical 
+     *   fields are not validated to allow for rapid frontend iteration.
+     *
+     * DENORMALIZATION FOR AUTHORIZATION:
+     * - The `userId` is denormalized into sub-documents (ReadingProgress, UserPreference) to allow 
+     *   direct validation against `request.auth.uid` without requiring `get()` calls to parent documents.
+     */
+
+    // --- Helper Functions ---
+
+    /** @description Checks if the request is from a signed-in user. */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /** @description Checks if the user's UID matches the provided ID. */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** @description Verifies ownership and ensures the document exists before modification. */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    // --- Collection Rules ---
+
+    /**
+     * @description Rules for the UserProfile entity. Users can only manage their own profile.
+     * @path /users/{userId}
+     * @allow (create) User 'ABC' creating document '/users/ABC' where data.id == 'ABC'.
+     * @deny (list) User 'ABC' attempting to list all documents in '/users'.
+     * @principle Path-based ownership and relational integrity via ID matching.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false; // Users cannot list other user profiles.
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+
+      /**
+       * @description Rules for ReadingProgress. Scoped to the individual user.
+       * @path /users/{userId}/readingProgress/{readingProgressId}
+       * @allow (list) User 'ABC' listing their own progress at '/users/ABC/readingProgress'.
+       * @deny (get) User 'XYZ' fetching progress from '/users/ABC/readingProgress/123'.
+       * @principle Resource nesting for automatic query scoping and ownership.
+       */
+      match /readingProgress/{readingProgressId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+        allow delete: if isExistingOwner(userId);
+      }
+
+      /**
+       * @description Rules for UserPreference. Enforces a 1:1 relationship via path-based ownership.
+       * @path /users/{userId}/userPreferences/{userPreferenceId}
+       * @allow (update) User 'ABC' updating their preferences at '/users/ABC/userPreferences/ABC'.
+       * @deny (create) User 'ABC' creating preferences with data.userId == 'XYZ'.
+       * @principle Ownership validation and immutability of the owner link.
+       */
+      match /userPreferences/{userPreferenceId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && request.resource.data.userId == userId;
+        allow update: if isExistingOwner(userId) && request.resource.data.userId == resource.data.userId;
+        allow delete: if isExistingOwner(userId);
+      }
+    }
+
+    /**
+     * @description Rules for Novel metadata. Publicly readable by all users.
+     * @path /novels/{novelId}
+     * @allow (list) Any signed-in user browsing the novel library.
+     * @deny (create) Any user attempting to create a novel (Admin/Author ID missing in schema).
+     * @principle Public read access with restricted writes for content integrity.
+     */
+    match /novels/{novelId} {
+      allow get, list: if isSignedIn();
+      
+      // CRITICAL: Cannot implement owner-only writes. The 'Novel' entity is missing an 'ownerId' or 'authorId' UID field.
+      allow create, update, delete: if false; // TODO: Add owner validation once the schema includes a UID-based ownership field.
+
+      /**
+       * @description Rules for Novel chapters. Publicly readable by all users.
+       * @path /novels/{novelId}/chapters/{chapterId}
+       * @allow (get) Any signed-in user reading a specific chapter.
+       * @deny (delete) Any user attempting to delete a chapter.
+       * @principle Inherited public visibility from the parent novel content.
+       */
+      match /chapters/{chapterId} {
+        allow get, list: if isSignedIn();
+
+        // CRITICAL: Cannot implement owner-only writes. The 'Chapter' entity is missing a 'creatorId' or link to an authorized author UID.
+        allow create, update, delete: if false; // TODO: Add author validation once the schema is updated.
+      }
+    }
+  }
+}
