@@ -11,6 +11,14 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isDataOwner() {
+      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    function willBeOwner() {
+      return isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+    }
+
     match /users/{userId} {
       allow get: if isOwner(userId);
       allow list: if false;
@@ -28,11 +36,13 @@ service cloud.firestore {
 
     match /books/{bookId} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+      allow create: if willBeOwner();
+      allow update, delete: if isDataOwner();
 
       match /chapters/{chapterNumber} {
         allow get, list: if isSignedIn();
-        allow create, update, delete: if isSignedIn();
+        allow create: if willBeOwner();
+        allow update, delete: if isDataOwner();
       }
     }
   }

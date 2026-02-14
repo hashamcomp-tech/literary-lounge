@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -15,11 +16,13 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
+import { useToast } from '@/hooks/use-toast';
 
 export default function UploadPage() {
   const router = useRouter();
   const db = useFirestore();
   const { user } = useUser();
+  const { toast } = useToast();
   
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -90,7 +93,11 @@ export default function UploadPage() {
     e.preventDefault();
     if (!title.trim() && !selectedFile) return;
     if (storageType === 'cloud' && !user) {
-      alert("Please sign in to upload to the cloud.");
+      toast({
+        variant: "destructive",
+        title: "Authentication Required",
+        description: "Please sign in to upload to the cloud."
+      });
       return;
     }
 
@@ -151,12 +158,13 @@ export default function UploadPage() {
           }
         }));
         router.push(`/local-pages/${bookId}/${chapters[0]?.chapterNumber || 1}`);
-      } else if (db) {
+      } else if (db && user) {
         setLoadingStatus('Uploading Metadata...');
         
         const bookRef = doc(db, 'books', bookId);
         const bookData = {
           id: bookId,
+          ownerId: user.uid,
           title: finalTitle,
           authorName: finalAuthor || 'Unknown Author',
           description: content.substring(0, 200) || 'An uploaded novel.',
@@ -183,6 +191,7 @@ export default function UploadPage() {
         for (const ch of chapters) {
           const chapterRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
           const chapterData = {
+            ownerId: user.uid,
             chapterNumber: ch.chapterNumber,
             title: ch.title,
             content: ch.content,
@@ -207,6 +216,11 @@ export default function UploadPage() {
     } catch (error) {
       console.error("Upload failed", error);
       setLoadingStatus('Error processing file.');
+      toast({
+        variant: "destructive",
+        title: "Upload Failed",
+        description: "There was an error processing your file."
+      });
     } finally {
       setLoading(false);
     }

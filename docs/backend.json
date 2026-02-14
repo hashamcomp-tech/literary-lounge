@@ -49,6 +49,10 @@
           "type": "string",
           "description": "Unique identifier for the Novel entity (format: author_title)."
         },
+        "ownerId": {
+          "type": "string",
+          "description": "The UID of the user who uploaded the novel."
+        },
         "title": {
           "type": "string",
           "description": "The title of the novel."
@@ -99,6 +103,7 @@
       },
       "required": [
         "id",
+        "ownerId",
         "title",
         "authorName",
         "createdAt",
@@ -111,6 +116,10 @@
       "type": "object",
       "description": "Represents a single chapter within a novel.",
       "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The UID of the user who uploaded the chapter."
+        },
         "chapterNumber": {
           "type": "number",
           "description": "The sequential number of the chapter within the novel."
@@ -139,6 +148,7 @@
         }
       },
       "required": [
+        "ownerId",
         "chapterNumber",
         "content",
         "createdAt",
