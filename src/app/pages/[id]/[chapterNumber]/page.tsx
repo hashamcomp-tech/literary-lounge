@@ -1,17 +1,17 @@
-
 "use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { doc, getDoc, collection, query, orderBy } from 'firebase/firestore';
+import { doc, getDoc, collection, query, orderBy, updateDoc, increment } from 'firebase/firestore';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 
 export default function CloudReader() {
   const { id, chapterNumber } = useParams() as { id: string; chapterNumber: string };
@@ -25,15 +25,27 @@ export default function CloudReader() {
   const [fontSize, setFontSize] = useState(18);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
-  // Fetch Metadata from /books/{id}/metadata/info
+  // Fetch Metadata and increment view count
   useEffect(() => {
     if (!db || !id) return;
+    
     const metaRef = doc(db, 'books', id, 'metadata', 'info');
+    const rootRef = doc(db, 'books', id);
+
+    // Fetch metadata
     getDoc(metaRef).then((snapshot) => {
       if (snapshot.exists()) {
         setMetadata(snapshot.data());
       }
     });
+
+    // Increment views in both the root doc (for ordering) and metadata sub-doc
+    const incrementPayload = { 'metadata.info.views': increment(1) };
+    const subDocPayload = { views: increment(1) };
+
+    updateDoc(rootRef, incrementPayload).catch(() => {});
+    updateDoc(metaRef, subDocPayload).catch(() => {});
+    
   }, [db, id]);
 
   // Fetch Current Chapter from /books/{id}/chapters/{num}
@@ -132,7 +144,17 @@ export default function CloudReader() {
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
         <article className="mb-20">
           <header className="mb-12 text-center">
-            <p className="text-xs uppercase tracking-widest font-bold text-primary mb-2">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-bold tracking-widest px-3">
+                {metadata?.genre || 'Novel'}
+              </Badge>
+              {metadata?.views !== undefined && (
+                <div className="flex items-center gap-1 text-muted-foreground text-xs font-bold">
+                  <TrendingUp className="h-3 w-3" /> {metadata.views.toLocaleString()} views
+                </div>
+              )}
+            </div>
+            <p className="text-sm font-headline font-medium text-muted-foreground mb-1">
               {metadata?.bookTitle || 'Cloud Novel'}
             </p>
             <h1 className="text-4xl font-headline font-black mb-4">
