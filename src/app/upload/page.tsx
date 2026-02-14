@@ -9,8 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Upload, BookPlus, Loader2, FileText, CheckCircle2, User, Book, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Upload, BookPlus, Loader2, FileText, CheckCircle2, User, Book, ShieldCheck, Lock, ArrowLeft } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
@@ -212,7 +211,7 @@ export default function UploadPage() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isApprovedUser && user && !user.isAnonymous) {
+    if (!isApprovedUser) {
       toast({
         variant: 'destructive',
         title: 'Unauthorized',
@@ -248,13 +247,7 @@ export default function UploadPage() {
         }];
       }
 
-      if (finalAuthor && finalTitle && isApprovedUser) {
-        if (!user) {
-          toast({ variant: 'destructive', title: 'Error', description: 'Please log in for cloud storage.' });
-          setLoading(false);
-          return;
-        }
-
+      if (finalAuthor && finalTitle && user) {
         setLoadingStatus('Uploading to cloud...');
         const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
         const bookRef = doc(db, 'books', docId);
@@ -271,6 +264,7 @@ export default function UploadPage() {
           }
         };
 
+        // Root doc update for searching/sorting
         await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: bookRef.path,
@@ -279,6 +273,7 @@ export default function UploadPage() {
           }));
         });
 
+        // Dedicated info doc
         const infoRef = doc(db, 'books', docId, 'metadata', 'info');
         await setDoc(infoRef, metadataMap.info, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
@@ -288,6 +283,7 @@ export default function UploadPage() {
           }));
         });
 
+        // Chapters upload
         for (const ch of chapters) {
           const chRef = doc(db, 'books', docId, 'chapters', ch.chapterNumber.toString());
           const chData = {
@@ -309,33 +305,6 @@ export default function UploadPage() {
         }
 
         router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
-      } else {
-        setLoadingStatus('Saving locally...');
-        const docId = crypto.randomUUID();
-        const textToUse = content || "";
-        const pagesData = [{ 
-          id: crypto.randomUUID(), 
-          novelId: docId, 
-          pageNumber: 1, 
-          content: textToUse.split('\n\n').map(p => `<p>${p}</p>`).join(''),
-          createdAt: new Date().toISOString(), 
-          updatedAt: new Date().toISOString() 
-        }];
-
-        const allLocalData = JSON.parse(localStorage.getItem('novel-reader-data') || '{}');
-        allLocalData[docId] = {
-          splitText: { 
-            id: docId, 
-            title: textToUse.substring(0, 30) + '...', 
-            author: 'Local User',
-            createdAt: new Date().toISOString(), 
-            updatedAt: new Date().toISOString() 
-          },
-          pages: pagesData
-        };
-        localStorage.setItem('novel-reader-data', JSON.stringify(allLocalData));
-
-        router.push(`/local-pages/${docId}/1`);
       }
     } catch (error) {
       console.error("Upload failed", error);
@@ -349,155 +318,183 @@ export default function UploadPage() {
     }
   };
 
+  if (isUserLoading || checkingApproval) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
       
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-2xl mx-auto">
-          <div className="text-center mb-10">
-            <h1 className="text-4xl font-headline font-black mb-4">Add to Library</h1>
-            <p className="text-lg text-muted-foreground">
-              Add your own texts or EPUB files. Cloud storage is reserved for approved members.
-            </p>
-          </div>
+          {isApprovedUser ? (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="text-center mb-10">
+                <h1 className="text-4xl font-headline font-black mb-4">Add to Library</h1>
+                <p className="text-lg text-muted-foreground">
+                  Your account is authorized for cloud contributions. Your work will be accessible globally.
+                </p>
+              </div>
 
-          {!checkingApproval && isApprovedUser === false && user && !user.isAnonymous && (
-             <Alert variant="destructive" className="mb-8 border-destructive/20 bg-destructive/5">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Cloud Upload Disabled</AlertTitle>
-                <AlertDescription>
-                  Your account ({user.email}) is not on the approved whitelist. Any uploads will be stored locally on this device only.
-                </AlertDescription>
-             </Alert>
-          )}
-
-          {!checkingApproval && isApprovedUser === true && (
-             <div className="flex items-center gap-2 mb-8 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-600">
+              <div className="flex items-center gap-2 mb-8 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-600">
                 <ShieldCheck className="h-5 w-5" />
                 <span className="text-sm font-bold">Cloud Privileges Active</span>
-             </div>
-          )}
+              </div>
 
-          <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BookPlus className="h-5 w-5 text-primary" />
-                New Novel
-              </CardTitle>
-              <CardDescription>
-                {isApprovedUser ? "Metadata provided here will link this novel to your cloud account." : "Guest uploads are stored locally in your browser cache."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleUpload} className="space-y-6">
-                
-                <div className="space-y-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="author" className="text-base font-bold">Author</Label>
-                    <AutocompleteInput 
-                      type="author" 
-                      value={author} 
-                      onChange={setAuthor} 
-                      placeholder="e.g. Jane Austen"
-                    />
-                  </div>
+              <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BookPlus className="h-5 w-5 text-primary" />
+                    New Novel
+                  </CardTitle>
+                  <CardDescription>
+                    Metadata provided here will link this novel to your cloud account.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleUpload} className="space-y-6">
+                    <div className="space-y-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="author" className="text-base font-bold">Author</Label>
+                        <AutocompleteInput 
+                          type="author" 
+                          value={author} 
+                          onChange={setAuthor} 
+                          placeholder="e.g. Jane Austen"
+                        />
+                      </div>
 
-                  <div className="grid gap-2">
-                    <Label htmlFor="bookTitle" className="text-base font-bold">Book Title</Label>
-                    <AutocompleteInput 
-                      type="book" 
-                      value={title} 
-                      onChange={setTitle} 
-                      placeholder="e.g. Pride and Prejudice"
-                    />
-                  </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="bookTitle" className="text-base font-bold">Book Title</Label>
+                        <AutocompleteInput 
+                          type="book" 
+                          value={title} 
+                          onChange={setTitle} 
+                          placeholder="e.g. Pride and Prejudice"
+                        />
+                      </div>
 
-                  <div className="grid gap-2">
-                    <Label htmlFor="genre" className="text-base font-bold">Genre</Label>
-                    <Input 
-                      id="genre" 
-                      value={genre}
-                      onChange={(e) => setGenre(e.target.value)}
-                      className="bg-background/50"
-                      placeholder="e.g. Fantasy, Romance, Sci-Fi"
-                    />
-                  </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="genre" className="text-base font-bold">Genre</Label>
+                        <Input 
+                          id="genre" 
+                          value={genre}
+                          onChange={(e) => setGenre(e.target.value)}
+                          className="bg-background/50"
+                          placeholder="e.g. Fantasy, Romance, Sci-Fi"
+                        />
+                      </div>
 
-                  <div className="grid gap-2">
-                    <Label htmlFor="chapterNumber" className="text-base font-bold">Chapter Number</Label>
-                    <Input 
-                      id="chapterNumber" 
-                      type="number" 
-                      min={1} 
-                      value={chapterNumber}
-                      onChange={(e) => setChapterNumber(e.target.value)}
-                      className="bg-background/50"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-4 border-t">
-                  <Label className="text-base font-bold">Content</Label>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className={`relative border-2 border-dashed rounded-xl p-6 transition-colors ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
-                      <input
-                        type="file"
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        accept=".epub"
-                        onChange={handleFileChange}
-                      />
-                      <div className="flex flex-col items-center justify-center text-center">
-                        {selectedFile ? (
-                          <>
-                            <CheckCircle2 className="h-10 w-10 text-primary mb-2" />
-                            <span className="font-bold">{selectedFile.name}</span>
-                            <Button variant="ghost" size="sm" className="mt-2" onClick={() => setSelectedFile(null)}>Remove</Button>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="h-10 w-10 text-muted-foreground mb-2" />
-                            <span className="font-medium text-muted-foreground">Click to upload EPUB</span>
-                          </>
-                        )}
+                      <div className="grid gap-2">
+                        <Label htmlFor="chapterNumber" className="text-base font-bold">Chapter Number</Label>
+                        <Input 
+                          id="chapterNumber" 
+                          type="number" 
+                          min={1} 
+                          value={chapterNumber}
+                          onChange={(e) => setChapterNumber(e.target.value)}
+                          className="bg-background/50"
+                        />
                       </div>
                     </div>
 
-                    <div className="relative text-center">
-                      <span className="bg-card px-2 text-xs font-bold text-muted-foreground uppercase relative z-10">OR PASTE TEXT</span>
-                      <div className="absolute top-1/2 left-0 w-full h-px bg-border" />
+                    <div className="space-y-4 pt-4 border-t">
+                      <Label className="text-base font-bold">Content</Label>
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className={`relative border-2 border-dashed rounded-xl p-6 transition-colors ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
+                          <input
+                            type="file"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            accept=".epub"
+                            onChange={handleFileChange}
+                          />
+                          <div className="flex flex-col items-center justify-center text-center">
+                            {selectedFile ? (
+                              <>
+                                <CheckCircle2 className="h-10 w-10 text-primary mb-2" />
+                                <span className="font-bold">{selectedFile.name}</span>
+                                <Button variant="ghost" size="sm" className="mt-2" onClick={() => setSelectedFile(null)}>Remove</Button>
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="h-10 w-10 text-muted-foreground mb-2" />
+                                <span className="font-medium text-muted-foreground">Click to upload EPUB</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="relative text-center">
+                          <span className="bg-card px-2 text-xs font-bold text-muted-foreground uppercase relative z-10">OR PASTE TEXT</span>
+                          <div className="absolute top-1/2 left-0 w-full h-px bg-border" />
+                        </div>
+
+                        <Textarea
+                          placeholder="Paste your content here..."
+                          className="min-h-[200px] text-lg leading-relaxed p-4"
+                          value={content}
+                          onChange={(e) => setContent(e.target.value)}
+                          disabled={!!selectedFile}
+                        />
+                      </div>
                     </div>
 
-                    <Textarea
-                      placeholder="Paste your content here..."
-                      className="min-h-[200px] text-lg leading-relaxed p-4"
-                      value={content}
-                      onChange={(e) => setContent(e.target.value)}
-                      disabled={!!selectedFile}
-                    />
-                  </div>
+                    <Button 
+                      type="submit" 
+                      className="w-full py-6 text-lg bg-primary hover:bg-primary/90 rounded-xl"
+                      disabled={loading || (!title.trim() && !selectedFile) || (!content.trim() && !selectedFile)}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          {loadingStatus || 'Processing...'}
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="mr-2 h-5 w-5" />
+                          Save to Cloud
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="animate-in fade-in zoom-in-95 duration-500">
+              <Card className="border-none shadow-xl bg-card/80 backdrop-blur text-center p-12 overflow-hidden relative">
+                <div className="absolute top-0 left-0 w-full h-1 bg-destructive" />
+                <div className="bg-destructive/10 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 text-destructive">
+                  <Lock className="h-12 w-12" />
                 </div>
-
-                <Button 
-                  type="submit" 
-                  className="w-full py-6 text-lg bg-primary hover:bg-primary/90 rounded-xl"
-                  disabled={loading || checkingApproval || (!title.trim() && !selectedFile) || (!content.trim() && !selectedFile)}
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      {loadingStatus || 'Processing...'}
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="mr-2 h-5 w-5" />
-                      {isApprovedUser ? "Save to Cloud" : "Save Locally"}
-                    </>
+                <CardTitle className="text-4xl font-headline font-black mb-4">Access Restricted</CardTitle>
+                <CardDescription className="text-lg mb-10 max-w-md mx-auto leading-relaxed">
+                  The cloud library is a curated space for approved contributors.
+                  {user?.isAnonymous 
+                    ? " Please sign in with an authorized account to unlock upload features." 
+                    : ` Your current account (${user?.email}) is not on the author whitelist.`}
+                </CardDescription>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <Button onClick={() => router.push('/')} variant="outline" className="rounded-xl px-8 py-6 h-auto text-lg gap-2">
+                    <ArrowLeft className="h-5 w-5" /> Return Home
+                  </Button>
+                  {user?.isAnonymous && (
+                    <Button onClick={() => router.push('/login')} className="rounded-xl px-8 py-6 h-auto text-lg bg-primary">
+                      Sign In to Account
+                    </Button>
                   )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       </main>
     </div>
