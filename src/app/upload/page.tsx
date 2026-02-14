@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, ShieldAlert, LogIn, Globe, Lock } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, ShieldAlert, LogIn, Globe, Lock, Send } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
@@ -169,6 +169,13 @@ export default function UploadPage() {
       const file = e.target.files[0];
       setSelectedFile(file);
     }
+  };
+
+  const handleRequestAccess = () => {
+    toast({
+      title: "Access Requested",
+      description: "Your request to become a contributor has been sent to the administrators.",
+    });
   };
 
   const processEpub = async (file: File) => {
@@ -337,6 +344,8 @@ export default function UploadPage() {
     );
   }
 
+  const canRequestAccess = !isApprovedUser && user && !user.isAnonymous;
+
   return (
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
@@ -365,8 +374,19 @@ export default function UploadPage() {
               <Alert className="border-none shadow-sm bg-blue-500/10 text-blue-700">
                 <Lock className="h-5 w-5" />
                 <AlertTitle className="font-bold">Local Storage Active</AlertTitle>
-                <AlertDescription className="text-sm">
-                  Content will be saved only to your browser's private database. No cloud publishing.
+                <AlertDescription className="text-sm flex flex-col gap-3">
+                  <p>Content will be saved only to your browser's private database. No cloud publishing.</p>
+                  {canRequestAccess && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleRequestAccess}
+                      className="w-fit bg-blue-600/10 border-blue-600/20 text-blue-700 hover:bg-blue-600/20 rounded-lg gap-2"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Request Publish Access
+                    </Button>
+                  )}
                 </AlertDescription>
               </Alert>
             )}
