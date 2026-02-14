@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX } from 'lucide-react';
+import { getLocalBook, getLocalChapters } from '@/lib/local-library';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -12,26 +13,26 @@ export default function LocalReader() {
   
   const [novelData, setNovelData] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState<any>(null);
+  const [totalChapters, setTotalChapters] = useState(0);
   const [loading, setLoading] = useState(true);
   
   const [fontSize, setFontSize] = useState(18);
   const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
-    const loadLocalData = () => {
+    const loadLocalData = async () => {
       setLoading(true);
       try {
-        const stored = localStorage.getItem('novel-reader-data');
-        if (stored) {
-          const allData = JSON.parse(stored);
-          const currentNovel = allData[id];
+        const book = await getLocalBook(id);
+        if (book) {
+          setNovelData(book);
+          const chapters = await getLocalChapters(id);
+          const sortedChapters = chapters.sort((a, b) => a.chapterNumber - b.chapterNumber);
+          setTotalChapters(sortedChapters.length);
           
-          if (currentNovel) {
-            setNovelData(currentNovel);
-            const pageNum = parseInt(pageNumber);
-            const page = currentNovel.pages.find((p: any) => p.pageNumber === pageNum);
-            setCurrentPage(page || null);
-          }
+          const pageNum = parseInt(pageNumber);
+          const page = sortedChapters.find((p: any) => p.chapterNumber === pageNum);
+          setCurrentPage(page || null);
         }
       } catch (error) {
         console.error("Failed to load local novel", error);
@@ -45,7 +46,7 @@ export default function LocalReader() {
 
   const goToPage = (index: number) => {
     const n = index + 1;
-    if (n < 1 || !novelData || n > novelData.pages.length) return;
+    if (n < 1 || n > totalChapters) return;
     router.push(`/local-pages/${id}/${n}`);
   };
 
@@ -83,9 +84,12 @@ export default function LocalReader() {
         <article className="mb-20">
           <header className="mb-12 text-center">
             <h1 className="text-4xl font-headline font-black mb-4">
-              {novelData.splitText.title}
+              {novelData.title}
             </h1>
-            <p className="text-muted-foreground mb-4">By {novelData.splitText.author}</p>
+            <p className="text-muted-foreground mb-4">By {novelData.author}</p>
+            <h2 className="text-xl font-headline font-bold text-primary mb-4">
+              {currentPage.title || `Chapter ${currentPage.chapterNumber}`}
+            </h2>
             <div className="h-1 w-24 bg-primary mx-auto rounded-full" />
           </header>
 
@@ -98,8 +102,8 @@ export default function LocalReader() {
 
         <section className="pb-12 border-t pt-12">
           <ReaderControls 
-            chapterNumber={currentPage.pageNumber} 
-            totalChapters={novelData.pages.length} 
+            chapterNumber={currentPage.chapterNumber} 
+            totalChapters={totalChapters} 
             onChapterChange={goToPage}
             fontSize={fontSize}
             onFontSizeChange={setFontSize}
