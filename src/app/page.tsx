@@ -1,3 +1,4 @@
+
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
 import RecommendationsSection from '@/components/recommendations-section';
@@ -32,11 +33,29 @@ export default function Home() {
           </div>
         </section>
 
-        <RecommendationsSection />
+        {/* Dynamic Cloud Recommendations */}
+        <RecommendationsSection 
+          title="Trending Now" 
+          sortBy="views" 
+          limitCount={6} 
+        />
 
-        <section className="space-y-8 mt-12">
+        <RecommendationsSection 
+          title="Fantasy Favorites" 
+          genre="Fantasy" 
+          limitCount={3} 
+        />
+
+        <RecommendationsSection 
+          title="Mystery Spotlight" 
+          genre="Mystery" 
+          limitCount={3} 
+        />
+
+        {/* Curated Local Library */}
+        <section className="space-y-8 mt-12 pt-12 border-t">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-2xl font-headline font-bold">Browse Library</h2>
+            <h2 className="text-2xl font-headline font-bold">Curated Library</h2>
             <Tabs defaultValue="all" className="w-full sm:w-auto">
               <TabsList className="bg-muted/50 w-full sm:w-auto overflow-x-auto">
                 <TabsTrigger value="all">All Genres</TabsTrigger>
