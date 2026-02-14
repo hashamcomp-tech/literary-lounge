@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -7,6 +8,8 @@ import { useFirestore } from '@/firebase';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX } from 'lucide-react';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
 
 export default function CloudReader() {
   const { id, chapterNumber } = useParams() as { id: string; chapterNumber: string };
@@ -25,22 +28,26 @@ export default function CloudReader() {
 
     const fetchChapter = async () => {
       setLoading(true);
-      try {
-        const chaptersRef = collection(db, 'splitTexts', id, 'pages');
-        const q = query(chaptersRef, orderBy('chapterNumber', 'asc'));
-        const snapshot = await getDocs(q);
-        const chapters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        setTotalChapters(chapters.length);
-        const currentNum = parseInt(chapterNumber);
-        const current = chapters.find((c: any) => c.chapterNumber === currentNum);
-        
-        setChapter(current || null);
-      } catch (error) {
-        console.error("Failed to fetch cloud chapters", error);
-      } finally {
-        setLoading(false);
-      }
+      const chaptersRef = collection(db, 'splitTexts', id, 'pages');
+      const q = query(chaptersRef, orderBy('chapterNumber', 'asc'));
+      
+      getDocs(q)
+        .then((snapshot) => {
+          const chapters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setTotalChapters(chapters.length);
+          const currentNum = parseInt(chapterNumber);
+          const current = chapters.find((c: any) => c.chapterNumber === currentNum);
+          setChapter(current || null);
+          setLoading(false);
+        })
+        .catch(async (serverError) => {
+          const permissionError = new FirestorePermissionError({
+            path: chaptersRef.path,
+            operation: 'list',
+          } satisfies SecurityRuleContext);
+          errorEmitter.emit('permission-error', permissionError);
+          setLoading(false);
+        });
     };
     
     fetchChapter();
@@ -71,7 +78,7 @@ export default function CloudReader() {
           <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
           <h1 className="text-3xl font-headline font-bold mb-2">Chapter Not Found</h1>
           <p className="text-muted-foreground max-w-md">
-            We couldn't locate chapter {chapterNumber} for this text. It might be missing or the link is incorrect.
+            We couldn't locate chapter {chapterNumber} for this text.
           </p>
         </div>
       </div>
@@ -81,7 +88,6 @@ export default function CloudReader() {
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-background'}`}>
       <Navbar />
-      
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
         <article className="mb-20">
           <header className="mb-12 text-center">
@@ -90,14 +96,12 @@ export default function CloudReader() {
             </h1>
             <div className="h-1 w-24 bg-primary mx-auto rounded-full" />
           </header>
-
           <div 
             className="prose prose-slate dark:prose-invert max-w-none leading-relaxed select-text"
             style={{ fontSize: `${fontSize}px` }}
-            dangerouslySetInnerHTML={{ __html: chapter.content || '<p class="italic text-muted-foreground text-center">No content found for this chapter.</p>' }}
+            dangerouslySetInnerHTML={{ __html: chapter.content || '<p>No content found.</p>' }}
           />
         </article>
-
         <section className="pb-12 border-t pt-12">
           <ReaderControls 
             chapterNumber={chapter.chapterNumber} 
