@@ -6,7 +6,8 @@ import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { initialReadingPreferenceSetup, InitialReadingPreferenceSetupOutput } from '@/ai/flows/initial-reading-preference-setup-flow';
+// AI generation disabled
+// import { initialReadingPreferenceSetup, InitialReadingPreferenceSetupOutput } from '@/ai/flows/initial-reading-preference-setup-flow';
 import { Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -14,7 +15,7 @@ export default function SetupPage() {
   const router = useRouter();
   const [preferences, setPreferences] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<InitialReadingPreferenceSetupOutput | null>(null);
+  const [result, setResult] = useState<any | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,8 +23,12 @@ export default function SetupPage() {
 
     setLoading(true);
     try {
+      // AI generation disabled
+      /*
       const output = await initialReadingPreferenceSetup({ preferences });
       setResult(output);
+      */
+      alert("AI Preference analysis is currently disabled.");
     } catch (error) {
       console.error("Setup failed", error);
     } finally {
@@ -74,7 +79,7 @@ export default function SetupPage() {
                         Analyzing Preferences...
                       </>
                     ) : (
-                      "Generate My Profile"
+                      "Generate My Profile (Disabled)"
                     )}
                   </Button>
                 </form>
@@ -96,7 +101,7 @@ export default function SetupPage() {
                     <div className="space-y-3">
                       <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Preferred Genres</h3>
                       <div className="flex flex-wrap gap-2">
-                        {result.genres.map((g, i) => <Badge key={i} variant="secondary">{g}</Badge>)}
+                        {result.genres?.map((g: string, i: number) => <Badge key={i} variant="secondary">{g}</Badge>)}
                       </div>
                     </div>
                     <div className="space-y-3">
@@ -106,7 +111,7 @@ export default function SetupPage() {
                     <div className="space-y-3">
                       <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Favorite Themes</h3>
                       <div className="flex flex-wrap gap-2">
-                        {result.themes.map((t, i) => <Badge key={i} variant="outline" className="border-primary/30 text-primary">{t}</Badge>)}
+                        {result.themes?.map((t: string, i: number) => <Badge key={i} variant="outline" className="border-primary/30 text-primary">{t}</Badge>)}
                       </div>
                     </div>
                     <div className="space-y-3">
