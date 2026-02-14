@@ -8,7 +8,8 @@
       "properties": {
         "title": { "type": "string" },
         "author": { "type": "string" },
-        "totalChapters": { "type": "number" }
+        "totalChapters": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "author"]
     },
@@ -19,7 +20,8 @@
       "properties": {
         "chapterNumber": { "type": "number" },
         "content": { "type": "string" },
-        "title": { "type": "string" }
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["chapterNumber", "content"]
     }

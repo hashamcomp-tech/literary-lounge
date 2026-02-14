@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -8,17 +9,26 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, FileText, CheckCircle2 } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive } from 'lucide-react';
 import ePub from 'epubjs';
+import { doc, setDoc, serverTimestamp, collection } from 'firebase/firestore';
+import { useFirestore, useUser } from '@/firebase';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
 
 export default function UploadPage() {
   const router = useRouter();
+  const db = useFirestore();
+  const { user } = useUser();
+  
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [content, setContent] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
+  const [storageType, setStorageType] = useState<'local' | 'cloud'>('local');
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -45,17 +55,16 @@ export default function UploadPage() {
     const spine = book.spine;
     
     let index = 1;
-    for (const item of (spine as any).items) {
+    // @ts-ignore - epubjs types can be tricky
+    for (const item of spine.items) {
       try {
         const doc = await book.load(item.href);
         const body = (doc as Document).querySelector('body');
-        // Extract HTML to preserve formatting
         const htmlContent = body ? body.innerHTML || "" : "";
         
         if (htmlContent.trim().length > 50) {
           pagesData.push({
-            id: crypto.randomUUID(),
-            pageNumber: index++,
+            chapterNumber: index++,
             content: htmlContent.trim(),
             title: item.idref || `Chapter ${index - 1}`,
           });
@@ -71,64 +80,107 @@ export default function UploadPage() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() && !selectedFile) return;
+    if (storageType === 'cloud' && !user) {
+      alert("Please sign in to upload to the cloud.");
+      return;
+    }
 
     setLoading(true);
 
     try {
       const docId = crypto.randomUUID();
-      const timestamp = new Date().toISOString();
       let finalTitle = title;
       let finalAuthor = author;
-      let pagesData = [];
+      let chapters: any[] = [];
 
       if (selectedFile && selectedFile.name.endsWith('.epub')) {
         const result = await processEpub(selectedFile);
         finalTitle = result.title;
         finalAuthor = result.author;
-        pagesData = result.pages.map(p => ({
+        chapters = result.pages;
+      } else {
+        setLoadingStatus('Processing text...');
+        const textToUse = content || "No content provided.";
+        const htmlContent = textToUse.split('\n\n').map(p => `<p>${p}</p>`).join('');
+        
+        chapters = [{
+          chapterNumber: 1,
+          content: htmlContent,
+          title: "Full Text",
+        }];
+      }
+
+      if (storageType === 'local') {
+        setLoadingStatus('Saving to browser library...');
+        const timestamp = new Date().toISOString();
+        const pagesData = chapters.map(p => ({
           ...p,
+          id: crypto.randomUUID(),
           splitTextId: docId,
           createdAt: timestamp,
           updatedAt: timestamp
         }));
-      } else {
-        setLoadingStatus('Processing text...');
-        // For plain text, we convert newlines to <p> tags for HTML rendering
-        const textToUse = content || "No content provided.";
-        const htmlContent = textToUse.split('\n\n').map(p => `<p>${p}</p>`).join('');
+
+        const existingData = JSON.parse(localStorage.getItem('novel-reader-data') || '{}');
+        localStorage.setItem('novel-reader-data', JSON.stringify({
+          ...existingData,
+          [docId]: {
+            splitText: { 
+              id: docId, 
+              title: finalTitle, 
+              author: finalAuthor || 'Unknown Author',
+              originalText: content || (selectedFile ? `EPUB: ${selectedFile.name}` : ''), 
+              delimiterType: chapters.length > 1 ? 'epub' : 'singlePage', 
+              delimiterValue: chapters.length.toString(), 
+              createdAt: timestamp, 
+              updatedAt: timestamp 
+            },
+            pages: pagesData
+          }
+        }));
+        router.push(`/local-pages/${docId}/1`);
+      } else if (db) {
+        setLoadingStatus('Uploading to Cloud...');
         
-        pagesData = [{
-          id: crypto.randomUUID(),
-          splitTextId: docId,
-          pageNumber: 1,
-          content: htmlContent,
-          title: "Full Text",
-          createdAt: timestamp,
-          updatedAt: timestamp
-        }];
-      }
+        const bookRef = doc(db, 'splitTexts', docId);
+        const bookData = {
+          title: finalTitle,
+          author: finalAuthor || 'Unknown Author',
+          totalChapters: chapters.length,
+          createdAt: serverTimestamp(),
+        };
 
-      setLoadingStatus('Saving to library...');
-      const existingData = JSON.parse(localStorage.getItem('novel-reader-data') || '{}');
-      
-      localStorage.setItem('novel-reader-data', JSON.stringify({
-        ...existingData,
-        [docId]: {
-          splitText: { 
-            id: docId, 
-            title: finalTitle, 
-            author: finalAuthor || 'Unknown Author',
-            originalText: content || (selectedFile ? `EPUB: ${selectedFile.name}` : ''), 
-            delimiterType: pagesData.length > 1 ? 'epub' : 'singlePage', 
-            delimiterValue: pagesData.length.toString(), 
-            createdAt: timestamp, 
-            updatedAt: timestamp 
-          },
-          pages: pagesData
+        setDoc(bookRef, bookData)
+          .catch(async (err) => {
+            const permissionError = new FirestorePermissionError({
+              path: bookRef.path,
+              operation: 'create',
+              requestResourceData: bookData,
+            } satisfies SecurityRuleContext);
+            errorEmitter.emit('permission-error', permissionError);
+          });
+
+        for (const ch of chapters) {
+          const chapterId = ch.chapterNumber.toString();
+          const chapterRef = doc(db, 'splitTexts', docId, 'pages', chapterId);
+          const chapterData = {
+            ...ch,
+            createdAt: serverTimestamp(),
+          };
+
+          setDoc(chapterRef, chapterData)
+            .catch(async (err) => {
+              const permissionError = new FirestorePermissionError({
+                path: chapterRef.path,
+                operation: 'create',
+                requestResourceData: chapterData,
+              } satisfies SecurityRuleContext);
+              errorEmitter.emit('permission-error', permissionError);
+            });
         }
-      }));
 
-      router.push(`/local-pages/${docId}/1`);
+        router.push(`/pages/${docId}/1`);
+      }
     } catch (error) {
       console.error("Upload failed", error);
       setLoadingStatus('Error processing file.');
@@ -157,11 +209,47 @@ export default function UploadPage() {
                 New Document
               </CardTitle>
               <CardDescription>
-                Files uploaded here are stored locally in your browser.
+                Choose where you want to store your reading material.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleUpload} className="space-y-6">
+                
+                <div className="space-y-4 p-4 bg-muted/30 rounded-xl border">
+                  <Label>Storage Location</Label>
+                  <RadioGroup 
+                    value={storageType} 
+                    onValueChange={(val) => setStorageType(val as 'local' | 'cloud')}
+                    className="grid grid-cols-2 gap-4"
+                  >
+                    <div>
+                      <RadioGroupItem value="local" id="local" className="peer sr-only" />
+                      <Label
+                        htmlFor="local"
+                        className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                      >
+                        <HardDrive className="mb-2 h-6 w-6" />
+                        <span className="font-bold">Local</span>
+                        <span className="text-[10px] text-muted-foreground">Browser Only</span>
+                      </Label>
+                    </div>
+                    <div>
+                      <RadioGroupItem value="cloud" id="cloud" className="peer sr-only" />
+                      <Label
+                        htmlFor="cloud"
+                        className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                      >
+                        <Cloud className="mb-2 h-6 w-6" />
+                        <span className="font-bold">Cloud</span>
+                        <span className="text-[10px] text-muted-foreground">Sync Everywhere</span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  {storageType === 'cloud' && !user && (
+                    <p className="text-xs text-destructive font-medium">Please sign in to enable Cloud storage.</p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="title">Title</Label>
@@ -207,7 +295,7 @@ export default function UploadPage() {
                           <>
                             <Upload className="h-10 w-10 text-muted-foreground mb-2" />
                             <span className="font-medium text-muted-foreground">Click to upload EPUB file</span>
-                            <span className="text-xs text-muted-foreground/60 mt-1">Files are processed locally</span>
+                            <span className="text-xs text-muted-foreground/60 mt-1">EPUB formatting will be preserved</span>
                           </>
                         )}
                       </div>
@@ -245,7 +333,7 @@ export default function UploadPage() {
                   ) : (
                     <>
                       <FileText className="mr-2 h-5 w-5" />
-                      {selectedFile ? 'Import EPUB' : 'Add to Library'}
+                      {storageType === 'cloud' ? 'Upload to Cloud' : 'Save to Browser'}
                     </>
                   )}
                 </Button>
