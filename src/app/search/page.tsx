@@ -1,19 +1,19 @@
-
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from 'react';
+import { useState, useEffect, Suspense, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
-import { Search as SearchIcon, Loader2, BookX, ArrowRight, Zap } from 'lucide-react';
+import { Search as SearchIcon, Loader2, BookX, ArrowRight, Zap, User, Book } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import algoliasearch from 'algoliasearch/lite';
+import { cn } from '@/lib/utils';
 
-// Initialize Algolia client with placeholders
+// Initialize Algolia client
 const ALGOLIA_APP_ID = process.env.NEXT_PUBLIC_ALGOLIA_APP_ID || '';
 const ALGOLIA_SEARCH_KEY = process.env.NEXT_PUBLIC_ALGOLIA_SEARCH_KEY || '';
 
@@ -27,6 +27,10 @@ function SearchResults() {
   const [loading, setLoading] = useState(false);
   const [localQuery, setLocalQuery] = useState(queryTerm);
   const [searchMethod, setSearchMethod] = useState<'firestore' | 'algolia'>('firestore');
+  
+  const [suggestions, setSuggestions] = useState<{title: string, author: string, id: string}[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionRef = useRef<HTMLDivElement>(null);
 
   const algoliaClient = useMemo(() => {
     if (ALGOLIA_APP_ID && ALGOLIA_SEARCH_KEY) {
@@ -35,12 +39,78 @@ function SearchResults() {
     return null;
   }, []);
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (localQuery.trim()) {
-      router.push(`/search?q=${encodeURIComponent(localQuery)}`);
+  const handleSearch = (e?: React.FormEvent, term?: string) => {
+    e?.preventDefault();
+    const finalTerm = term || localQuery;
+    if (finalTerm.trim()) {
+      router.push(`/search?q=${encodeURIComponent(finalTerm)}`);
+      setShowSuggestions(false);
     }
   };
+
+  // Autocomplete Suggestions logic
+  useEffect(() => {
+    if (!db || localQuery.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const fetchSuggestions = async () => {
+      try {
+        // Query by title prefix
+        const titleQuery = query(
+          collection(db, 'books'),
+          where('title', '>=', localQuery),
+          where('title', '<=', localQuery + '\uf8ff'),
+          limit(3)
+        );
+        
+        // Query by author prefix
+        const authorQuery = query(
+          collection(db, 'books'),
+          where('authorName', '>=', localQuery),
+          where('authorName', '<=', localQuery + '\uf8ff'),
+          limit(3)
+        );
+
+        const [titleSnap, authorSnap] = await Promise.all([
+          getDocs(titleQuery),
+          getDocs(authorQuery)
+        ]);
+
+        const items: any[] = [];
+        titleSnap.forEach(doc => {
+          const data = doc.data();
+          items.push({ id: doc.id, title: data.title, author: data.authorName, type: 'title' });
+        });
+        authorSnap.forEach(doc => {
+          const data = doc.data();
+          // Avoid duplicates
+          if (!items.find(i => i.id === doc.id)) {
+            items.push({ id: doc.id, title: data.title, author: data.authorName, type: 'author' });
+          }
+        });
+
+        setSuggestions(items);
+      } catch (err) {
+        console.error("Suggestions error", err);
+      }
+    };
+
+    const debounce = setTimeout(fetchSuggestions, 300);
+    return () => clearTimeout(debounce);
+  }, [localQuery, db]);
+
+  // Handle clicking outside suggestions
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -53,7 +123,6 @@ function SearchResults() {
 
       setLoading(true);
       try {
-        // 1. Try Algolia first if configured
         if (algoliaClient) {
           try {
             const index = algoliaClient.initIndex('books');
@@ -79,7 +148,6 @@ function SearchResults() {
           }
         }
 
-        // 2. Fallback to Firestore Prefix Search
         setSearchMethod('firestore');
         const q = query(
           collection(db, 'books'),
@@ -136,17 +204,49 @@ function SearchResults() {
           </div>
         </div>
 
-        <form onSubmit={handleSearch} className="flex gap-2 w-full md:max-w-sm">
-          <Input 
-            value={localQuery}
-            onChange={(e) => setLocalQuery(e.target.value)}
-            placeholder="Search titles..."
-            className="rounded-xl bg-card border-muted-foreground/20"
-          />
-          <Button type="submit" size="icon" className="rounded-xl shrink-0">
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </form>
+        <div className="relative w-full md:max-w-sm" ref={suggestionRef}>
+          <form onSubmit={(e) => handleSearch(e)} className="flex gap-2">
+            <Input 
+              value={localQuery}
+              onChange={(e) => {
+                setLocalQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              placeholder="Search titles or authors..."
+              className="rounded-xl bg-card border-muted-foreground/20 pr-10"
+            />
+            <Button type="submit" size="icon" className="rounded-xl shrink-0">
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </form>
+
+          {/* Autocomplete Suggestions Dropdown */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="p-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b bg-muted/30">
+                Suggestions
+              </div>
+              <div className="max-h-[300px] overflow-y-auto">
+                {suggestions.map((s: any) => (
+                  <button
+                    key={s.id}
+                    onClick={() => handleSearch(undefined, s.type === 'author' ? s.author : s.title)}
+                    className="w-full flex items-center gap-3 p-3 hover:bg-muted transition-colors text-left group"
+                  >
+                    <div className="bg-muted group-hover:bg-background p-1.5 rounded-lg">
+                      {s.type === 'author' ? <User className="h-3.5 w-3.5 text-primary" /> : <Book className="h-3.5 w-3.5 text-primary" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate">{s.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">By {s.author}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {loading ? (
