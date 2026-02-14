@@ -1,19 +1,20 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/tabs-ui-fix'; // Using internal components or standard shadcn
 import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { Tabs as RadixTabs, TabsContent as RadixTabsContent, TabsList as RadixTabsList, TabsTrigger as RadixTabsTrigger } from '@/components/ui/tabs';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,7 +34,33 @@ export default function LoginPage() {
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
   
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const [loading, setLoading] = useState(false);
+
+  // Live Username Check
+  useEffect(() => {
+    const checkUsername = async () => {
+      const clean = registerUsername.trim().toLowerCase();
+      if (clean.length < 3) {
+        setUsernameStatus('idle');
+        return;
+      }
+
+      setUsernameStatus('checking');
+      try {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('username', '==', clean), limit(1));
+        const snapshot = await getDocs(q);
+        setUsernameStatus(snapshot.empty ? 'available' : 'taken');
+      } catch (err) {
+        console.error("Username check failed", err);
+        setUsernameStatus('idle');
+      }
+    };
+
+    const debounce = setTimeout(checkUsername, 500);
+    return () => clearTimeout(debounce);
+  }, [registerUsername, db]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,14 +83,20 @@ export default function LoginPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUsername = registerUsername.trim().toLowerCase();
+    
     if (cleanUsername.length < 3) {
       toast({ variant: "destructive", title: "Invalid Username", description: "Username must be at least 3 characters." });
       return;
     }
 
+    if (usernameStatus === 'taken') {
+      toast({ variant: "destructive", title: "Username Taken", description: "Please choose another username." });
+      return;
+    }
+
     setLoading(true);
     try {
-      // 1. Check if username is unique
+      // 1. Double check uniqueness just before creation
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('username', '==', cleanUsername), limit(1));
       const snapshot = await getDocs(q);
@@ -137,13 +170,13 @@ export default function LoginPage() {
                 <CardDescription>Sign in to sync your library across devices.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Tabs defaultValue="login" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 mb-8">
-                    <TabsTrigger value="login">Login</TabsTrigger>
-                    <TabsTrigger value="register">Register</TabsTrigger>
-                  </TabsList>
+                <RadixTabs defaultValue="login" className="w-full">
+                  <RadixTabsList className="grid w-full grid-cols-2 mb-8">
+                    <RadixTabsTrigger value="login">Login</RadixTabsTrigger>
+                    <RadixTabsTrigger value="register">Register</RadixTabsTrigger>
+                  </RadixTabsList>
                   
-                  <TabsContent value="login">
+                  <RadixTabsContent value="login">
                     <form onSubmit={handleLogin} className="space-y-4">
                       <div className="space-y-2">
                         <Input 
@@ -152,6 +185,7 @@ export default function LoginPage() {
                           value={loginEmail}
                           onChange={(e) => setLoginEmail(e.target.value)}
                           required
+                          className="rounded-xl"
                         />
                       </div>
                       <div className="space-y-2">
@@ -161,26 +195,37 @@ export default function LoginPage() {
                           value={loginPassword}
                           onChange={(e) => setLoginPassword(e.target.value)}
                           required
+                          className="rounded-xl"
                         />
                       </div>
-                      <Button type="submit" className="w-full py-6 text-lg" disabled={loading}>
+                      <Button type="submit" className="w-full py-6 text-lg rounded-xl" disabled={loading}>
                         {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
                         Sign In
                       </Button>
                     </form>
-                  </TabsContent>
+                  </RadixTabsContent>
                   
-                  <TabsContent value="register">
+                  <RadixTabsContent value="register">
                     <form onSubmit={handleRegister} className="space-y-4">
-                      <div className="space-y-2">
+                      <div className="space-y-2 relative">
                         <Input 
                           type="text" 
                           placeholder="Unique Username" 
                           value={registerUsername}
                           onChange={(e) => setRegisterUsername(e.target.value)}
                           required
-                          className="font-bold"
+                          className={`font-bold rounded-xl pr-10 ${
+                            usernameStatus === 'available' ? 'border-green-500 focus-visible:ring-green-500' : 
+                            usernameStatus === 'taken' ? 'border-destructive focus-visible:ring-destructive' : ''
+                          }`}
                         />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          {usernameStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                          {usernameStatus === 'available' && <Check className="h-4 w-4 text-green-500" />}
+                          {usernameStatus === 'taken' && <X className="h-4 w-4 text-destructive" />}
+                        </div>
+                        {usernameStatus === 'taken' && <p className="text-[10px] font-bold text-destructive uppercase tracking-widest pl-1">Username is taken</p>}
+                        {usernameStatus === 'available' && <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest pl-1">Username is available</p>}
                       </div>
                       <div className="space-y-2">
                         <Input 
@@ -189,6 +234,7 @@ export default function LoginPage() {
                           value={registerEmail}
                           onChange={(e) => setRegisterEmail(e.target.value)}
                           required
+                          className="rounded-xl"
                         />
                       </div>
                       <div className="space-y-2">
@@ -198,15 +244,20 @@ export default function LoginPage() {
                           value={registerPassword}
                           onChange={(e) => setRegisterPassword(e.target.value)}
                           required
+                          className="rounded-xl"
                         />
                       </div>
-                      <Button type="submit" className="w-full py-6 text-lg" disabled={loading}>
+                      <Button 
+                        type="submit" 
+                        className="w-full py-6 text-lg rounded-xl" 
+                        disabled={loading || usernameStatus === 'taken' || usernameStatus === 'checking'}
+                      >
                         {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
                         Create Account
                       </Button>
                     </form>
-                  </TabsContent>
-                </Tabs>
+                  </RadixTabsContent>
+                </RadixTabs>
               </CardContent>
             </Card>
           ) : (
@@ -228,7 +279,13 @@ export default function LoginPage() {
                     <span className="text-sm text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Authenticated</span>
                   </div>
                 </div>
-                <Button variant="outline" className="w-full py-6 text-lg text-destructive hover:text-destructive hover:bg-destructive/5" onClick={handleSignOut}>
+                <div className="p-4 bg-muted/30 rounded-xl border space-y-2">
+                  <p className="text-sm font-medium">Member Since</p>
+                  <p className="text-sm text-muted-foreground">
+                    {profile?.createdAt ? new Date(profile.createdAt.seconds * 1000).toLocaleDateString() : 'New Member'}
+                  </p>
+                </div>
+                <Button variant="outline" className="w-full py-6 text-lg text-destructive hover:text-destructive hover:bg-destructive/5 rounded-xl border-destructive/20" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-5 w-5" />
                   Sign Out
                 </Button>
