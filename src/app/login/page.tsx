@@ -6,7 +6,6 @@ import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/tabs-ui-fix'; // Using internal components or standard shadcn
 import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
@@ -14,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { Tabs as RadixTabs, TabsContent as RadixTabsContent, TabsList as RadixTabsList, TabsTrigger as RadixTabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,7 +22,6 @@ export default function LoginPage() {
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
-  // Fetch profile if user is logged in
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
   const { data: profile, isLoading: isProfileLoading } = useDoc(profileRef);
 
@@ -37,7 +35,6 @@ export default function LoginPage() {
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const [loading, setLoading] = useState(false);
 
-  // Live Username Check
   useEffect(() => {
     const checkUsername = async () => {
       const clean = registerUsername.trim().toLowerCase();
@@ -53,7 +50,6 @@ export default function LoginPage() {
         const snapshot = await getDocs(q);
         setUsernameStatus(snapshot.empty ? 'available' : 'taken');
       } catch (err) {
-        console.error("Username check failed", err);
         setUsernameStatus('idle');
       }
     };
@@ -70,11 +66,7 @@ export default function LoginPage() {
       toast({ title: "Welcome back!", description: "Successfully logged in." });
       router.push('/');
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: error.message
-      });
+      toast({ variant: "destructive", title: "Login failed", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -84,11 +76,6 @@ export default function LoginPage() {
     e.preventDefault();
     const cleanUsername = registerUsername.trim().toLowerCase();
     
-    if (cleanUsername.length < 3) {
-      toast({ variant: "destructive", title: "Invalid Username", description: "Username must be at least 3 characters." });
-      return;
-    }
-
     if (usernameStatus === 'taken') {
       toast({ variant: "destructive", title: "Username Taken", description: "Please choose another username." });
       return;
@@ -96,20 +83,9 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // 1. Double check uniqueness just before creation
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('username', '==', cleanUsername), limit(1));
-      const snapshot = await getDocs(q);
-      
-      if (!snapshot.empty) {
-        throw new Error('This username is already taken. Please choose another one.');
-      }
-
-      // 2. Create Firebase Auth user
       const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      // 3. Create user profile document in Firestore (Non-blocking)
       const userRef = doc(db, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
@@ -118,7 +94,7 @@ export default function LoginPage() {
         createdAt: serverTimestamp(),
       };
 
-      setDoc(userRef, profileData).catch(async (err) => {
+      await setDoc(userRef, profileData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'create',
@@ -129,11 +105,7 @@ export default function LoginPage() {
       toast({ title: "Account created!", description: `Welcome to the Literary Lounge, ${cleanUsername}!` });
       router.push('/');
     } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Registration failed",
-        description: error.message
-      });
+      toast({ variant: "destructive", title: "Registration failed", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -160,7 +132,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
-      
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-md mx-auto">
           {isAnonymous ? (
@@ -170,94 +141,46 @@ export default function LoginPage() {
                 <CardDescription>Sign in to sync your library across devices.</CardDescription>
               </CardHeader>
               <CardContent>
-                <RadixTabs defaultValue="login" className="w-full">
-                  <RadixTabsList className="grid w-full grid-cols-2 mb-8">
-                    <RadixTabsTrigger value="login">Login</RadixTabsTrigger>
-                    <RadixTabsTrigger value="register">Register</RadixTabsTrigger>
-                  </RadixTabsList>
-                  
-                  <RadixTabsContent value="login">
+                <Tabs defaultValue="login" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 mb-8">
+                    <TabsTrigger value="login">Login</TabsTrigger>
+                    <TabsTrigger value="register">Register</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="login">
                     <form onSubmit={handleLogin} className="space-y-4">
-                      <div className="space-y-2">
-                        <Input 
-                          type="email" 
-                          placeholder="Email" 
-                          value={loginEmail}
-                          onChange={(e) => setLoginEmail(e.target.value)}
-                          required
-                          className="rounded-xl"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Input 
-                          type="password" 
-                          placeholder="Password" 
-                          value={loginPassword}
-                          onChange={(e) => setLoginPassword(e.target.value)}
-                          required
-                          className="rounded-xl"
-                        />
-                      </div>
+                      <Input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
+                      <Input type="password" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
                       <Button type="submit" className="w-full py-6 text-lg rounded-xl" disabled={loading}>
                         {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
                         Sign In
                       </Button>
                     </form>
-                  </RadixTabsContent>
-                  
-                  <RadixTabsContent value="register">
+                  </TabsContent>
+                  <TabsContent value="register">
                     <form onSubmit={handleRegister} className="space-y-4">
-                      <div className="space-y-2 relative">
+                      <div className="relative">
                         <Input 
-                          type="text" 
                           placeholder="Unique Username" 
-                          value={registerUsername}
-                          onChange={(e) => setRegisterUsername(e.target.value)}
-                          required
-                          className={`font-bold rounded-xl pr-10 ${
-                            usernameStatus === 'available' ? 'border-green-500 focus-visible:ring-green-500' : 
-                            usernameStatus === 'taken' ? 'border-destructive focus-visible:ring-destructive' : ''
-                          }`}
+                          value={registerUsername} 
+                          onChange={(e) => setRegisterUsername(e.target.value)} 
+                          required 
+                          className={usernameStatus === 'available' ? 'border-green-500' : usernameStatus === 'taken' ? 'border-destructive' : ''}
                         />
                         <div className="absolute right-3 top-1/2 -translate-y-1/2">
                           {usernameStatus === 'checking' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                           {usernameStatus === 'available' && <Check className="h-4 w-4 text-green-500" />}
                           {usernameStatus === 'taken' && <X className="h-4 w-4 text-destructive" />}
                         </div>
-                        {usernameStatus === 'taken' && <p className="text-[10px] font-bold text-destructive uppercase tracking-widest pl-1">Username is taken</p>}
-                        {usernameStatus === 'available' && <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest pl-1">Username is available</p>}
                       </div>
-                      <div className="space-y-2">
-                        <Input 
-                          type="email" 
-                          placeholder="Email" 
-                          value={registerEmail}
-                          onChange={(e) => setRegisterEmail(e.target.value)}
-                          required
-                          className="rounded-xl"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Input 
-                          type="password" 
-                          placeholder="Password" 
-                          value={registerPassword}
-                          onChange={(e) => setRegisterPassword(e.target.value)}
-                          required
-                          className="rounded-xl"
-                        />
-                      </div>
-                      <Button 
-                        type="submit" 
-                        className="w-full py-6 text-lg rounded-xl" 
-                        disabled={loading || usernameStatus === 'taken' || usernameStatus === 'checking'}
-                      >
+                      <Input type="email" placeholder="Email" value={registerEmail} onChange={(e) => setRegisterEmail(e.target.value)} required />
+                      <Input type="password" placeholder="Password" value={registerPassword} onChange={(e) => setRegisterPassword(e.target.value)} required />
+                      <Button type="submit" className="w-full py-6 text-lg rounded-xl" disabled={loading || usernameStatus === 'taken' || usernameStatus === 'checking'}>
                         {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
                         Create Account
                       </Button>
                     </form>
-                  </RadixTabsContent>
-                </RadixTabs>
+                  </TabsContent>
+                </Tabs>
               </CardContent>
             </Card>
           ) : (
@@ -267,27 +190,13 @@ export default function LoginPage() {
                   <UserIcon className="h-10 w-10 text-primary" />
                 </div>
                 <CardTitle className="text-2xl font-headline font-bold">
-                  {isProfileLoading ? "Loading Profile..." : (profile?.username || "Your Account")}
+                  {isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}
                 </CardTitle>
                 <CardDescription>{user.email}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="p-4 bg-muted/30 rounded-xl border space-y-2">
-                  <p className="text-sm font-medium">Account Status</p>
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                    <span className="text-sm text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Authenticated</span>
-                  </div>
-                </div>
-                <div className="p-4 bg-muted/30 rounded-xl border space-y-2">
-                  <p className="text-sm font-medium">Member Since</p>
-                  <p className="text-sm text-muted-foreground">
-                    {profile?.createdAt ? new Date(profile.createdAt.seconds * 1000).toLocaleDateString() : 'New Member'}
-                  </p>
-                </div>
-                <Button variant="outline" className="w-full py-6 text-lg text-destructive hover:text-destructive hover:bg-destructive/5 rounded-xl border-destructive/20" onClick={handleSignOut}>
-                  <LogOut className="mr-2 h-5 w-5" />
-                  Sign Out
+                <Button variant="outline" className="w-full py-6 text-lg text-destructive hover:bg-destructive/5 rounded-xl border-destructive/20" onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-5 w-5" /> Sign Out
                 </Button>
               </CardContent>
             </Card>

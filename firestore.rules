@@ -6,7 +6,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Checks if the user's email is in the global approved list
     function isApproved() {
       return isSignedIn() && 
              exists(/databases/$(database)/documents/settings/approvedEmails) &&
@@ -15,31 +14,20 @@ service cloud.firestore {
 
     match /settings/approvedEmails {
       allow get: if isSignedIn();
-      allow write: if false; // Only manageable via console or admin
+      allow write: if false;
     }
 
     match /users/{userId} {
       allow get: if isSignedIn() && request.auth.uid == userId;
-      // Allow searching for usernames during registration (isSignedIn covers anonymous sessions)
       allow list: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId && request.resource.data.uid == resource.data.uid;
-      allow delete: if isSignedIn() && request.auth.uid == userId;
-
-      match /readingProgress/{progressId} {
-        allow get, list: if isSignedIn() && request.auth.uid == userId;
-        allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.userId == userId;
-        allow update: if isSignedIn() && request.auth.uid == userId && request.resource.data.userId == resource.data.userId;
-        allow delete: if isSignedIn() && request.auth.uid == userId;
-      }
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId;
     }
 
     match /books/{bookId} {
-      // Anyone can read books
       allow read: if true;
-
-      // Only allow writes if the user is logged in AND email is whitelisted
-      allow create, update, delete: if isApproved();
+      allow create: if isApproved();
+      allow update, delete: if isApproved() && resource.data.metadata.info.ownerId == request.auth.uid;
 
       match /metadata/info {
         allow read: if true;
