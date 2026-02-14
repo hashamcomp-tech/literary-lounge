@@ -9,8 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive, User, Book } from 'lucide-react';
+import { Upload, BookPlus, Loader2, FileText, CheckCircle2, User, Book } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
@@ -38,19 +37,22 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
     }
 
     const fetchSuggestions = async () => {
-      // Autocomplete queries might need adjustment based on the new metadata/info sub-document structure
-      // For simplicity, we'll try to match bookId prefixes which contain author_title
+      const fieldPath = type === 'author' ? 'metadata.info.author' : 'metadata.info.bookTitle';
       const q = query(
         collection(db, 'books'),
-        limit(50)
+        where(fieldPath, '>=', value),
+        where(fieldPath, '<=', value + '\uf8ff'),
+        limit(5)
       );
       try {
         const snap = await getDocs(q);
-        // This is a bit expensive, in production you'd use a search service or a dedicated flat collection
         const items: string[] = [];
-        // We'd ideally query the metadata subcollection, but Firestore doesn't support easy prefix search across subcollections without collectionGroups
-        // For this MVP we will rely on the user input or previous knowledge
-        setSuggestions([]); 
+        snap.forEach(doc => {
+          const data = doc.data();
+          const val = type === 'author' ? data.metadata?.info?.author : data.metadata?.info?.bookTitle;
+          if (val) items.push(val);
+        });
+        setSuggestions([...new Set(items)]);
       } catch (e) {
         console.error("Suggestions error", e);
       }
@@ -118,7 +120,6 @@ export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
-  const [storageType, setStorageType] = useState<'local' | 'cloud'>('local');
 
   const slugify = (text: string) => {
     return text
@@ -175,16 +176,7 @@ export default function UploadPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() && !selectedFile) return;
-    if (storageType === 'cloud' && !user) {
-      toast({
-        variant: "destructive",
-        title: "Authentication Required",
-        description: "Please sign in to upload to the cloud."
-      });
-      return;
-    }
-
+    
     setLoading(true);
 
     try {
@@ -198,10 +190,13 @@ export default function UploadPage() {
         finalAuthor = result.author;
         chapters = result.pages;
       } else {
-        setLoadingStatus('Processing text...');
-        const textToUse = content || "No content provided.";
+        const textToUse = content || "";
+        if (!textToUse.trim()) {
+          toast({ variant: 'destructive', title: 'Error', description: 'Please paste text or upload a file.' });
+          setLoading(false);
+          return;
+        }
         const htmlContent = textToUse.split('\n\n').map(p => `<p>${p}</p>`).join('');
-        
         chapters = [{
           chapterNumber: parseInt(chapterNumber) || 1,
           content: htmlContent,
@@ -209,90 +204,104 @@ export default function UploadPage() {
         }];
       }
 
-      const bookId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
+      if (finalAuthor && finalTitle) {
+        if (!user) {
+          toast({ variant: 'destructive', title: 'Error', description: 'Please log in for cloud storage.' });
+          setLoading(false);
+          return;
+        }
 
-      if (storageType === 'local') {
-        setLoadingStatus('Saving to browser library...');
-        const timestamp = new Date().toISOString();
-        const pagesData = chapters.map(p => ({
-          ...p,
-          id: crypto.randomUUID(),
-          novelId: bookId,
-          createdAt: timestamp,
-          updatedAt: timestamp
-        }));
-
-        const existingData = JSON.parse(localStorage.getItem('novel-reader-data') || '{}');
-        localStorage.setItem('novel-reader-data', JSON.stringify({
-          ...existingData,
-          [bookId]: {
-            splitText: { 
-              id: bookId, 
-              title: finalTitle, 
-              authorName: finalAuthor || 'Unknown Author',
-              description: content.substring(0, 100) + '...',
-              coverImageUrl: `https://picsum.photos/seed/${bookId}/400/600`,
-              publicationDate: timestamp,
-              genres: ['Uncategorized'],
-              language: 'en',
-              createdAt: timestamp, 
-              updatedAt: timestamp 
-            },
-            pages: pagesData
-          }
-        }));
-        router.push(`/local-pages/${bookId}/${chapters[0]?.chapterNumber || 1}`);
-      } else if (db && user) {
-        setLoadingStatus('Uploading Metadata...');
+        setLoadingStatus('Uploading to cloud...');
+        const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
+        const bookRef = doc(db, 'books', docId);
         
-        const metadataRef = doc(db, 'books', bookId, 'metadata', 'info');
-        const metadataData = {
-          author: finalAuthor || 'Unknown Author',
-          bookTitle: finalTitle,
-          ownerId: user.uid,
-          lastUpdated: serverTimestamp(),
-          totalChapters: chapters.length,
+        // Metadata Structure: nested map for search + sub-document for details
+        const metadataMap = {
+          info: {
+            author: finalAuthor,
+            bookTitle: finalTitle,
+            lastUpdated: serverTimestamp(),
+            ownerId: user.uid,
+            totalChapters: chapters.length
+          }
         };
 
-        setDoc(metadataRef, metadataData, { merge: true })
-          .catch(async () => {
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-              path: metadataRef.path,
-              operation: 'write',
-              requestResourceData: metadataData,
-            } satisfies SecurityRuleContext));
-          });
+        // Update root doc for searchability
+        await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: bookRef.path,
+            operation: 'write',
+            requestResourceData: { metadata: metadataMap }
+          }));
+        });
 
-        setLoadingStatus('Uploading Chapters...');
+        // Update sub-document as per structure requirement
+        const infoRef = doc(db, 'books', docId, 'metadata', 'info');
+        await setDoc(infoRef, metadataMap.info, { merge: true }).catch(err => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: infoRef.path,
+            operation: 'write',
+            requestResourceData: metadataMap.info
+          }));
+        });
+
+        // Upload Chapters
         for (const ch of chapters) {
-          const chapterRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
-          const chapterData = {
-            ownerId: user.uid,
-            chapterNumber: ch.chapterNumber,
+          const chRef = doc(db, 'books', docId, 'chapters', ch.chapterNumber.toString());
+          const chData = {
             content: ch.content,
+            chapterNumber: ch.chapterNumber,
+            title: ch.title || `Chapter ${ch.chapterNumber}`,
+            ownerId: user.uid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
-
-          setDoc(chapterRef, chapterData, { merge: true })
-            .catch(async () => {
-              errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: chapterRef.path,
-                operation: 'write',
-                requestResourceData: chapterData,
-              } satisfies SecurityRuleContext));
-            });
+          
+          await setDoc(chRef, chData, { merge: true }).catch(err => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+              path: chRef.path,
+              operation: 'write',
+              requestResourceData: chData
+            }));
+          });
         }
 
-        router.push(`/pages/${bookId}/${chapters[0]?.chapterNumber || 1}`);
+        router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
+      } else {
+        // LOCAL storage for simple texts without metadata
+        setLoadingStatus('Saving locally...');
+        const docId = crypto.randomUUID();
+        const textToUse = content || "";
+        const pagesData = [{ 
+          id: crypto.randomUUID(), 
+          novelId: docId, 
+          pageNumber: 1, 
+          content: textToUse.split('\n\n').map(p => `<p>${p}</p>`).join(''),
+          createdAt: new Date().toISOString(), 
+          updatedAt: new Date().toISOString() 
+        }];
+
+        const allLocalData = JSON.parse(localStorage.getItem('novel-reader-data') || '{}');
+        allLocalData[docId] = {
+          splitText: { 
+            id: docId, 
+            title: textToUse.substring(0, 30) + '...', 
+            author: 'Local User',
+            createdAt: new Date().toISOString(), 
+            updatedAt: new Date().toISOString() 
+          },
+          pages: pagesData
+        };
+        localStorage.setItem('novel-reader-data', JSON.stringify(allLocalData));
+
+        router.push(`/local-pages/${docId}/1`);
       }
     } catch (error) {
       console.error("Upload failed", error);
-      setLoadingStatus('Error processing file.');
       toast({
         variant: "destructive",
         title: "Upload Failed",
-        description: "There was an error processing your file."
+        description: "An unexpected error occurred."
       });
     } finally {
       setLoading(false);
@@ -306,9 +315,9 @@ export default function UploadPage() {
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-10">
-            <h1 className="text-4xl font-headline font-black mb-4">Upload a Novel</h1>
+            <h1 className="text-4xl font-headline font-black mb-4">Add to Library</h1>
             <p className="text-lg text-muted-foreground">
-              Add your own texts or EPUB files to your personal library.
+              Add your own texts or EPUB files. If author and title are provided, we'll sync it to the cloud.
             </p>
           </div>
 
@@ -316,47 +325,15 @@ export default function UploadPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BookPlus className="h-5 w-5 text-primary" />
-                New Document
+                New Novel
               </CardTitle>
               <CardDescription>
-                Choose where you want to store your reading material.
+                Provide metadata to enable cloud storage across your devices.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleUpload} className="space-y-6">
                 
-                <div className="space-y-4 p-4 bg-muted/30 rounded-xl border">
-                  <Label>Storage Location</Label>
-                  <RadioGroup 
-                    value={storageType} 
-                    onValueChange={(val) => setStorageType(val as 'local' | 'cloud')}
-                    className="grid grid-cols-2 gap-4"
-                  >
-                    <div>
-                      <RadioGroupItem value="local" id="local" className="peer sr-only" />
-                      <Label
-                        htmlFor="local"
-                        className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                      >
-                        <HardDrive className="mb-2 h-6 w-6" />
-                        <span className="font-bold">Local</span>
-                        <span className="text-[10px] text-muted-foreground">Browser Only</span>
-                      </Label>
-                    </div>
-                    <div>
-                      <RadioGroupItem value="cloud" id="cloud" className="peer sr-only" />
-                      <Label
-                        htmlFor="cloud"
-                        className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
-                      >
-                        <Cloud className="mb-2 h-6 w-6" />
-                        <span className="font-bold">Cloud</span>
-                        <span className="text-[10px] text-muted-foreground">Sync Everywhere</span>
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
                 <div className="space-y-4">
                   <div className="grid gap-2">
                     <Label htmlFor="author" className="text-base font-bold">Author</Label>
@@ -382,24 +359,21 @@ export default function UploadPage() {
                     <Label htmlFor="chapterNumber" className="text-base font-bold">Chapter Number</Label>
                     <Input 
                       id="chapterNumber" 
-                      name="chapterNumber" 
                       type="number" 
                       min={1} 
                       value={chapterNumber}
                       onChange={(e) => setChapterNumber(e.target.value)}
-                      required 
                       className="bg-background/50"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-4 pt-4 border-t">
-                  <Label className="text-base font-bold">Import Method</Label>
+                  <Label className="text-base font-bold">Content</Label>
                   <div className="grid grid-cols-1 gap-4">
                     <div className={`relative border-2 border-dashed rounded-xl p-6 transition-colors ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
                       <input
                         type="file"
-                        id="epub-upload"
                         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         accept=".epub"
                         onChange={handleFileChange}
@@ -414,29 +388,24 @@ export default function UploadPage() {
                         ) : (
                           <>
                             <Upload className="h-10 w-10 text-muted-foreground mb-2" />
-                            <span className="font-medium text-muted-foreground">Click to upload EPUB file</span>
-                            <span className="text-xs text-muted-foreground/60 mt-1">EPUB formatting will be preserved</span>
+                            <span className="font-medium text-muted-foreground">Click to upload EPUB</span>
                           </>
                         )}
                       </div>
                     </div>
 
                     <div className="relative text-center">
-                      <span className="bg-card px-2 text-xs font-bold text-muted-foreground uppercase relative z-10">OR</span>
+                      <span className="bg-card px-2 text-xs font-bold text-muted-foreground uppercase relative z-10">OR PASTE TEXT</span>
                       <div className="absolute top-1/2 left-0 w-full h-px bg-border" />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="content">Paste Content</Label>
-                      <Textarea
-                        id="content"
-                        placeholder="Paste your novel content here if not using a file..."
-                        className="min-h-[200px] text-lg leading-relaxed p-4"
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        disabled={!!selectedFile}
-                      />
-                    </div>
+                    <Textarea
+                      placeholder="Paste your content here..."
+                      className="min-h-[200px] text-lg leading-relaxed p-4"
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      disabled={!!selectedFile}
+                    />
                   </div>
                 </div>
 
@@ -453,7 +422,7 @@ export default function UploadPage() {
                   ) : (
                     <>
                       <FileText className="mr-2 h-5 w-5" />
-                      {storageType === 'cloud' ? 'Upload to Cloud' : 'Save to Browser'}
+                      Save Novel
                     </>
                   )}
                 </Button>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, Suspense, useMemo, useRef } from 'react';
@@ -11,7 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import algoliasearch from 'algoliasearch/lite';
-import { cn } from '@/lib/utils';
 
 // Initialize Algolia client
 const ALGOLIA_APP_ID = process.env.NEXT_PUBLIC_ALGOLIA_APP_ID || '';
@@ -48,7 +48,6 @@ function SearchResults() {
     }
   };
 
-  // Autocomplete Suggestions logic
   useEffect(() => {
     if (!db || localQuery.length < 2) {
       setSuggestions([]);
@@ -57,19 +56,17 @@ function SearchResults() {
 
     const fetchSuggestions = async () => {
       try {
-        // Query by title prefix
         const titleQuery = query(
           collection(db, 'books'),
-          where('title', '>=', localQuery),
-          where('title', '<=', localQuery + '\uf8ff'),
+          where('metadata.info.bookTitle', '>=', localQuery),
+          where('metadata.info.bookTitle', '<=', localQuery + '\uf8ff'),
           limit(5)
         );
         
-        // Query by author prefix
         const authorQuery = query(
           collection(db, 'books'),
-          where('authorName', '>=', localQuery),
-          where('authorName', '<=', localQuery + '\uf8ff'),
+          where('metadata.info.author', '>=', localQuery),
+          where('metadata.info.author', '<=', localQuery + '\uf8ff'),
           limit(5)
         );
 
@@ -81,19 +78,16 @@ function SearchResults() {
         const items: any[] = [];
         titleSnap.forEach(doc => {
           const data = doc.data();
-          items.push({ id: doc.id, title: data.title, author: data.authorName, type: 'book' });
+          items.push({ id: doc.id, title: data.metadata.info.bookTitle, author: data.metadata.info.author, type: 'book' });
         });
         authorSnap.forEach(doc => {
           const data = doc.data();
-          // Avoid duplicates
           if (!items.find(i => i.id === doc.id)) {
-            items.push({ id: doc.id, title: data.title, author: data.authorName, type: 'author' });
+            items.push({ id: doc.id, title: data.metadata.info.bookTitle, author: data.metadata.info.author, type: 'author' });
           }
         });
 
-        // Remove duplicates and limit
-        const uniqueSuggestions = items.slice(0, 8);
-        setSuggestions(uniqueSuggestions);
+        setSuggestions(items.slice(0, 8));
       } catch (err) {
         console.error("Suggestions error", err);
       }
@@ -102,17 +96,6 @@ function SearchResults() {
     const debounce = setTimeout(fetchSuggestions, 300);
     return () => clearTimeout(debounce);
   }, [localQuery, db]);
-
-  // Handle clicking outside suggestions
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) {
-        setShowSuggestions(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -131,39 +114,32 @@ function SearchResults() {
             const { hits } = await index.search(queryTerm, { hitsPerPage: 24 });
             
             if (hits.length > 0) {
-              const algoliaResults = hits.map((hit: any) => ({
+              setResults(hits.map((hit: any) => ({
                 id: hit.objectID || hit.id,
-                title: hit.title || hit.bookTitle,
+                title: hit.bookTitle || hit.title,
                 author: hit.author || hit.authorName || 'Unknown Author',
-                genre: hit.genre || (hit.genres?.[0]) || 'Novel',
-                summary: hit.summary || hit.description || '',
-                coverImage: hit.coverImageUrl || hit.coverImage || '',
-                chapters: hit.chapters || []
-              }));
-              setResults(algoliaResults);
+                genre: hit.genre || 'Novel',
+                coverImage: hit.coverImageUrl || hit.coverImage || `https://picsum.photos/seed/${hit.id}/400/600`,
+              })));
               setSearchMethod('algolia');
               setLoading(false);
               return;
             }
-          } catch (algoliaError) {
-            console.error("Algolia search failed, falling back to Firestore", algoliaError);
-          }
+          } catch (e) {}
         }
 
         setSearchMethod('firestore');
-        // Search by title prefix
         const qTitle = query(
           collection(db, 'books'),
-          where('title', '>=', queryTerm),
-          where('title', '<=', queryTerm + '\uf8ff'),
+          where('metadata.info.bookTitle', '>=', queryTerm),
+          where('metadata.info.bookTitle', '<=', queryTerm + '\uf8ff'),
           limit(24)
         );
 
-        // Search by author prefix
         const qAuthor = query(
           collection(db, 'books'),
-          where('authorName', '>=', queryTerm),
-          where('authorName', '<=', queryTerm + '\uf8ff'),
+          where('metadata.info.author', '>=', queryTerm),
+          where('metadata.info.author', '<=', queryTerm + '\uf8ff'),
           limit(24)
         );
 
@@ -173,30 +149,15 @@ function SearchResults() {
         ]);
 
         const combinedMap = new Map();
-        titleSnap.docs.forEach(doc => {
+        [...titleSnap.docs, ...authorSnap.docs].forEach(doc => {
           const data = doc.data();
           combinedMap.set(doc.id, {
             id: doc.id,
-            title: data.title,
-            author: data.authorName || 'Unknown Author',
-            genre: data.genres?.[0] || 'Novel',
-            summary: data.description || '',
-            coverImage: data.coverImageUrl || '',
+            title: data.metadata.info.bookTitle,
+            author: data.metadata.info.author,
+            genre: 'Novel',
+            coverImage: `https://picsum.photos/seed/${doc.id}/400/600`,
           });
-        });
-
-        authorSnap.docs.forEach(doc => {
-          if (!combinedMap.has(doc.id)) {
-            const data = doc.data();
-            combinedMap.set(doc.id, {
-              id: doc.id,
-              title: data.title,
-              author: data.authorName || 'Unknown Author',
-              genre: data.genres?.[0] || 'Novel',
-              summary: data.description || '',
-              coverImage: data.coverImageUrl || '',
-            });
-          }
         });
 
         setResults(Array.from(combinedMap.values()));
@@ -228,7 +189,7 @@ function SearchResults() {
               )}
             </div>
             <p className="text-muted-foreground">
-              {loading ? "Searching our library..." : `${results.length} results found for "${queryTerm}"`}
+              {loading ? "Searching..." : `${results.length} results for "${queryTerm}"`}
             </p>
           </div>
         </div>
@@ -243,75 +204,54 @@ function SearchResults() {
               }}
               onFocus={() => setShowSuggestions(true)}
               placeholder="Search titles or authors..."
-              className="rounded-xl bg-card border-muted-foreground/20 pr-10"
+              className="rounded-xl"
             />
-            <Button type="submit" size="icon" className="rounded-xl shrink-0">
+            <Button type="submit" size="icon" className="rounded-xl">
               <ArrowRight className="h-4 w-4" />
             </Button>
           </form>
 
-          {/* Autocomplete Suggestions Dropdown */}
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="p-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b bg-muted/30">
-                Suggestions
-              </div>
-              <div className="max-h-[350px] overflow-y-auto">
-                {suggestions.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      const searchTerm = s.type === 'author' ? s.author : s.title;
-                      setLocalQuery(searchTerm);
-                      handleSearch(undefined, searchTerm);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-muted transition-colors text-left group"
-                  >
-                    <div className="bg-muted group-hover:bg-background p-1.5 rounded-lg">
-                      {s.type === 'author' ? <User className="h-3.5 w-3.5 text-primary" /> : <Book className="h-3.5 w-3.5 text-primary" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold truncate">{s.title}</p>
-                      <p className="text-xs text-muted-foreground truncate">By {s.author}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-xl shadow-xl z-50 overflow-hidden">
+              {suggestions.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    const term = s.type === 'author' ? s.author : s.title;
+                    setLocalQuery(term);
+                    handleSearch(undefined, term);
+                  }}
+                  className="w-full flex items-center gap-3 p-3 hover:bg-muted text-left"
+                >
+                  <div className="p-1.5 rounded-lg bg-muted">
+                    {s.type === 'author' ? <User className="h-3.5 w-3.5" /> : <Book className="h-3.5 w-3.5" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold truncate">{s.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">By {s.author}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
       </div>
 
       {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center gap-4">
+        <div className="py-20 flex flex-col items-center justify-center">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-          <p className="text-sm font-medium text-muted-foreground animate-pulse">Scouring the lounge...</p>
         </div>
       ) : results.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 sm:gap-8">
           {results.map((book) => (
-            <NovelCard 
-              key={book.id} 
-              novel={book} 
-            />
+            <NovelCard key={book.id} novel={book} />
           ))}
         </div>
       ) : (
         <div className="py-20 text-center">
-          <div className="bg-muted w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <BookX className="h-10 w-10 text-muted-foreground opacity-20" />
-          </div>
+          <BookX className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-20" />
           <h2 className="text-2xl font-headline font-bold mb-2">No matches found</h2>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            We couldn't find any books matching "{queryTerm}". Try searching for a specific title or check your spelling.
-          </p>
-          <Button 
-            variant="outline" 
-            className="mt-8 rounded-xl"
-            onClick={() => router.push('/')}
-          >
-            Back to Library
-          </Button>
+          <Button variant="outline" className="mt-4" onClick={() => router.push('/')}>Back to Library</Button>
         </div>
       )}
     </div>
@@ -322,11 +262,7 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen pb-20">
       <Navbar />
-      <Suspense fallback={
-        <div className="flex-1 flex items-center justify-center pt-20">
-          <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-        </div>
-      }>
+      <Suspense fallback={null}>
         <SearchResults />
       </Suspense>
     </div>
