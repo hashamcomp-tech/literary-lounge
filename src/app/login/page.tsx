@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuth, useUser, useFirestore } from '@/firebase';
+import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, UserCheck } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
@@ -22,6 +22,10 @@ export default function LoginPage() {
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
+  // Fetch profile if user is logged in
+  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  const { data: profile, isLoading: isProfileLoading } = useDoc(profileRef);
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   
@@ -51,11 +55,17 @@ export default function LoginPage() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanUsername = registerUsername.trim().toLowerCase();
+    if (cleanUsername.length < 3) {
+      toast({ variant: "destructive", title: "Invalid Username", description: "Username must be at least 3 characters." });
+      return;
+    }
+
     setLoading(true);
     try {
       // 1. Check if username is unique
       const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('username', '==', registerUsername), limit(1));
+      const q = query(usersRef, where('username', '==', cleanUsername), limit(1));
       const snapshot = await getDocs(q);
       
       if (!snapshot.empty) {
@@ -66,25 +76,24 @@ export default function LoginPage() {
       const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      // 3. Create user profile document in Firestore
+      // 3. Create user profile document in Firestore (Non-blocking)
       const userRef = doc(db, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
-        username: registerUsername,
+        username: cleanUsername,
         email: newUser.email,
         createdAt: serverTimestamp(),
       };
 
       setDoc(userRef, profileData).catch(async (err) => {
-        const permissionError = new FirestorePermissionError({
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'create',
           requestResourceData: profileData,
-        });
-        errorEmitter.emit('permission-error', permissionError);
+        }));
       });
 
-      toast({ title: "Account created!", description: `Welcome to the Literary Lounge, ${registerUsername}!` });
+      toast({ title: "Account created!", description: `Welcome to the Literary Lounge, ${cleanUsername}!` });
       router.push('/');
     } catch (error: any) {
       toast({
@@ -113,7 +122,7 @@ export default function LoginPage() {
     );
   }
 
-  const isAnonymous = user?.isAnonymous;
+  const isAnonymous = !user || user.isAnonymous;
 
   return (
     <div className="min-h-screen pb-20 bg-background">
@@ -121,7 +130,7 @@ export default function LoginPage() {
       
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-md mx-auto">
-          {!user || isAnonymous ? (
+          {isAnonymous ? (
             <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
               <CardHeader className="text-center">
                 <CardTitle className="text-3xl font-headline font-black">Welcome</CardTitle>
@@ -206,7 +215,9 @@ export default function LoginPage() {
                 <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
                   <UserIcon className="h-10 w-10 text-primary" />
                 </div>
-                <CardTitle className="text-2xl font-headline font-bold">Your Account</CardTitle>
+                <CardTitle className="text-2xl font-headline font-bold">
+                  {isProfileLoading ? "Loading Profile..." : (profile?.username || "Your Account")}
+                </CardTitle>
                 <CardDescription>{user.email}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
