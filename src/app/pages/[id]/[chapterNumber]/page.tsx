@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
@@ -17,7 +17,7 @@ export default function CloudReader() {
   const router = useRouter();
   
   const [chapter, setChapter] = useState<any>(null);
-  const [totalChapters, setTotalChapters] = useState(1);
+  const [metadata, setMetadata] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
   const [fontSize, setFontSize] = useState(18);
@@ -29,15 +29,15 @@ export default function CloudReader() {
     const fetchData = async () => {
       setLoading(true);
       
-      // Get Novel Metadata to find total chapters
-      const bookRef = doc(db, 'books', id);
-      getDoc(bookRef).then((snapshot) => {
+      // Get Novel Metadata from metadata/info sub-document
+      const metaRef = doc(db, 'books', id, 'metadata', 'info');
+      getDoc(metaRef).then((snapshot) => {
         if (snapshot.exists()) {
-          setTotalChapters(snapshot.data().totalChapters || 1);
+          setMetadata(snapshot.data());
         }
       });
 
-      // Get Current Chapter
+      // Get Current Chapter from chapters sub-collection
       const chapterRef = doc(db, 'books', id, 'chapters', chapterNumber);
       getDoc(chapterRef)
         .then((snapshot) => {
@@ -63,7 +63,7 @@ export default function CloudReader() {
 
   const goToChapter = (index: number) => {
     const n = index + 1;
-    if (n < 1 || n > totalChapters) return;
+    // We navigate based on existing indices or just direct input
     router.push(`/pages/${id}/${n}`);
   };
 
@@ -99,6 +99,9 @@ export default function CloudReader() {
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
         <article className="mb-20">
           <header className="mb-12 text-center">
+            <p className="text-xs uppercase tracking-widest font-bold text-primary mb-2">
+              {metadata?.bookTitle || 'Cloud Novel'}
+            </p>
             <h1 className="text-4xl font-headline font-black mb-4">
               {chapter.title || `Chapter ${chapter.chapterNumber}`}
             </h1>
@@ -113,7 +116,7 @@ export default function CloudReader() {
         <section className="pb-12 border-t pt-12">
           <ReaderControls 
             chapterNumber={chapter.chapterNumber} 
-            totalChapters={totalChapters} 
+            totalChapters={metadata?.totalChapters || chapter.chapterNumber} 
             onChapterChange={goToChapter}
             fontSize={fontSize}
             onFontSizeChange={setFontSize}

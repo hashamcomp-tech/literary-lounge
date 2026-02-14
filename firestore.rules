@@ -35,14 +35,16 @@ service cloud.firestore {
     }
 
     match /books/{bookId} {
-      allow get, list: if isSignedIn();
-      allow create: if willBeOwner();
-      allow update, delete: if isDataOwner();
+      match /metadata/info {
+        allow get, list: if isSignedIn();
+        allow create, update: if willBeOwner();
+        allow delete: if isDataOwner();
+      }
 
       match /chapters/{chapterNumber} {
         allow get, list: if isSignedIn();
-        allow create: if willBeOwner();
-        allow update, delete: if isDataOwner();
+        allow create, update: if willBeOwner();
+        allow delete: if isDataOwner();
       }
     }
   }

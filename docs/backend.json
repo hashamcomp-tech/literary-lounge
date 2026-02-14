@@ -39,75 +39,34 @@
         "updatedAt"
       ]
     },
-    "Novel": {
+    "NovelMetadata": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Novel",
+      "title": "NovelMetadata",
       "type": "object",
-      "description": "Represents a literary novel, including its metadata and content details.",
+      "description": "Metadata for a novel.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Novel entity (format: author_title)."
+        "author": {
+          "type": "string"
+        },
+        "bookTitle": {
+          "type": "string"
         },
         "ownerId": {
-          "type": "string",
-          "description": "The UID of the user who uploaded the novel."
-        },
-        "title": {
-          "type": "string",
-          "description": "The title of the novel."
-        },
-        "authorName": {
-          "type": "string",
-          "description": "The name of the novel's author."
-        },
-        "description": {
-          "type": "string",
-          "description": "A brief synopsis or summary of the novel."
-        },
-        "coverImageUrl": {
-          "type": "string",
-          "description": "URL to the novel's cover image.",
-          "format": "uri"
+          "type": "string"
         },
         "totalChapters": {
-          "type": "number",
-          "description": "The total number of chapters in the novel."
+          "type": "number"
         },
-        "publicationDate": {
+        "lastUpdated": {
           "type": "string",
-          "description": "The date when the novel was first published.",
-          "format": "date-time"
-        },
-        "genres": {
-          "type": "array",
-          "description": "A list of genres associated with the novel.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "language": {
-          "type": "string",
-          "description": "The primary language of the novel (e.g., 'en', 'es')."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the novel record was created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the novel record was last updated.",
           "format": "date-time"
         }
       },
       "required": [
-        "id",
+        "author",
+        "bookTitle",
         "ownerId",
-        "title",
-        "authorName",
-        "createdAt",
-        "updatedAt"
+        "lastUpdated"
       ]
     },
     "Chapter": {
@@ -117,33 +76,20 @@
       "description": "Represents a single chapter within a novel.",
       "properties": {
         "ownerId": {
-          "type": "string",
-          "description": "The UID of the user who uploaded the chapter."
+          "type": "string"
         },
         "chapterNumber": {
-          "type": "number",
-          "description": "The sequential number of the chapter within the novel."
-        },
-        "title": {
-          "type": "string",
-          "description": "The title of the chapter."
+          "type": "number"
         },
         "content": {
-          "type": "string",
-          "description": "The full text content of the chapter."
-        },
-        "wordCount": {
-          "type": "number",
-          "description": "The total number of words in the chapter."
+          "type": "string"
         },
         "createdAt": {
           "type": "string",
-          "description": "Timestamp when the chapter record was created.",
           "format": "date-time"
         },
         "updatedAt": {
           "type": "string",
-          "description": "Timestamp when the chapter record was last updated.",
           "format": "date-time"
         }
       },
@@ -159,27 +105,22 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ReadingProgress",
       "type": "object",
-      "description": "Tracks a user's reading progress for a specific novel and chapter.",
+      "description": "Tracks a user's reading progress.",
       "properties": {
         "id": {
-          "type": "string",
-          "description": "Unique identifier for the ReadingProgress entity."
+          "type": "string"
         },
         "userId": {
-          "type": "string",
-          "description": "Reference to the UserProfile who owns this reading progress."
+          "type": "string"
         },
         "novelId": {
-          "type": "string",
-          "description": "Reference to the Novel being read."
+          "type": "string"
         },
         "currentChapterNumber": {
-          "type": "number",
-          "description": "The chapter number the user is currently reading."
+          "type": "number"
         },
         "lastReadAt": {
           "type": "string",
-          "description": "Timestamp when the reading progress was last updated.",
           "format": "date-time"
         }
       },
@@ -211,13 +152,13 @@
         }
       },
       {
-        "path": "/books/{bookId}",
+        "path": "/books/{bookId}/metadata/info",
         "definition": {
-          "entityName": "Novel",
+          "entityName": "NovelMetadata",
           "schema": {
-            "$ref": "#/backend/entities/Novel"
+            "$ref": "#/backend/entities/NovelMetadata"
           },
-          "description": "Stores novel metadata. The bookId is typically 'author_title'."
+          "description": "Stores novel metadata."
         }
       },
       {
@@ -227,7 +168,7 @@
           "schema": {
             "$ref": "#/backend/entities/Chapter"
           },
-          "description": "Stores individual chapters. chapterNumber is the document ID."
+          "description": "Stores individual chapters."
         }
       },
       {
