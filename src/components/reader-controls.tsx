@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -30,13 +31,13 @@ export function ReaderControls({
     e.preventDefault();
     const n = parseInt(jumpChapter);
     if (!isNaN(n) && n >= 1 && n <= totalChapters) {
-      onChapterChange(n - 1);
+      onChapterChange(n - 1); // Internal logic is 0-indexed for stability
       setJumpChapter('');
     }
   };
 
   return (
-    <div className="flex flex-col gap-4 p-6 border rounded-2xl bg-card/50 backdrop-blur shadow-sm transition-all">
+    <div className="flex flex-col gap-4 p-6 border rounded-2xl bg-card/50 backdrop-blur shadow-sm transition-all max-w-2xl mx-auto">
       <div className="flex justify-between items-center gap-2">
         <Button 
           variant="outline" 
@@ -45,12 +46,12 @@ export function ReaderControls({
           onClick={() => onChapterChange(chapterNumber - 2)} 
           disabled={chapterNumber <= 1}
         >
-          <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+          <ChevronLeft className="h-4 w-4 mr-1" /> Prev
         </Button>
         <div className="text-center">
           <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-0.5">Progress</span>
           <span className="text-sm font-headline font-bold">
-            Chapter {chapterNumber} of {totalChapters}
+            Chapter {chapterNumber} / {totalChapters}
           </span>
         </div>
         <Button 
@@ -75,7 +76,7 @@ export function ReaderControls({
             <Minus className="h-3 w-3" />
           </Button>
           <div className="flex flex-col items-center">
-             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Size</span>
+             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Font</span>
              <span className="text-sm font-bold font-mono">{fontSize}px</span>
           </div>
           <Button 
@@ -94,7 +95,7 @@ export function ReaderControls({
           onClick={onDarkModeToggle}
         >
           {isDarkMode ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
-          <span className="text-[10px] font-bold uppercase tracking-tighter">{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+          <span className="text-[10px] font-bold uppercase tracking-tighter">{isDarkMode ? 'Light' : 'Dark'}</span>
         </Button>
       </div>
 
@@ -105,7 +106,7 @@ export function ReaderControls({
             type="number"
             value={jumpChapter}
             onChange={e => setJumpChapter(e.target.value)}
-            placeholder="Jump to chapter..."
+            placeholder="Jump..."
             className="h-10 pl-8 bg-muted/20 border-transparent focus:bg-background transition-all rounded-xl"
             min={1}
             max={totalChapters}

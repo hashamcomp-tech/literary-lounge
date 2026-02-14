@@ -1,0 +1,40 @@
+
+{
+  "entities": {
+    "SplitText": {
+      "title": "SplitText",
+      "description": "A novel or long text document stored in the cloud.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "totalChapters": { "type": "number" }
+      },
+      "required": ["title", "author"]
+    },
+    "Page": {
+      "title": "Page",
+      "description": "A single chapter or page of a split text.",
+      "type": "object",
+      "properties": {
+        "chapterNumber": { "type": "number" },
+        "content": { "type": "string" },
+        "title": { "type": "string" }
+      },
+      "required": ["chapterNumber", "content"]
+    }
+  },
+  "auth": {
+    "providers": ["google"]
+  },
+  "firestore": {
+    "/splitTexts/{textId}": {
+      "schema": "SplitText",
+      "description": "Collection of novels."
+    },
+    "/splitTexts/{textId}/pages/{pageId}": {
+      "schema": "Page",
+      "description": "Chapters for a specific novel."
+    }
+  }
+}
