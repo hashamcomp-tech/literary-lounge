@@ -25,7 +25,10 @@ service cloud.firestore {
     }
 
     match /books/{bookId} {
+      // Anyone can read books
       allow read: if true;
+
+      // Only allow writes if the user is logged in AND email is whitelisted
       allow create: if isApproved();
       allow update, delete: if isApproved() && resource.data.metadata.info.ownerId == request.auth.uid;
 
