@@ -2,21 +2,31 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
-import { Search as SearchIcon, Loader2, BookX } from 'lucide-react';
-import { Novel } from '@/lib/mock-data';
+import { Search as SearchIcon, Loader2, BookX, ArrowRight } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 
 function SearchResults() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const db = useFirestore();
   const queryTerm = searchParams.get('q') || '';
   
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [localQuery, setLocalQuery] = useState(queryTerm);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (localQuery.trim()) {
+      router.push(`/search?q=${encodeURIComponent(localQuery)}`);
+    }
+  };
 
   useEffect(() => {
     if (!db) return;
@@ -29,7 +39,8 @@ function SearchResults() {
 
       setLoading(true);
       try {
-        // Simple prefix search (case-sensitive by default in Firestore)
+        // Prefix search logic: finds documents where title starts with the query term
+        // Note: This is case-sensitive by default in Firestore
         const q = query(
           collection(db, 'books'),
           where('title', '>=', queryTerm),
@@ -52,25 +63,41 @@ function SearchResults() {
     };
 
     performSearch();
+    setLocalQuery(queryTerm);
   }, [queryTerm, db]);
 
   return (
     <div className="container mx-auto px-4 pt-8">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="bg-muted p-2 rounded-lg">
-          <SearchIcon className="h-6 w-6 text-muted-foreground" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+        <div className="flex items-center gap-3">
+          <div className="bg-primary/10 p-3 rounded-2xl">
+            <SearchIcon className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-headline font-black">Search results</h1>
+            <p className="text-muted-foreground">
+              {loading ? "Searching our library..." : `${results.length} results found for "${queryTerm}"`}
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-3xl font-headline font-bold">Search results</h1>
-          <p className="text-muted-foreground">
-            {loading ? "Searching..." : `${results.length} cloud results for "${queryTerm}"`}
-          </p>
-        </div>
+
+        <form onSubmit={handleSearch} className="flex gap-2 w-full md:max-w-sm">
+          <Input 
+            value={localQuery}
+            onChange={(e) => setLocalQuery(e.target.value)}
+            placeholder="Search titles..."
+            className="rounded-xl bg-card border-muted-foreground/20"
+          />
+          <Button type="submit" size="icon" className="rounded-xl shrink-0">
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        </form>
       </div>
 
       {loading ? (
-        <div className="py-20 flex justify-center">
+        <div className="py-20 flex flex-col items-center justify-center gap-4">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+          <p className="text-sm font-medium text-muted-foreground animate-pulse">Scouring the lounge...</p>
         </div>
       ) : results.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 sm:gap-8">
@@ -80,11 +107,11 @@ function SearchResults() {
               novel={{
                 id: book.id,
                 title: book.title,
-                author: book.authorName || book.author,
-                genre: book.genres?.[0] || book.genre || 'Novel',
-                summary: book.description || book.summary,
-                coverImage: book.coverImageUrl || book.coverImage,
-                chapters: [] // Chapters are loaded on-demand in the reader
+                author: book.authorName || 'Unknown Author',
+                genre: book.genres?.[0] || 'Novel',
+                summary: book.description || '',
+                coverImage: book.coverImageUrl || '',
+                chapters: [] 
               }} 
             />
           ))}
@@ -94,10 +121,17 @@ function SearchResults() {
           <div className="bg-muted w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
             <BookX className="h-10 w-10 text-muted-foreground opacity-20" />
           </div>
-          <h2 className="text-xl font-bold mb-2">No novels found</h2>
+          <h2 className="text-2xl font-headline font-bold mb-2">No matches found</h2>
           <p className="text-muted-foreground max-w-md mx-auto">
-            We couldn't find any cloud novels matching "{queryTerm}". Check your spelling or try a different title.
+            We couldn't find any cloud novels matching "{queryTerm}". Try searching for a specific book title or ensure your capitalization is correct.
           </p>
+          <Button 
+            variant="outline" 
+            className="mt-8 rounded-xl"
+            onClick={() => router.push('/')}
+          >
+            Back to Library
+          </Button>
         </div>
       )}
     </div>
