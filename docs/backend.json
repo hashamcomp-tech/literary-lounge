@@ -5,38 +5,32 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "UserProfile",
       "type": "object",
-      "description": "Represents a user's profile information, excluding authentication details.",
+      "description": "Represents a user's profile information, stored in Firestore.",
       "properties": {
-        "id": {
+        "uid": {
           "type": "string",
-          "description": "Unique identifier for the UserProfile entity."
+          "description": "The unique Firebase Authentication UID."
         },
-        "displayName": {
+        "username": {
           "type": "string",
-          "description": "The public display name of the user."
+          "description": "The chosen public username of the user."
         },
         "email": {
           "type": "string",
-          "description": "The user's contact email address.",
+          "description": "The user's registered email address.",
           "format": "email"
         },
         "createdAt": {
           "type": "string",
-          "description": "Timestamp when the user profile was created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the user profile was last updated.",
+          "description": "Timestamp when the user account and profile were created.",
           "format": "date-time"
         }
       },
       "required": [
-        "id",
-        "displayName",
+        "uid",
+        "username",
         "email",
-        "createdAt",
-        "updatedAt"
+        "createdAt"
       ]
     },
     "NovelMetadata": {

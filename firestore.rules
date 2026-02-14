@@ -22,8 +22,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isSignedIn() && request.auth.uid == userId;
       allow list: if false;
-      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.id == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId && request.resource.data.id == resource.data.id;
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.uid == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId && request.resource.data.uid == resource.data.uid;
       allow delete: if isSignedIn() && request.auth.uid == userId;
 
       match /readingProgress/{progressId} {
