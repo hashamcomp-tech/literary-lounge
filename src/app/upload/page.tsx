@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
@@ -10,13 +10,100 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive } from 'lucide-react';
+import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive, User, Book } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
+
+interface AutocompleteInputProps {
+  type: 'author' | 'book';
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+}
+
+function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteInputProps) {
+  const db = useFirestore();
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [show, setShow] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!db || value.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const fetchSuggestions = async () => {
+      const field = type === 'author' ? 'authorName' : 'title';
+      const q = query(
+        collection(db, 'books'),
+        where(field, '>=', value),
+        where(field, '<=', value + '\uf8ff'),
+        limit(5)
+      );
+      try {
+        const snap = await getDocs(q);
+        const results = snap.docs.map(doc => doc.data()[field]);
+        // Remove duplicates and filter out the current exact match if needed
+        const uniqueResults = Array.from(new Set(results));
+        setSuggestions(uniqueResults);
+      } catch (e) {
+        console.error("Suggestions error", e);
+      }
+    };
+
+    const debounce = setTimeout(fetchSuggestions, 300);
+    return () => clearTimeout(debounce);
+  }, [value, db, type]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setShow(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <Input
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setShow(true);
+        }}
+        onFocus={() => setShow(true)}
+        placeholder={placeholder}
+        className="bg-background/50"
+      />
+      {show && suggestions.length > 0 && (
+        <ul className="absolute z-50 w-full mt-1 bg-card border rounded-xl shadow-xl max-h-48 overflow-auto animate-in fade-in slide-in-from-top-2 duration-200">
+          {suggestions.map((s, i) => (
+            <li
+              key={i}
+              className="px-4 py-3 hover:bg-muted cursor-pointer text-sm flex items-center gap-2 group transition-colors"
+              onClick={() => {
+                onChange(s);
+                setShow(false);
+              }}
+            >
+              <div className="p-1 bg-muted group-hover:bg-background rounded">
+                {type === 'author' ? <User className="h-3 w-3 text-primary" /> : <Book className="h-3 w-3 text-primary" />}
+              </div>
+              <span className="font-medium">{s}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export default function UploadPage() {
   const router = useRouter();
@@ -290,29 +377,21 @@ export default function UploadPage() {
                 <div className="space-y-4">
                   <div className="grid gap-2">
                     <Label htmlFor="author" className="text-base font-bold">Author</Label>
-                    <Input 
-                      id="author" 
-                      name="author" 
-                      type="text" 
-                      placeholder="e.g. Jane Austen" 
-                      value={author}
-                      onChange={(e) => setAuthor(e.target.value)}
-                      required 
-                      className="bg-background/50"
+                    <AutocompleteInput 
+                      type="author" 
+                      value={author} 
+                      onChange={setAuthor} 
+                      placeholder="e.g. Jane Austen"
                     />
                   </div>
 
                   <div className="grid gap-2">
                     <Label htmlFor="bookTitle" className="text-base font-bold">Book Title</Label>
-                    <Input 
-                      id="bookTitle" 
-                      name="bookTitle" 
-                      type="text" 
-                      placeholder="e.g. Pride and Prejudice" 
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      required 
-                      className="bg-background/50"
+                    <AutocompleteInput 
+                      type="book" 
+                      value={title} 
+                      onChange={setTitle} 
+                      placeholder="e.g. Pride and Prejudice"
                     />
                   </div>
 
