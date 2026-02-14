@@ -1,10 +1,15 @@
 
 "use client";
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ChevronLeft, ChevronRight, Moon, Sun, Minus, Plus, Hash } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ChevronLeft, ChevronRight, Moon, Sun, Minus, Plus, BookOpen } from 'lucide-react';
 
 interface ReaderControlsProps {
   chapterNumber: number;
@@ -25,39 +30,44 @@ export function ReaderControls({
   isDarkMode,
   onDarkModeToggle,
 }: ReaderControlsProps) {
-  const [jumpChapter, setJumpChapter] = useState('');
-
-  const handleJump = (e: React.FormEvent) => {
-    e.preventDefault();
-    const n = parseInt(jumpChapter);
-    if (!isNaN(n) && n >= 1 && n <= totalChapters) {
-      onChapterChange(n - 1); // Internal logic is 0-indexed for stability
-      setJumpChapter('');
-    }
-  };
-
   return (
     <div className="flex flex-col gap-4 p-6 border rounded-2xl bg-card/50 backdrop-blur shadow-sm transition-all max-w-2xl mx-auto">
       <div className="flex justify-between items-center gap-2">
         <Button 
           variant="outline" 
           size="sm"
-          className="rounded-full"
+          className="rounded-full h-10 px-4"
           onClick={() => onChapterChange(chapterNumber - 2)} 
           disabled={chapterNumber <= 1}
         >
           <ChevronLeft className="h-4 w-4 mr-1" /> Prev
         </Button>
-        <div className="text-center">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block mb-0.5">Progress</span>
-          <span className="text-sm font-headline font-bold">
-            Chapter {chapterNumber} / {totalChapters}
-          </span>
+        
+        <div className="flex-1 max-w-[200px]">
+          <Select 
+            value={chapterNumber.toString()} 
+            onValueChange={(val) => onChapterChange(parseInt(val) - 1)}
+          >
+            <SelectTrigger className="w-full h-10 rounded-xl bg-muted/30 border-transparent focus:ring-primary/20">
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                <SelectValue placeholder="Select Chapter" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: totalChapters }, (_, i) => (
+                <SelectItem key={i + 1} value={(i + 1).toString()}>
+                  Chapter {i + 1}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+
         <Button 
           variant="outline" 
           size="sm"
-          className="rounded-full"
+          className="rounded-full h-10 px-4"
           onClick={() => onChapterChange(chapterNumber)} 
           disabled={chapterNumber >= totalChapters}
         >
@@ -94,26 +104,25 @@ export function ReaderControls({
           className="h-auto py-2 rounded-xl border-border/50 hover:bg-accent/10 transition-colors flex-col gap-1"
           onClick={onDarkModeToggle}
         >
-          {isDarkMode ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
-          <span className="text-[10px] font-bold uppercase tracking-tighter">{isDarkMode ? 'Light' : 'Dark'}</span>
+          {isDarkMode ? (
+            <>
+              <Sun className="h-4 w-4 text-orange-400" />
+              <span className="text-[10px] font-bold uppercase tracking-tighter">Light Mode</span>
+            </>
+          ) : (
+            <>
+              <Moon className="h-4 w-4 text-indigo-400" />
+              <span className="text-[10px] font-bold uppercase tracking-tighter">Dark Mode</span>
+            </>
+          )}
         </Button>
       </div>
-
-      <form onSubmit={handleJump} className="flex gap-2 items-center">
-        <div className="relative flex-1">
-          <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-          <Input
-            type="number"
-            value={jumpChapter}
-            onChange={e => setJumpChapter(e.target.value)}
-            placeholder="Jump..."
-            className="h-10 pl-8 bg-muted/20 border-transparent focus:bg-background transition-all rounded-xl"
-            min={1}
-            max={totalChapters}
-          />
-        </div>
-        <Button type="submit" className="rounded-xl h-10 px-6 bg-primary text-primary-foreground">Go</Button>
-      </form>
+      
+      <div className="text-center">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground block">
+          Chapter {chapterNumber} of {totalChapters}
+        </span>
+      </div>
     </div>
   );
 }
