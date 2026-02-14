@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -15,7 +14,7 @@ import ePub from 'epubjs';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
+import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -34,6 +33,7 @@ export default function UploadPage() {
   const slugify = (text: string) => {
     return text
       .toLowerCase()
+      .trim()
       .replace(/[^\w\s-]/g, '')
       .replace(/[\s_-]+/g, '_')
       .replace(/^-+|-+$/g, '');
@@ -118,7 +118,7 @@ export default function UploadPage() {
         }];
       }
 
-      const bookId = `${slugify(finalAuthor)}_${slugify(finalTitle)}` || crypto.randomUUID();
+      const bookId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
 
       if (storageType === 'local') {
         setLoadingStatus('Saving to browser library...');
@@ -169,13 +169,14 @@ export default function UploadPage() {
           updatedAt: serverTimestamp(),
         };
 
-        setDoc(bookRef, bookData)
+        // Non-blocking metadata write
+        setDoc(bookRef, bookData, { merge: true })
           .catch(async () => {
             errorEmitter.emit('permission-error', new FirestorePermissionError({
               path: bookRef.path,
-              operation: 'create',
+              operation: 'write',
               requestResourceData: bookData,
-            }));
+            } satisfies SecurityRuleContext));
           });
 
         setLoadingStatus('Uploading Chapters...');
@@ -190,13 +191,14 @@ export default function UploadPage() {
             updatedAt: serverTimestamp(),
           };
 
-          setDoc(chapterRef, chapterData)
+          // Non-blocking chapter write
+          setDoc(chapterRef, chapterData, { merge: true })
             .catch(async () => {
               errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: chapterRef.path,
-                operation: 'create',
+                operation: 'write',
                 requestResourceData: chapterData,
-              }));
+              } satisfies SecurityRuleContext));
             });
         }
 
@@ -271,43 +273,52 @@ export default function UploadPage() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="author" className="text-base">Author</Label>
-                  <Input 
-                    id="author" 
-                    name="author" 
-                    type="text" 
-                    placeholder="Author Name" 
-                    value={author}
-                    onChange={(e) => setAuthor(e.target.value)}
-                    required 
-                  />
+                <div className="space-y-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="author" className="text-base font-bold">Author</Label>
+                    <Input 
+                      id="author" 
+                      name="author" 
+                      type="text" 
+                      placeholder="e.g. Jane Austen" 
+                      value={author}
+                      onChange={(e) => setAuthor(e.target.value)}
+                      required 
+                      className="bg-background/50"
+                    />
+                  </div>
 
-                  <Label htmlFor="bookTitle" className="text-base">Book Title</Label>
-                  <Input 
-                    id="bookTitle" 
-                    name="bookTitle" 
-                    type="text" 
-                    placeholder="Book Title" 
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    required 
-                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="bookTitle" className="text-base font-bold">Book Title</Label>
+                    <Input 
+                      id="bookTitle" 
+                      name="bookTitle" 
+                      type="text" 
+                      placeholder="e.g. Pride and Prejudice" 
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      required 
+                      className="bg-background/50"
+                    />
+                  </div>
 
-                  <Label htmlFor="chapterNumber" className="text-base">Chapter Number</Label>
-                  <Input 
-                    id="chapterNumber" 
-                    name="chapterNumber" 
-                    type="number" 
-                    min={1} 
-                    value={chapterNumber}
-                    onChange={(e) => setChapterNumber(e.target.value)}
-                    required 
-                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="chapterNumber" className="text-base font-bold">Starting Chapter</Label>
+                    <Input 
+                      id="chapterNumber" 
+                      name="chapterNumber" 
+                      type="number" 
+                      min={1} 
+                      value={chapterNumber}
+                      onChange={(e) => setChapterNumber(e.target.value)}
+                      required 
+                      className="bg-background/50"
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-4 pt-4 border-t">
-                  <Label>Import Method</Label>
+                  <Label className="text-base font-bold">Import Method</Label>
                   <div className="grid grid-cols-1 gap-4">
                     <div className={`relative border-2 border-dashed rounded-xl p-6 transition-colors ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
                       <input
