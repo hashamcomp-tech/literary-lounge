@@ -7,20 +7,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
     // Checks if the user's email is in the global approved list
     function isApproved() {
       return isSignedIn() && 
              exists(/databases/$(database)/documents/settings/approvedEmails) &&
              request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails;
-    }
-
-    // Checks if the user is the owner of the book based on root metadata
-    function isBookOwner(bookId) {
-      return isSignedIn() && get(/databases/$(database)/documents/books/$(bookId)).data.metadata.info.ownerId == request.auth.uid;
     }
 
     match /settings/approvedEmails {
@@ -29,41 +20,35 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get: if isOwner(userId);
+      allow get: if isSignedIn() && request.auth.uid == userId;
       allow list: if false;
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      allow update: if isOwner(userId) && request.resource.data.id == resource.data.id;
-      allow delete: if isOwner(userId);
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.id == userId;
+      allow update: if isSignedIn() && request.auth.uid == userId && request.resource.data.id == resource.data.id;
+      allow delete: if isSignedIn() && request.auth.uid == userId;
 
       match /readingProgress/{progressId} {
-        allow get, list: if isOwner(userId);
-        allow create: if isOwner(userId) && request.resource.data.userId == userId;
-        allow update: if isOwner(userId) && request.resource.data.userId == resource.data.userId;
-        allow delete: if isOwner(userId);
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.userId == userId;
+        allow update: if isSignedIn() && request.auth.uid == userId && request.resource.data.userId == resource.data.userId;
+        allow delete: if isSignedIn() && request.auth.uid == userId;
       }
     }
 
     match /books/{bookId} {
-      allow get, list: if true;
-      // Creation requires being in the approved email list
-      allow create: if isApproved() && request.resource.data.metadata.info.ownerId == request.auth.uid;
-      // Updates require ownership
-      allow update: if isSignedIn() && resource.data.metadata.info.ownerId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.metadata.info.ownerId == request.auth.uid;
+      // Anyone can read books
+      allow read: if true;
+
+      // Only allow writes if the user is logged in AND email is whitelisted
+      allow create, update, delete: if isApproved();
 
       match /metadata/info {
-        allow get, list: if true;
-        allow create: if isApproved() && request.resource.data.ownerId == request.auth.uid;
-        allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-        allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+        allow read: if true;
+        allow write: if isApproved();
       }
 
       match /chapters/{chapterNumber} {
-        allow get, list: if true;
-        allow write: if isSignedIn() && (
-          (exists(/databases/$(database)/documents/books/$(bookId)) && get(/databases/$(database)/documents/books/$(bookId)).data.metadata.info.ownerId == request.auth.uid) ||
-          (!exists(/databases/$(database)/documents/books/$(bookId)) && isApproved() && request.resource.data.ownerId == request.auth.uid)
-        );
+        allow read: if true;
+        allow write: if isApproved();
       }
     }
   }
