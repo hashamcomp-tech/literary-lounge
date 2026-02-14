@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -40,8 +40,13 @@ export default function Navbar() {
         </form>
 
         <div className="flex items-center gap-2">
+          <Link href="/upload">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary" title="Upload Novel">
+              <Upload className="h-5 w-5" />
+            </Button>
+          </Link>
           <Link href="/setup">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary" title="Settings">
               <Settings className="h-5 w-5" />
             </Button>
           </Link>
