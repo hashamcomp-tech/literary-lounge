@@ -1,3 +1,40 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "novel-1",
+      "description": "The Whispering Woods book cover",
+      "imageUrl": "https://images.unsplash.com/photo-1693197207296-f6272b8b3a57?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxteXN0ZXJpb3VzJTIwZm9yZXN0fGVufDB8fHx8MTc3MTEwMjUxOHww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mysterious forest"
+    },
+    {
+      "id": "novel-2",
+      "description": "Beyond the Azure Sky book cover",
+      "imageUrl": "https://images.unsplash.com/photo-1625437363649-43892f50fc12?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxzY2ktZmklMjBza3l8ZW58MHx8fHwxNzcxMTAyNTE4fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "sci-fi sky"
+    },
+    {
+      "id": "novel-3",
+      "description": "Echoes of the Past book cover",
+      "imageUrl": "https://images.unsplash.com/photo-1659110332394-ab4322030288?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8aGlzdG9yaWNhbCUyMGNpdHl8ZW58MHx8fHwxNzcxMTAyNTE4fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "historical city"
+    },
+    {
+      "id": "novel-4",
+      "description": "Crimson Moonlight book cover",
+      "imageUrl": "https://images.unsplash.com/photo-1652204508403-6cddf37a0989?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHx2YW1waXJlJTIwbW9vbnxlbnwwfHx8fDE3NzExMDI1MTh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "vampire moon"
+    },
+    {
+      "id": "novel-5",
+      "description": "The Clockwork Heart book cover",
+      "imageUrl": "https://picsum.photos/seed/heart/400/600",
+      "imageHint": "steampunk heart"
+    },
+    {
+      "id": "novel-6",
+      "description": "Midnight Tea book cover",
+      "imageUrl": "https://images.unsplash.com/photo-1521917441209-e886f0404a7b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxjb3p5JTIwY2FmZXxlbnwwfHx8fDE3NzExMDI1MTh8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "cozy cafe"
+    }
+  ]
 }
