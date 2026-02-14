@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -12,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc, serverTimestamp, collection } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
@@ -55,7 +54,7 @@ export default function UploadPage() {
     const spine = book.spine;
     
     let index = 1;
-    // @ts-ignore - epubjs types can be tricky
+    // @ts-ignore
     for (const item of spine.items) {
       try {
         const doc = await book.load(item.href);
@@ -116,7 +115,7 @@ export default function UploadPage() {
         const pagesData = chapters.map(p => ({
           ...p,
           id: crypto.randomUUID(),
-          splitTextId: docId,
+          novelId: docId,
           createdAt: timestamp,
           updatedAt: timestamp
         }));
@@ -128,10 +127,12 @@ export default function UploadPage() {
             splitText: { 
               id: docId, 
               title: finalTitle, 
-              author: finalAuthor || 'Unknown Author',
-              originalText: content || (selectedFile ? `EPUB: ${selectedFile.name}` : ''), 
-              delimiterType: chapters.length > 1 ? 'epub' : 'singlePage', 
-              delimiterValue: chapters.length.toString(), 
+              authorName: finalAuthor || 'Unknown Author',
+              description: content.substring(0, 100) + '...',
+              coverImageUrl: 'https://picsum.photos/seed/' + docId + '/400/600',
+              publicationDate: timestamp,
+              genres: ['Uncategorized'],
+              language: 'en',
               createdAt: timestamp, 
               updatedAt: timestamp 
             },
@@ -142,40 +143,50 @@ export default function UploadPage() {
       } else if (db) {
         setLoadingStatus('Uploading to Cloud...');
         
-        const bookRef = doc(db, 'splitTexts', docId);
+        const bookRef = doc(db, 'novels', docId);
         const bookData = {
+          id: docId,
           title: finalTitle,
-          author: finalAuthor || 'Unknown Author',
-          totalChapters: chapters.length,
-          createdAt: serverTimestamp(),
+          authorName: finalAuthor || 'Unknown Author',
+          description: content.substring(0, 200) || 'An uploaded novel.',
+          coverImageUrl: 'https://picsum.photos/seed/' + docId + '/400/600',
+          publicationDate: new Date().toISOString(),
+          genres: ['Uploaded'],
+          language: 'en',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
 
         setDoc(bookRef, bookData)
-          .catch(async (err) => {
-            const permissionError = new FirestorePermissionError({
+          .catch(async () => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
               path: bookRef.path,
               operation: 'create',
               requestResourceData: bookData,
-            } satisfies SecurityRuleContext);
-            errorEmitter.emit('permission-error', permissionError);
+            }));
           });
 
         for (const ch of chapters) {
-          const chapterId = ch.chapterNumber.toString();
-          const chapterRef = doc(db, 'splitTexts', docId, 'pages', chapterId);
+          const chapterId = crypto.randomUUID();
+          const chapterRef = doc(db, 'novels', docId, 'chapters', chapterId);
           const chapterData = {
-            ...ch,
-            createdAt: serverTimestamp(),
+            id: chapterId,
+            novelId: docId,
+            chapterNumber: ch.chapterNumber,
+            title: ch.title,
+            content: ch.content,
+            wordCount: ch.content.split(/\s+/).length,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           };
 
           setDoc(chapterRef, chapterData)
-            .catch(async (err) => {
-              const permissionError = new FirestorePermissionError({
+            .catch(async () => {
+              errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: chapterRef.path,
                 operation: 'create',
                 requestResourceData: chapterData,
-              } satisfies SecurityRuleContext);
-              errorEmitter.emit('permission-error', permissionError);
+              }));
             });
         }
 

@@ -1,5 +1,4 @@
-
-'use client';
+"use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -9,7 +8,7 @@ import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function CloudReader() {
   const { id, chapterNumber } = useParams() as { id: string; chapterNumber: string };
@@ -28,7 +27,7 @@ export default function CloudReader() {
 
     const fetchChapter = async () => {
       setLoading(true);
-      const chaptersRef = collection(db, 'splitTexts', id, 'pages');
+      const chaptersRef = collection(db, 'novels', id, 'chapters');
       const q = query(chaptersRef, orderBy('chapterNumber', 'asc'));
       
       getDocs(q)
@@ -40,11 +39,11 @@ export default function CloudReader() {
           setChapter(current || null);
           setLoading(false);
         })
-        .catch(async (serverError) => {
+        .catch(async () => {
           const permissionError = new FirestorePermissionError({
             path: chaptersRef.path,
             operation: 'list',
-          } satisfies SecurityRuleContext);
+          });
           errorEmitter.emit('permission-error', permissionError);
           setLoading(false);
         });
