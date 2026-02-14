@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX } from 'lucide-react';
-import { getLocalBook, getLocalChapters } from '@/lib/local-library';
+import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -33,6 +33,11 @@ export default function LocalReader() {
           const pageNum = parseInt(pageNumber);
           const page = sortedChapters.find((p: any) => p.chapterNumber === pageNum);
           setCurrentPage(page || null);
+
+          // Save reading progress locally
+          if (pageNum) {
+            saveLocalProgress(id, pageNum);
+          }
         }
       } catch (error) {
         console.error("Failed to load local novel", error);

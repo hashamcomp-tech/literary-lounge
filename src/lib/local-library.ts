@@ -3,7 +3,7 @@
  */
 
 const DB_NAME = "booksDB";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incrementing version for progress store
 
 /**
  * Opens (or creates) the IndexedDB database for local book storage.
@@ -29,6 +29,11 @@ export function openDB(): Promise<IDBDatabase> {
         });
         chapterStore.createIndex("bookId", "bookId", { unique: false });
       }
+
+      // Store for reading progress
+      if (!db.objectStoreNames.contains("progress")) {
+        db.createObjectStore("progress", { keyPath: "novelId" });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -44,7 +49,7 @@ export async function saveLocalBook(book: any): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const tx = db.transaction("books", "readwrite");
     const store = tx.objectStore("books");
-    const request = store.put(book);
+    store.put(book);
     
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
@@ -54,14 +59,37 @@ export async function saveLocalBook(book: any): Promise<boolean> {
 /**
  * Saves a chapter's content locally.
  */
-export async function saveLocalChapter(chapter: any): Promise<boolean> {
+export async function saveLocalChapter(chapter: {
+  bookId: string;
+  chapterNumber: number;
+  content: string;
+  title?: string;
+}): Promise<boolean> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("chapters", "readwrite");
     const store = tx.objectStore("chapters");
-    const request = store.put(chapter);
+    store.put(chapter);
     
     tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/**
+ * Saves local reading progress.
+ */
+export async function saveLocalProgress(novelId: string, chapterNumber: number): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("progress", "readwrite");
+    const store = tx.objectStore("progress");
+    store.put({
+      novelId,
+      chapterNumber,
+      updatedAt: new Date().toISOString()
+    });
+    tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -116,12 +144,11 @@ export async function getAllLocalBooks(): Promise<any[]> {
 export async function deleteLocalBook(bookId: string): Promise<boolean> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(["books", "chapters"], "readwrite");
+    const tx = db.transaction(["books", "chapters", "progress"], "readwrite");
     
-    // Delete metadata
     tx.objectStore("books").delete(bookId);
+    tx.objectStore("progress").delete(bookId);
     
-    // Delete all chapters
     const chapterStore = tx.objectStore("chapters");
     const index = chapterStore.index("bookId");
     const request = index.openKeyCursor(IDBKeyRange.only(bookId));
