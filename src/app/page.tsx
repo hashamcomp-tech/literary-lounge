@@ -1,7 +1,7 @@
-
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
 import RecommendationsSection from '@/components/recommendations-section';
+import LocalLibrarySection from '@/components/local-library-section';
 import { MOCK_NOVELS } from '@/lib/mock-data';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -40,19 +40,16 @@ export default function Home() {
           limitCount={6} 
         />
 
+        {/* Your Private Browser Library */}
+        <LocalLibrarySection />
+
         <RecommendationsSection 
           title="Fantasy Favorites" 
           genre="Fantasy" 
           limitCount={3} 
         />
 
-        <RecommendationsSection 
-          title="Mystery Spotlight" 
-          genre="Mystery" 
-          limitCount={3} 
-        />
-
-        {/* Curated Local Library */}
+        {/* Curated Library */}
         <section className="space-y-8 mt-12 pt-12 border-t">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-2xl font-headline font-bold">Curated Library</h2>

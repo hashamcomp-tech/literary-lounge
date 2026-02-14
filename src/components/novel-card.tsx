@@ -1,26 +1,27 @@
-
 "use client";
 
 import Link from 'next/link';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Novel } from '@/lib/mock-data';
 
 interface NovelCardProps {
-  novel: Novel | any;
+  novel: any;
 }
 
 export default function NovelCard({ novel }: NovelCardProps) {
-  // Determine if this is a cloud novel or mock novel based on ID format
-  const isCloud = isNaN(Number(novel.id));
+  // Determine route based on metadata
+  const isCloud = isNaN(Number(novel.id)) && !novel._isLocal;
+  const isLocal = novel._isLocal;
   
-  // Cloud novels use the /pages/[id]/[chapter] route
-  // Mock novels use the /novel/[id] route
-  const href = isCloud ? `/pages/${novel.id}/1` : `/novel/${novel.id}`;
+  let href = `/novel/${novel.id}`;
+  if (isLocal) {
+    href = `/local-pages/${novel.id}/1`;
+  } else if (isCloud) {
+    href = `/pages/${novel.id}/1`;
+  }
 
-  // Handle difference between mock "author" and Firestore "authorName"
-  const authorName = novel.author || novel.authorName || 'Unknown Author';
+  const authorName = novel.author || 'Unknown Author';
 
   return (
     <Link href={href}>
@@ -28,7 +29,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
         <CardContent className="p-0">
           <div className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl mb-3 shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-all duration-500">
             <Image
-              src={novel.coverImage || novel.coverImageUrl || `https://picsum.photos/seed/${novel.id}/400/600`}
+              src={novel.coverImage || `https://picsum.photos/seed/${novel.id}/400/600`}
               alt={novel.title}
               fill
               className="object-cover transition-transform duration-700 group-hover:scale-110"
@@ -48,11 +49,16 @@ export default function NovelCard({ novel }: NovelCardProps) {
             <p className="text-sm text-muted-foreground mb-2 line-clamp-1">By {authorName}</p>
             <div className="flex gap-2 flex-wrap items-center">
               <Badge variant="outline" className="text-[10px] h-5 uppercase tracking-wider font-bold border-muted-foreground/20 text-muted-foreground">
-                {novel.genre || (novel.genres && novel.genres[0]) || 'Novel'}
+                {novel.genre || 'Novel'}
               </Badge>
               {isCloud && (
                 <Badge variant="secondary" className="text-[10px] h-5 uppercase tracking-wider font-bold bg-primary/10 text-primary border-none">
                   Cloud
+                </Badge>
+              )}
+              {isLocal && (
+                <Badge variant="secondary" className="text-[10px] h-5 uppercase tracking-wider font-bold bg-blue-100 text-blue-600 border-none">
+                  Local
                 </Badge>
               )}
             </div>
