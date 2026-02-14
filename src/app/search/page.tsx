@@ -1,15 +1,22 @@
 
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
-import { Search as SearchIcon, Loader2, BookX, ArrowRight } from 'lucide-react';
+import { Search as SearchIcon, Loader2, BookX, ArrowRight, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import algoliasearch from 'algoliasearch/lite';
+
+// Initialize Algolia client with placeholders for user keys
+// These should ideally be in environment variables
+const ALGOLIA_APP_ID = process.env.NEXT_PUBLIC_ALGOLIA_APP_ID || '';
+const ALGOLIA_SEARCH_KEY = process.env.NEXT_PUBLIC_ALGOLIA_SEARCH_KEY || '';
 
 function SearchResults() {
   const searchParams = useSearchParams();
@@ -20,6 +27,14 @@ function SearchResults() {
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [localQuery, setLocalQuery] = useState(queryTerm);
+  const [searchMethod, setSearchMethod] = useState<'firestore' | 'algolia'>('firestore');
+
+  const algoliaClient = useMemo(() => {
+    if (ALGOLIA_APP_ID && ALGOLIA_SEARCH_KEY) {
+      return algoliasearch(ALGOLIA_APP_ID, ALGOLIA_SEARCH_KEY);
+    }
+    return null;
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +54,34 @@ function SearchResults() {
 
       setLoading(true);
       try {
-        // Prefix search logic: finds documents where title starts with the query term
-        // Note: This is case-sensitive by default in Firestore
+        // 1. Try Algolia first if configured
+        if (algoliaClient) {
+          try {
+            const index = algoliaClient.initIndex('books');
+            const { hits } = await index.search(queryTerm, { hitsPerPage: 24 });
+            
+            if (hits.length > 0) {
+              const algoliaResults = hits.map((hit: any) => ({
+                id: hit.objectID || hit.bookId || hit.id,
+                title: hit.bookTitle || hit.title,
+                author: hit.author || hit.authorName || 'Unknown Author',
+                genre: hit.genre || (hit.genres?.[0]) || 'Novel',
+                summary: hit.summary || hit.description || '',
+                coverImage: hit.coverImageUrl || hit.coverImage || '',
+                chapters: hit.chapters || []
+              }));
+              setResults(algoliaResults);
+              setSearchMethod('algolia');
+              setLoading(false);
+              return;
+            }
+          } catch (algoliaError) {
+            console.error("Algolia search failed, falling back to Firestore", algoliaError);
+          }
+        }
+
+        // 2. Fallback to Firestore Prefix Search
+        setSearchMethod('firestore');
         const q = query(
           collection(db, 'books'),
           where('title', '>=', queryTerm),
@@ -49,10 +90,18 @@ function SearchResults() {
         );
 
         const snapshot = await getDocs(q);
-        const firestoreResults = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const firestoreResults = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title,
+            author: data.authorName || 'Unknown Author',
+            genre: data.genres?.[0] || 'Novel',
+            summary: data.description || '',
+            coverImage: data.coverImageUrl || '',
+            chapters: [] 
+          };
+        });
 
         setResults(firestoreResults);
       } catch (error) {
@@ -64,7 +113,7 @@ function SearchResults() {
 
     performSearch();
     setLocalQuery(queryTerm);
-  }, [queryTerm, db]);
+  }, [queryTerm, db, algoliaClient]);
 
   return (
     <div className="container mx-auto px-4 pt-8">
@@ -74,7 +123,14 @@ function SearchResults() {
             <SearchIcon className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-3xl font-headline font-black">Search results</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-headline font-black">Search results</h1>
+              {searchMethod === 'algolia' && (
+                <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none flex items-center gap-1">
+                  <Zap className="h-3 w-3 fill-current" /> Full-text
+                </Badge>
+              )}
+            </div>
             <p className="text-muted-foreground">
               {loading ? "Searching our library..." : `${results.length} results found for "${queryTerm}"`}
             </p>
@@ -104,15 +160,7 @@ function SearchResults() {
           {results.map((book) => (
             <NovelCard 
               key={book.id} 
-              novel={{
-                id: book.id,
-                title: book.title,
-                author: book.authorName || 'Unknown Author',
-                genre: book.genres?.[0] || 'Novel',
-                summary: book.description || '',
-                coverImage: book.coverImageUrl || '',
-                chapters: [] 
-              }} 
+              novel={book} 
             />
           ))}
         </div>
