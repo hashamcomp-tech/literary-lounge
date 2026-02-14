@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "UserProfile": {
@@ -46,7 +47,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier for the Novel entity."
+          "description": "Unique identifier for the Novel entity (format: author_title)."
         },
         "title": {
           "type": "string",
@@ -64,6 +65,10 @@
           "type": "string",
           "description": "URL to the novel's cover image.",
           "format": "uri"
+        },
+        "totalChapters": {
+          "type": "number",
+          "description": "The total number of chapters in the novel."
         },
         "publicationDate": {
           "type": "string",
@@ -96,11 +101,6 @@
         "id",
         "title",
         "authorName",
-        "description",
-        "coverImageUrl",
-        "publicationDate",
-        "genres",
-        "language",
         "createdAt",
         "updatedAt"
       ]
@@ -111,14 +111,6 @@
       "type": "object",
       "description": "Represents a single chapter within a novel.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Chapter entity."
-        },
-        "novelId": {
-          "type": "string",
-          "description": "Reference to the Novel this chapter belongs to. (Relationship: Novel 1:N Chapter)"
-        },
         "chapterNumber": {
           "type": "number",
           "description": "The sequential number of the chapter within the novel."
@@ -147,12 +139,8 @@
         }
       },
       "required": [
-        "id",
-        "novelId",
         "chapterNumber",
-        "title",
         "content",
-        "wordCount",
         "createdAt",
         "updatedAt"
       ]
@@ -169,28 +157,15 @@
         },
         "userId": {
           "type": "string",
-          "description": "Reference to the UserProfile who owns this reading progress. (Relationship: UserProfile 1:N ReadingProgress)"
+          "description": "Reference to the UserProfile who owns this reading progress."
         },
         "novelId": {
           "type": "string",
-          "description": "Reference to the Novel being read. (Relationship: Novel 1:N ReadingProgress)"
+          "description": "Reference to the Novel being read."
         },
-        "currentChapterId": {
-          "type": "string",
-          "description": "Reference to the Chapter the user is currently reading or last read. (Relationship: Chapter 1:N ReadingProgress)"
-        },
-        "lastReadPosition": {
+        "currentChapterNumber": {
           "type": "number",
-          "description": "A numeric value representing the user's progress within the current chapter (e.g., percentage, scroll position, or word index)."
-        },
-        "isCompleted": {
-          "type": "boolean",
-          "description": "Indicates whether the user has marked the novel as completed."
-        },
-        "startedAt": {
-          "type": "string",
-          "description": "Timestamp when the user started reading this novel.",
-          "format": "date-time"
+          "description": "The chapter number the user is currently reading."
         },
         "lastReadAt": {
           "type": "string",
@@ -202,67 +177,8 @@
         "id",
         "userId",
         "novelId",
-        "currentChapterId",
-        "lastReadPosition",
-        "isCompleted",
-        "startedAt",
+        "currentChapterNumber",
         "lastReadAt"
-      ]
-    },
-    "UserPreference": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "UserPreference",
-      "type": "object",
-      "description": "Stores a user's reading preferences for personalized recommendations.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the UserPreference entity."
-        },
-        "userId": {
-          "type": "string",
-          "description": "Reference to the UserProfile this preference belongs to. (Relationship: UserProfile 1:1 UserPreference)"
-        },
-        "preferredGenres": {
-          "type": "array",
-          "description": "A list of genres the user prefers.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "preferredAuthors": {
-          "type": "array",
-          "description": "A list of authors whose works the user prefers.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "dislikedGenres": {
-          "type": "array",
-          "description": "A list of genres the user dislikes or wants to avoid in recommendations.",
-          "items": {
-            "type": "string"
-          }
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the user preferences were created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp when the user preferences were last updated.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "userId",
-        "preferredGenres",
-        "preferredAuthors",
-        "dislikedGenres",
-        "createdAt",
-        "updatedAt"
       ]
     }
   },
@@ -281,50 +197,39 @@
           "schema": {
             "$ref": "#/backend/entities/UserProfile"
           },
-          "description": "Stores individual user profiles. The document ID `{userId}` must match the authenticated user's `uid`. This collection represents private data, directly owned by the user. Includes denormalized 'id' and 'email' fields for authorization independence."
+          "description": "Stores individual user profiles."
         }
       },
       {
-        "path": "/novels/{novelId}",
+        "path": "/books/{bookId}",
         "definition": {
           "entityName": "Novel",
           "schema": {
             "$ref": "#/backend/entities/Novel"
           },
-          "description": "Stores general novel metadata. This is public content, readable by all authenticated users (or guests, depending on final rule setting). It supports global listing and searching. The 'id' field in the document matches `{novelId}`."
+          "description": "Stores novel metadata. The bookId is typically 'author_title'."
         }
       },
       {
-        "path": "/novels/{novelId}/chapters/{chapterId}",
+        "path": "/books/{bookId}/chapters/{chapterNumber}",
         "definition": {
           "entityName": "Chapter",
           "schema": {
             "$ref": "#/backend/entities/Chapter"
           },
-          "description": "Stores individual chapters belonging to a specific novel. Chapters are public content, readable by all authenticated users. The 'novelId' field within the document is denormalized from the parent path for authorization independence and query efficiency."
+          "description": "Stores individual chapters. chapterNumber is the document ID."
         }
       },
       {
-        "path": "/users/{userId}/readingProgress/{readingProgressId}",
+        "path": "/users/{userId}/readingProgress/{progressId}",
         "definition": {
           "entityName": "ReadingProgress",
           "schema": {
             "$ref": "#/backend/entities/ReadingProgress"
           },
-          "description": "Tracks a user's reading progress for specific novels and chapters. This is private data, exclusively owned by the user. The 'userId' in the path and document ensures authorization independence (request.auth.uid == userId)."
-        }
-      },
-      {
-        "path": "/users/{userId}/userPreferences/{userPreferenceId}",
-        "definition": {
-          "entityName": "UserPreference",
-          "schema": {
-            "$ref": "#/backend/entities/UserPreference"
-          },
-          "description": "Stores a user's reading preferences. This is private data, exclusively owned by the user. For a 1:1 relationship, 'userPreferenceId' should typically be the same as 'userId'. The 'userId' in the path and document ensures authorization independence (request.auth.uid == userId)."
+          "description": "Tracks a user's reading progress."
         }
       }
-    ],
-    "reasoning": "The Firestore structure for Literary Lounge is designed to prioritize authorization independence, clear segregation of data by security posture, and predictable access patterns. \n\n**Authorization Independence:**\n\n1.  **User-specific Data (`/users/{userId}/...`)**: User profiles, reading progress, and preferences are organized under `/users/{userId}`. This path-based ownership ensures that authorization rules can directly check `request.auth.uid == userId` without needing to perform `get()` operations on parent documents. The `userId` is explicitly embedded in the path and typically denormalized into the document itself (e.g., `ReadingProgress.userId`, `UserPreference.userId`), fulfilling the critical mandate to avoid hierarchical authorization dependencies. This allows for atomic writes and transactions across user-owned documents without complex rule evaluation.\n\n2.  **Public Content (`/novels/{novelId}/...`)**: Novels and their chapters are placed in top-level collections (`/novels` and `/novels/{novelId}/chapters`). Since these are intended to be broadly accessible (e.g., to all authenticated users or publicly), their authorization does not depend on owner attributes or membership maps. Access rules can simply allow reads for all authenticated users, eliminating `get()` calls for content authorization.\n\n**QAPs (Rules are not Filters) Support:**\n\n1.  **Public Content (`/novels`, `/novels/{novelId}/chapters`)**: These collections have a homogeneous security posture (e.g., all documents are readable by authenticated users). This allows `list` queries on these collections (e.g., searching for novels, listing chapters) to naturally return all accessible documents without Firestore security rules having to filter the results. The rules simply grant read access to the entire collection.\n\n2.  **User-Owned Data (`/users/{userId}/readingProgress`, `/users/{userId}/userPreferences`)**: `list` queries on subcollections like `/users/{userId}/readingProgress` are inherently scoped by the `userId` in the path. When a user requests their own reading progress, the query path will contain their `uid` (e.g., `/users/ABC/readingProgress`). The security rule `request.auth.uid == userId` then applies to all documents within that requested path, ensuring that `list` operations only return data the user is authorized to see, without the rules acting as filters on a broader dataset. This perfectly supports QAPs by making the query inherently secure through its path structure.\n\n**Structural Segregation & Access Modeling:**\n\n*   **User Profiles (`/users/{userId}`)**: Uses path-based ownership, with the document ID (`userId`) matching the authenticated user's UID. This is the standard for private user data.\n*   **Novels (`/novels/{novelId}`)**: A top-level collection for content, allowing for easy global search and display. Access is broadly granted.\n*   **Chapters (`/novels/{novelId}/chapters/{chapterId}`)**: Nested under novels, maintaining the content hierarchy. Chapters inherently carry the `novelId` within their path, simplifying rule validation.\n*   **Reading Progress (`/users/{userId}/readingProgress/{readingProgressId}`)**: Nested under the user's path, clearly indicating personal ownership. The `readingProgressId` is unique per entry.\n*   **User Preferences (`/users/{userId}/userPreferences/{userPreferenceId}`)**: Nested under the user's path, with the `userPreferenceId` being the `userId` itself, enforcing the 1:1 relationship and strong ownership. \n\nThis design ensures robust security, simplifies rule writing, and scales effectively by avoiding common pitfalls associated with complex, interdependent authorization logic."
+    ]
   }
 }

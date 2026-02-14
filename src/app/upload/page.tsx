@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState } from 'react';
@@ -11,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Upload, BookPlus, Loader2, FileText, CheckCircle2, Cloud, HardDrive } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -29,6 +30,14 @@ export default function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [storageType, setStorageType] = useState<'local' | 'cloud'>('local');
+
+  const slugify = (text: string) => {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '_')
+      .replace(/^-+|-+$/g, '');
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -88,7 +97,6 @@ export default function UploadPage() {
     setLoading(true);
 
     try {
-      const docId = crypto.randomUUID();
       let finalTitle = title;
       let finalAuthor = author;
       let chapters: any[] = [];
@@ -110,13 +118,15 @@ export default function UploadPage() {
         }];
       }
 
+      const bookId = `${slugify(finalAuthor)}_${slugify(finalTitle)}` || crypto.randomUUID();
+
       if (storageType === 'local') {
         setLoadingStatus('Saving to browser library...');
         const timestamp = new Date().toISOString();
         const pagesData = chapters.map(p => ({
           ...p,
           id: crypto.randomUUID(),
-          novelId: docId,
+          novelId: bookId,
           createdAt: timestamp,
           updatedAt: timestamp
         }));
@@ -124,13 +134,13 @@ export default function UploadPage() {
         const existingData = JSON.parse(localStorage.getItem('novel-reader-data') || '{}');
         localStorage.setItem('novel-reader-data', JSON.stringify({
           ...existingData,
-          [docId]: {
+          [bookId]: {
             splitText: { 
-              id: docId, 
+              id: bookId, 
               title: finalTitle, 
               authorName: finalAuthor || 'Unknown Author',
               description: content.substring(0, 100) + '...',
-              coverImageUrl: 'https://picsum.photos/seed/' + docId + '/400/600',
+              coverImageUrl: `https://picsum.photos/seed/${bookId}/400/600`,
               publicationDate: timestamp,
               genres: ['Uncategorized'],
               language: 'en',
@@ -140,22 +150,23 @@ export default function UploadPage() {
             pages: pagesData
           }
         }));
-        router.push(`/local-pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
+        router.push(`/local-pages/${bookId}/${chapters[0]?.chapterNumber || 1}`);
       } else if (db) {
-        setLoadingStatus('Uploading to Cloud...');
+        setLoadingStatus('Uploading Metadata...');
         
-        const bookRef = doc(db, 'novels', docId);
+        const bookRef = doc(db, 'books', bookId);
         const bookData = {
-          id: docId,
+          id: bookId,
           title: finalTitle,
           authorName: finalAuthor || 'Unknown Author',
           description: content.substring(0, 200) || 'An uploaded novel.',
-          coverImageUrl: 'https://picsum.photos/seed/' + docId + '/400/600',
+          coverImageUrl: `https://picsum.photos/seed/${bookId}/400/600`,
+          totalChapters: chapters.length,
           publicationDate: new Date().toISOString(),
           genres: ['Uploaded'],
           language: 'en',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         };
 
         setDoc(bookRef, bookData)
@@ -167,18 +178,16 @@ export default function UploadPage() {
             }));
           });
 
+        setLoadingStatus('Uploading Chapters...');
         for (const ch of chapters) {
-          const chapterId = crypto.randomUUID();
-          const chapterRef = doc(db, 'novels', docId, 'chapters', chapterId);
+          const chapterRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
           const chapterData = {
-            id: chapterId,
-            novelId: docId,
             chapterNumber: ch.chapterNumber,
             title: ch.title,
             content: ch.content,
             wordCount: ch.content.split(/\s+/).length,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
           };
 
           setDoc(chapterRef, chapterData)
@@ -191,7 +200,7 @@ export default function UploadPage() {
             });
         }
 
-        router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
+        router.push(`/pages/${bookId}/${chapters[0]?.chapterNumber || 1}`);
       }
     } catch (error) {
       console.error("Upload failed", error);

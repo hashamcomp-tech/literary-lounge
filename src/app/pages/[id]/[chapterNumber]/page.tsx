@@ -1,8 +1,9 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
@@ -25,31 +26,39 @@ export default function CloudReader() {
   useEffect(() => {
     if (!db || !id) return;
 
-    const fetchChapter = async () => {
+    const fetchData = async () => {
       setLoading(true);
-      const chaptersRef = collection(db, 'novels', id, 'chapters');
-      const q = query(chaptersRef, orderBy('chapterNumber', 'asc'));
       
-      getDocs(q)
+      // Get Novel Metadata to find total chapters
+      const bookRef = doc(db, 'books', id);
+      getDoc(bookRef).then((snapshot) => {
+        if (snapshot.exists()) {
+          setTotalChapters(snapshot.data().totalChapters || 1);
+        }
+      });
+
+      // Get Current Chapter
+      const chapterRef = doc(db, 'books', id, 'chapters', chapterNumber);
+      getDoc(chapterRef)
         .then((snapshot) => {
-          const chapters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setTotalChapters(chapters.length);
-          const currentNum = parseInt(chapterNumber);
-          const current = chapters.find((c: any) => c.chapterNumber === currentNum);
-          setChapter(current || null);
+          if (snapshot.exists()) {
+            setChapter(snapshot.data());
+          } else {
+            setChapter(null);
+          }
           setLoading(false);
         })
-        .catch(async () => {
+        .catch(async (err) => {
           const permissionError = new FirestorePermissionError({
-            path: chaptersRef.path,
-            operation: 'list',
+            path: chapterRef.path,
+            operation: 'get',
           });
           errorEmitter.emit('permission-error', permissionError);
           setLoading(false);
         });
     };
     
-    fetchChapter();
+    fetchData();
   }, [id, chapterNumber, db]);
 
   const goToChapter = (index: number) => {
@@ -77,7 +86,7 @@ export default function CloudReader() {
           <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
           <h1 className="text-3xl font-headline font-bold mb-2">Chapter Not Found</h1>
           <p className="text-muted-foreground max-w-md">
-            We couldn't locate chapter {chapterNumber} for this text.
+            We couldn't locate chapter {chapterNumber} for this book.
           </p>
         </div>
       </div>
