@@ -58,8 +58,8 @@ export default function NovelCard({ novel }: NovelCardProps) {
                 </Badge>
               )}
               {isLocal && (
-                <Badge variant="secondary" className="text-[10px] h-5 uppercase tracking-wider font-bold bg-blue-100 text-blue-600 border-none">
-                  Local
+                <Badge variant="secondary" className="text-[10px] h-5 uppercase tracking-wider font-bold bg-amber-100 text-amber-700 border-none">
+                  Local Draft
                 </Badge>
               )}
             </div>
