@@ -1,36 +1,38 @@
+
 /**
- * @fileOverview Utility for converting text to speech using VoiceRSS.
+ * @fileOverview Utility for converting text to speech using ElevenLabs via an internal API route.
+ * This ensures API keys are kept secure on the server.
  */
 
 export async function playTextToSpeech(text: string): Promise<void> {
-  const apiKey = process.env.NEXT_PUBLIC_VOICERSS_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("VoiceRSS API key is missing. Please set NEXT_PUBLIC_VOICERSS_API_KEY in your environment.");
-  }
-
   try {
-    const response = await fetch('https://api.voicerss.org/', {
+    const response = await fetch('/api/tts', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: new URLSearchParams({
-        key: apiKey,
-        hl: 'en-us',
-        src: text.substring(0, 3000), // VoiceRSS has limit, we take first 3000 chars for a preview
-        c: 'MP3',
-        f: '44khz_16bit_stereo'
+      body: JSON.stringify({ 
+        // Truncate to a reasonable preview length if necessary, though ElevenLabs handles large text well
+        text: text.substring(0, 5000) 
       })
     });
 
-    if (!response.ok) throw new Error("TTS request failed. Check your API key or usage limits.");
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "ElevenLabs TTS request failed.");
+    }
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
+    
+    // Play the generated audio
     await audio.play();
+    
+    // Cleanup the URL after playback or if needed later
+    audio.onended = () => URL.revokeObjectURL(url);
   } catch (error: any) {
+    console.error("TTS Service Error:", error);
     throw error;
   }
 }
