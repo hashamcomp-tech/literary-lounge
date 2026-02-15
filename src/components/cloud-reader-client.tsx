@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { doc, collection, query, where, orderBy, limit, getDoc, getDocs } from 'firebase/firestore';
-import { useFirestore } from '@/firebase';
+import { useFirestore } from '@/firebase/provider';
 import { BookX, ChevronLeft, ChevronRight, TrendingUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,7 +44,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         }
         setMetadata(metaSnap.data());
 
-        // 2. Fetch Chapters (Current and Next for multi-chapter server-side style rendering)
+        // 2. Fetch Chapters (Current and Next)
         const chaptersRef = collection(db, 'books', id, 'chapters');
         const q = query(
           chaptersRef, 
@@ -100,7 +99,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   return (
     <div>
-      {/* Load multiple chapters as requested */}
+      {/* Semantic structure: chapters as articles */}
       {chapters.map((ch: any) => (
         <article key={ch.chapterNumber} id={`chapter-${ch.chapterNumber}`} className="mb-24 last:mb-0">
           <header className="mb-12 flex flex-col items-center text-center">
@@ -144,7 +143,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </article>
       ))}
 
-      {/* Navigation section with requested class */}
+      {/* Semantic structure: navigation as nav.chapter-nav */}
       <nav className="chapter-nav mt-12 py-12 border-t flex flex-col items-center gap-4">
         <div className="flex items-center justify-between w-full gap-4">
           <Button variant="outline" className="flex-1 rounded-xl h-12" disabled={prevNum < 1} asChild={prevNum >= 1}>

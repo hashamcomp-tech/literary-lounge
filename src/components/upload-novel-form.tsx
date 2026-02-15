@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -11,11 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, Lock, Send, Image as ImageIcon, Sparkles } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, addDoc } from 'firebase/firestore';
-import { useUser, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
+import { useFirebase } from '@/firebase/provider';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
-import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
+import { saveLocalBook, saveLocalChapter, getLocalBook, openDB } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { sendAccessRequestEmail } from '@/app/actions/notifications';
 import { GENRES } from '@/lib/genres';
@@ -31,6 +30,7 @@ import {
 
 /**
  * @fileOverview Client Component handling the novel upload logic and form state.
+ * Implements multi-chapter local saving and cloud upload requests.
  */
 
 interface AutocompleteInputProps {
@@ -126,13 +126,10 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
 
 export function UploadNovelForm() {
   const router = useRouter();
-  const { firestore: db, storage } = useFirebase();
-  const { user, isUserLoading } = useUser();
+  const { firestore: db, storage, user, isUserLoading } = useFirebase();
   const { toast } = useToast();
   
-  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
-  const { data: profile } = useDoc(profileRef);
-
+  const [profile, setProfile] = useState<any>(null);
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
@@ -147,39 +144,33 @@ export function UploadNovelForm() {
   const [checkingApproval, setCheckingApproval] = useState(true);
 
   useEffect(() => {
-    const checkApproval = async () => {
-      if (isUserLoading) return;
-      
-      if (!user || user.isAnonymous || !user.email) {
-        setIsApprovedUser(false);
-        setCheckingApproval(false);
-        return;
-      }
+    if (!user || user.isAnonymous) {
+      setCheckingApproval(false);
+      return;
+    }
 
-      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
-        setIsApprovedUser(true);
-        setCheckingApproval(false);
-        return;
-      }
-
-      try {
-        const settingsRef = doc(db, 'settings', 'approvedEmails');
-        const snap = await getDoc(settingsRef);
-        if (snap.exists()) {
-          const emails = snap.data().emails || [];
-          setIsApprovedUser(emails.includes(user.email));
+    const fetchProfile = async () => {
+      const pRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(pRef);
+      if (snap.exists()) {
+        const pData = snap.data();
+        setProfile(pData);
+        if (user.email === 'hashamcomp@gmail.com' || pData.role === 'admin') {
+          setIsApprovedUser(true);
         } else {
-          setIsApprovedUser(false);
+          const settingsRef = doc(db, 'settings', 'approvedEmails');
+          const settingsSnap = await getDoc(settingsRef);
+          if (settingsSnap.exists()) {
+            const emails = settingsSnap.data().emails || [];
+            setIsApprovedUser(emails.includes(user.email));
+          }
         }
-      } catch (e) {
-        setIsApprovedUser(false);
-      } finally {
-        setCheckingApproval(false);
       }
+      setCheckingApproval(false);
     };
 
-    checkApproval();
-  }, [user, isUserLoading, profile, db]);
+    fetchProfile();
+  }, [user, db]);
 
   const slugify = (text: string) => {
     return text
@@ -249,6 +240,7 @@ export function UploadNovelForm() {
         title: title.trim(),
         author: author.trim() || 'Anonymous',
         content: content.trim(),
+        chapterNumber: parseInt(chapterNumber) || 1,
         genre: genre || 'Unspecified',
         requestedBy: user.uid,
         requestedAt: serverTimestamp(),
@@ -308,16 +300,11 @@ export function UploadNovelForm() {
       return;
     }
 
-    if (!coverFile) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Cover image is required.' });
-      return;
-    }
-
     setLoading(true);
 
     try {
       let finalTitle = title.trim();
-      let finalAuthor = author.trim();
+      let finalAuthor = author.trim() || 'Anonymous';
       let chapters: any[] = [];
 
       if (selectedFile && selectedFile.name.endsWith('.epub')) {
@@ -336,18 +323,18 @@ export function UploadNovelForm() {
         chapters = [{
           chapterNumber: parseInt(chapterNumber) || 1,
           content: htmlContent,
-          title: "Full Text",
+          title: `Chapter ${chapterNumber}`,
         }];
       }
 
-      const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}_${Date.now()}`;
+      const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
 
       if (isApprovedUser && user && coverFile) {
         setLoadingStatus('Publishing to cloud...');
         await uploadBookToCloud({
           db,
           storage,
-          bookId: docId,
+          bookId: `${docId}_${Date.now()}`,
           title: finalTitle,
           author: finalAuthor,
           genre,
@@ -357,11 +344,15 @@ export function UploadNovelForm() {
         });
 
         toast({ title: "Successfully Published", description: "Novel is now live." });
-        router.push(`/pages/${docId}/1`);
+        router.push('/');
       } else {
         setLoadingStatus('Saving locally...');
-        let coverURL = null;
-        if (coverFile) {
+        
+        // Multi-chapter local storage logic
+        const existingBook = await getLocalBook(docId);
+        
+        let coverURL = existingBook?.coverURL || null;
+        if (!coverURL && coverFile) {
           coverURL = await uploadCoverImage(storage, coverFile, docId);
         }
 
@@ -370,7 +361,7 @@ export function UploadNovelForm() {
           title: finalTitle,
           author: finalAuthor,
           genre: genre,
-          totalChapters: chapters.length,
+          totalChapters: Math.max((existingBook?.totalChapters || 0), chapters[chapters.length-1].chapterNumber),
           lastUpdated: new Date().toISOString(),
           isLocalOnly: true,
           coverURL: coverURL
@@ -381,7 +372,7 @@ export function UploadNovelForm() {
           await saveLocalChapter({ ...ch, bookId: docId });
         }
 
-        toast({ title: "Saved Locally", description: "Novel added to your browser's private database." });
+        toast({ title: "Saved Locally", description: `Added ${chapters.length} chapter(s) to your private library.` });
         router.push(`/local-pages/${docId}/1`);
       }
     } catch (error: any) {
@@ -417,7 +408,7 @@ export function UploadNovelForm() {
             <Lock className="h-5 w-5" />
             <AlertTitle className="font-bold">Local Storage Active</AlertTitle>
             <AlertDescription className="text-sm flex flex-col gap-3">
-              <p>Content will be saved only to your browser's private database.</p>
+              <p>Content will be saved only to your browser's private database. You can add multiple chapters to the same book.</p>
               {canRequestAccess && (
                 <div className="flex flex-wrap gap-2">
                   <Button 
@@ -451,7 +442,7 @@ export function UploadNovelForm() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BookPlus className="h-5 w-5 text-primary" />
-            Novel Details
+            Upload Book Chapter
           </CardTitle>
           <CardDescription>
             Provide details for your {isApprovedUser ? 'global' : 'local'} collection.
@@ -466,7 +457,7 @@ export function UploadNovelForm() {
                   type="author" 
                   value={author} 
                   onChange={setAuthor} 
-                  placeholder="e.g. James Clear"
+                  placeholder="Author (optional)"
                 />
               </div>
 
@@ -476,7 +467,7 @@ export function UploadNovelForm() {
                   type="book" 
                   value={title} 
                   onChange={setTitle} 
-                  placeholder="e.g. Atomic Habits"
+                  placeholder="Book Title"
                 />
               </div>
 
@@ -497,7 +488,7 @@ export function UploadNovelForm() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Start Chapter</Label>
+                  <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Chapter Number</Label>
                   <Input 
                     type="number" 
                     min={1} 
@@ -509,36 +500,37 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <div className="space-y-4 pt-4 border-t">
-              <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <ImageIcon className="h-4 w-4" /> Cover Image <span className="text-destructive">*</span>
-              </Label>
-              <div className={`relative border-2 border-dashed rounded-xl p-4 transition-colors ${coverFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
-                <input
-                  type="file"
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  accept="image/*"
-                  onChange={handleCoverChange}
-                  required
-                />
-                <div className="flex flex-col items-center justify-center text-center">
-                  {coverFile ? (
-                    <div className="flex items-center gap-2">
-                       <CheckCircle2 className="h-5 w-5 text-primary" />
-                       <span className="text-sm font-medium truncate max-w-[200px]">{coverFile.name}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                       <Upload className="h-4 w-4" />
-                       <span className="text-xs font-medium">Select a cover image</span>
-                    </div>
-                  )}
+            {!isApprovedUser && (
+               <div className="space-y-4 pt-4 border-t">
+                <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" /> Cover Image (New Books Only)
+                </Label>
+                <div className={`relative border-2 border-dashed rounded-xl p-4 transition-colors ${coverFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
+                  <input
+                    type="file"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    accept="image/*"
+                    onChange={handleCoverChange}
+                  />
+                  <div className="flex flex-col items-center justify-center text-center">
+                    {coverFile ? (
+                      <div className="flex items-center gap-2">
+                         <CheckCircle2 className="h-5 w-5 text-primary" />
+                         <span className="text-sm font-medium truncate max-w-[200px]">{coverFile.name}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                         <Upload className="h-4 w-4" />
+                         <span className="text-xs font-medium">Select a cover image</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-4 pt-4 border-t">
-              <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Content Source</Label>
+              <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Chapter Content</Label>
               <div className="grid grid-cols-1 gap-4">
                 <div className={`relative border-2 border-dashed rounded-xl p-8 transition-colors ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
                   <input
@@ -561,7 +553,7 @@ export function UploadNovelForm() {
                           <Upload className="h-6 w-6 text-muted-foreground" />
                         </div>
                         <span className="font-bold text-sm mb-1">Upload EPUB File</span>
-                        <span className="text-xs text-muted-foreground">Drag and drop or click to browse</span>
+                        <span className="text-xs text-muted-foreground">Processes all chapters automatically</span>
                       </>
                     )}
                   </div>
@@ -569,7 +561,7 @@ export function UploadNovelForm() {
 
                 {!selectedFile && (
                   <Textarea
-                    placeholder="Paste your chapter content here..."
+                    placeholder="Paste chapter content here..."
                     className="min-h-[250px] text-lg leading-relaxed p-4 bg-background/30 focus:bg-background transition-colors"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
@@ -578,28 +570,43 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <Button 
-              type="submit" 
-              className="w-full py-8 text-lg font-bold rounded-2xl shadow-lg transition-transform active:scale-[0.98]"
-              disabled={loading || (!title.trim() && !selectedFile)}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="mr-2 h-6 w-6 animate-spin" />
-                  {loadingStatus || 'Processing...'}
-                </>
-              ) : isApprovedUser ? (
-                <>
-                  <ShieldCheck className="mr-2 h-6 w-6" />
-                  Publish to Cloud
-                </>
-              ) : (
-                <>
-                  <HardDrive className="mr-2 h-6 w-6" />
-                  Save Locally
-                </>
+            <div className="grid grid-cols-1 gap-3 pt-4 border-t">
+              <Button 
+                type="submit" 
+                className="w-full py-8 text-lg font-bold rounded-2xl shadow-lg transition-transform active:scale-[0.98]"
+                disabled={loading || (!title.trim() && !selectedFile)}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-6 w-6 animate-spin" />
+                    {loadingStatus || 'Processing...'}
+                  </>
+                ) : isApprovedUser ? (
+                  <>
+                    <ShieldCheck className="mr-2 h-6 w-6" />
+                    Publish to Cloud
+                  </>
+                ) : (
+                  <>
+                    <HardDrive className="mr-2 h-6 w-6" />
+                    Save Locally
+                  </>
+                )}
+              </Button>
+              
+              {!isApprovedUser && !selectedFile && (
+                <Button 
+                  type="button" 
+                  variant="outline"
+                  className="w-full py-6 rounded-2xl border-amber-500/20 text-amber-700 hover:bg-amber-500/5"
+                  onClick={handleRequestCloudUpload}
+                  disabled={loading || !title.trim() || !content.trim()}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Request Cloud Review for this Chapter
+                </Button>
               )}
-            </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
