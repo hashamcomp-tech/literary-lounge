@@ -1,16 +1,17 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Type, Moon, Sun, ArrowLeft, Navigation, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, Navigation, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-import { Slider } from '@/components/ui/slider';
 import { Novel } from '@/lib/mock-data';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import { useTheme } from 'next-themes';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -18,11 +19,15 @@ interface NovelReaderProps {
 
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
-  const [fontSize, setFontSize] = useState(18);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [jumpValue, setJumpValue] = useState('');
+  const [mounted, setMounted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const currentChapter = novel.chapters[currentChapterIndex];
   const progress = ((currentChapterIndex + 1) / novel.chapters.length) * 100;
@@ -50,24 +55,31 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     }
   };
 
+  if (!mounted) return null;
+
   return (
-    <div className={`flex flex-col h-[calc(100vh-4rem)] ${isDarkMode ? 'dark' : ''}`}>
-      <div className="flex-1 overflow-y-auto relative bg-card dark:bg-slate-950 transition-colors duration-300">
-        <main className="max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-[#222] dark:text-slate-200">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background transition-colors duration-300">
+      <div className="flex-1 overflow-y-auto relative">
+        <main className="max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-foreground transition-colors duration-300">
           <header className="mb-10 text-center sm:text-left">
             <div className="flex items-center justify-between mb-8">
                <Button 
                 variant="ghost" 
                 size="sm" 
                 onClick={() => router.back()}
-                className="text-muted-foreground"
+                className="text-muted-foreground hover:text-primary"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" /> Back
               </Button>
 
               <div className="flex gap-2">
-                <Button variant="outline" size="icon" onClick={() => setIsDarkMode(!isDarkMode)} className="rounded-full">
-                  {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+                  className="rounded-full"
+                >
+                  {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
                 </Button>
                 <Sheet>
                   <SheetTrigger asChild>
@@ -155,7 +167,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
                 <Button 
                   variant="default" 
-                  className="bg-primary"
+                  className="bg-primary hover:bg-primary/90"
                   disabled={currentChapterIndex === novel.chapters.length - 1}
                   onClick={() => setCurrentChapterIndex(prev => prev + 1)}
                 >

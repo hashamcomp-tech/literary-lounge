@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { ModeToggle } from '@/components/mode-toggle';
 
 export default function Navbar() {
   const router = useRouter();
@@ -65,7 +66,7 @@ export default function Navbar() {
           <span className="text-xl font-headline font-bold hidden sm:inline-block">Literary Lounge</span>
         </Link>
 
-        <form onSubmit={handleSearch} className="flex-1-max-w-md relative group">
+        <form onSubmit={handleSearch} className="flex-1 max-w-md relative group">
           <Input
             type="search"
             placeholder="Search novels or authors..."
@@ -76,7 +77,7 @@ export default function Navbar() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
         </form>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           {isAdmin && (
             <Link href="/admin">
               <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full" title="Admin Dashboard">
@@ -89,6 +90,7 @@ export default function Navbar() {
               <Upload className="h-5 w-5" />
             </Button>
           </Link>
+          <ModeToggle />
           <Link href="/setup">
             <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Preferences">
               <Settings className="h-5 w-5" />

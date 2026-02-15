@@ -1,21 +1,30 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Navigation, Sun, Moon } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { useTheme } from 'next-themes';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
+  const { theme, setTheme } = useTheme();
   const router = useRouter();
   const currentChapterNum = parseInt(pageNumber);
   
   const [novelData, setNovelData] = useState<any>(null);
   const [allChapters, setAllChapters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const loadLocalData = async () => {
@@ -72,21 +81,33 @@ export default function LocalReader() {
     );
   }
 
+  if (!mounted) return null;
+
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background transition-colors duration-300">
       <Navbar />
       
-      <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-[#222]">
+      <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-foreground transition-colors duration-300">
         <header className="mb-10 text-center sm:text-left">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => router.back()}
-            className="mb-8 -ml-2 text-muted-foreground hover:text-primary transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back
-          </Button>
+          <div className="flex items-center justify-between mb-8">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => router.back()}
+              className="text-muted-foreground hover:text-primary transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+              className="rounded-full"
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
+            </Button>
+          </div>
           
           <div className="space-y-4">
             <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-3 py-0.5 text-[10px]">
@@ -106,7 +127,7 @@ export default function LocalReader() {
             </h2>
           </header>
 
-          <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-[#222]">
+          <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6]">
             {(chapter.content || '').split(/<p>|\n\n/).map((para: string, idx: number) => {
                const clean = para.replace(/<\/p>|<[^>]*>?/gm, '').trim();
                if (!clean) return null;
@@ -115,32 +136,34 @@ export default function LocalReader() {
           </div>
         </article>
 
-        <section className="mt-16 pt-10 border-t">
-          <nav className="chapter-nav flex items-center justify-between gap-4">
-            <Button 
-              variant="outline" 
-              className="h-10 px-6 rounded-xl border-primary/20 font-bold"
-              disabled={currentChapterNum <= 1}
-              onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
-            >
-              <ChevronLeft className="h-4 w-4 mr-2" /> Prev
-            </Button>
-            
-            <div className="text-center min-w-[60px]">
-               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
-                 {currentChapterNum} / {allChapters.length}
-               </span>
-            </div>
+        <section className="mt-16 pt-10 border-t space-y-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+            <nav className="chapter-nav flex items-center justify-between gap-4">
+              <Button 
+                variant="outline" 
+                className="h-10 px-6 rounded-xl border-primary/20 font-bold"
+                disabled={currentChapterNum <= 1}
+                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
+              >
+                <ChevronLeft className="h-4 w-4 mr-2" /> Prev
+              </Button>
+              
+              <div className="text-center min-w-[60px]">
+                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+                   {currentChapterNum} / {allChapters.length}
+                 </span>
+              </div>
 
-            <Button 
-              variant="default" 
-              className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
-              disabled={currentChapterNum >= allChapters.length}
-              onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
-            >
-              Next <ChevronRight className="h-4 w-4 ml-2" />
-            </Button>
-          </nav>
+              <Button 
+                variant="default" 
+                className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
+                disabled={currentChapterNum >= allChapters.length}
+                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
+              >
+                Next <ChevronRight className="h-4 w-4 ml-2" />
+              </Button>
+            </nav>
+          </div>
         </section>
       </main>
     </div>
