@@ -6,8 +6,7 @@ export async function playTextToSpeech(text: string): Promise<void> {
   const apiKey = process.env.NEXT_PUBLIC_VOICERSS_API_KEY;
   
   if (!apiKey) {
-    console.error("VoiceRSS API key is missing. Please set NEXT_PUBLIC_VOICERSS_API_KEY in your environment.");
-    return;
+    throw new Error("VoiceRSS API key is missing. Please set NEXT_PUBLIC_VOICERSS_API_KEY in your environment.");
   }
 
   try {
@@ -25,13 +24,13 @@ export async function playTextToSpeech(text: string): Promise<void> {
       })
     });
 
-    if (!response.ok) throw new Error("TTS request failed");
+    if (!response.ok) throw new Error("TTS request failed. Check your API key or usage limits.");
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     await audio.play();
-  } catch (error) {
-    console.error("TTS Error:", error);
+  } catch (error: any) {
+    throw error;
   }
 }

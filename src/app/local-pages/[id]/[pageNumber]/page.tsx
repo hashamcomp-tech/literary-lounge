@@ -3,16 +3,18 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Navigation, Sun, Moon, Volume2 } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2 } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech } from '@/lib/tts-service';
+import { useToast } from '@/hooks/use-toast';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
   const router = useRouter();
   const currentChapterNum = parseInt(pageNumber);
   
@@ -56,10 +58,19 @@ export default function LocalReader() {
     if (!chapter?.content) return;
     
     setIsSpeaking(true);
-    // Strip HTML tags
-    const plainText = chapter.content.replace(/<[^>]*>?/gm, '');
-    await playTextToSpeech(plainText);
-    setIsSpeaking(false);
+    try {
+      // Strip HTML tags
+      const plainText = chapter.content.replace(/<[^>]*>?/gm, '');
+      await playTextToSpeech(plainText);
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Speech Error",
+        description: err.message || "Failed to generate speech."
+      });
+    } finally {
+      setIsSpeaking(false);
+    }
   };
 
   if (loading) {

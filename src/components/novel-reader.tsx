@@ -16,6 +16,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
 import { playTextToSpeech } from '@/lib/tts-service';
+import { useToast } from '@/hooks/use-toast';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -24,6 +25,7 @@ interface NovelReaderProps {
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
   const { user } = useUser();
   const db = useFirestore();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
@@ -78,8 +80,17 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const handleReadAloud = async () => {
     if (!currentChapter?.content) return;
     setIsSpeaking(true);
-    await playTextToSpeech(currentChapter.content);
-    setIsSpeaking(false);
+    try {
+      await playTextToSpeech(currentChapter.content);
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Speech Error",
+        description: err.message || "Failed to generate speech."
+      });
+    } finally {
+      setIsSpeaking(false);
+    }
   };
 
   if (!mounted) return null;

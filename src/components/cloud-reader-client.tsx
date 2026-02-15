@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import { playTextToSpeech } from '@/lib/tts-service';
+import { useToast } from '@/hooks/use-toast';
 
 interface CloudReaderClientProps {
   id: string;
@@ -20,6 +21,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const { firestore } = useFirebase();
   const { user } = useUser();
   const { theme, setTheme } = useTheme();
+  const { toast } = useToast();
   const router = useRouter();
   const currentChapterNum = parseInt(chapterNumber);
   
@@ -100,10 +102,18 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (!currentChapter?.content) return;
     
     setIsSpeaking(true);
-    // Strip HTML tags for cleaner speech
-    const plainText = currentChapter.content.replace(/<[^>]*>?/gm, '');
-    await playTextToSpeech(plainText);
-    setIsSpeaking(false);
+    try {
+      const plainText = currentChapter.content.replace(/<[^>]*>?/gm, '');
+      await playTextToSpeech(plainText);
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Speech Error",
+        description: err.message || "Failed to generate speech."
+      });
+    } finally {
+      setIsSpeaking(false);
+    }
   };
 
   if (isLoading) {
@@ -185,7 +195,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </h2>
         </header>
 
-        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] font-body text-foreground/90">
+        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] font-body leading-[1.6] text-foreground/90">
           {(currentChapter.content || '').split(/<p>|\n\n/).map((para: string, idx: number) => {
             const cleanPara = para.replace(/<\/p>|<[^>]*>?/gm, '').trim();
             if (!cleanPara) return null;
