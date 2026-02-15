@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -8,7 +7,7 @@ import { collection, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, BookOpen, Clock, Trash2, CheckCircle2, XCircle, ArrowLeft, MessageSquareQuote } from 'lucide-react';
+import { Loader2, BookOpen, Clock, Trash2, CheckCircle2, ArrowLeft, MessageSquareQuote } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
@@ -19,12 +18,14 @@ export default function AdminRequestsDashboard() {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const requestsQuery = useMemoFirebase(() => {
+    if (!db) return null;
     return query(collection(db, 'cloudUploadRequests'), orderBy('requestedAt', 'desc'));
   }, [db]);
 
   const { data: requests, isLoading } = useCollection(requestsQuery);
 
   const handleDelete = async (id: string) => {
+    if (!db) return;
     setProcessingId(id);
     try {
       await deleteDoc(doc(db, 'cloudUploadRequests', id));
@@ -117,7 +118,6 @@ export default function AdminRequestsDashboard() {
                           size="sm" 
                           className="bg-primary hover:bg-primary/90 rounded-xl"
                           onClick={() => {
-                            // In a real app, this would trigger the uploadBookToCloud logic
                             toast({ title: "Feature Pending", description: "Full content approval integration coming soon." });
                           }}
                         >
