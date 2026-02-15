@@ -131,7 +131,7 @@ export default function UploadPage() {
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
   const [content, setContent] = useState('');
-  const [genre, setGenre] = useState('Fiction');
+  const [genre, setGenre] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
@@ -263,7 +263,7 @@ export default function UploadPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!genre.trim()) {
+    if (!genre) {
       toast({ variant: 'destructive', title: 'Error', description: 'Genre is required.' });
       return;
     }
@@ -295,7 +295,13 @@ export default function UploadPage() {
         }];
       }
 
-      const docId = `${slugify(finalAuthor || 'anonymous')}_${slugify(finalTitle || 'untitled')}_${Date.now()}`;
+      if (!finalTitle || !finalAuthor) {
+        toast({ variant: 'destructive', title: 'Missing Information', description: 'Title and Author are required.' });
+        setLoading(false);
+        return;
+      }
+
+      const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}_${Date.now()}`;
 
       if (isApprovedUser && user) {
         setLoadingStatus('Publishing to cloud...');
@@ -311,7 +317,6 @@ export default function UploadPage() {
           totalChapters: chapters.length,
           genre: genre,
           views: 0,
-          isLocalOnly: false
         };
 
         const rootPayload = {
@@ -474,7 +479,7 @@ export default function UploadPage() {
                       type="author" 
                       value={author} 
                       onChange={setAuthor} 
-                      placeholder="e.g. Jane Austen"
+                      placeholder="e.g. James Clear"
                     />
                   </div>
 
@@ -484,7 +489,7 @@ export default function UploadPage() {
                       type="book" 
                       value={title} 
                       onChange={setTitle} 
-                      placeholder="e.g. Pride and Prejudice"
+                      placeholder="e.g. Atomic Habits"
                     />
                   </div>
 
@@ -492,7 +497,7 @@ export default function UploadPage() {
                     <div className="grid gap-2">
                       <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Genre</Label>
                       <Select value={genre} onValueChange={setGenre}>
-                        <SelectTrigger className="bg-background/50">
+                        <SelectTrigger className="bg-background/50 h-10 rounded-md border border-input px-3">
                           <SelectValue placeholder="Select Genre" />
                         </SelectTrigger>
                         <SelectContent>
