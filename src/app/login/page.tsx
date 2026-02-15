@@ -79,6 +79,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      // Create user securely in Firebase Auth
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
       toast({ title: "Welcome back!", description: "Successfully logged in." });
       router.push('/');
