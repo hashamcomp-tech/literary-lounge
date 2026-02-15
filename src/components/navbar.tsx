@@ -2,17 +2,38 @@
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings, Upload } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload, Shield } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { useUser } from '@/firebase';
+import { useState, useEffect } from 'react';
+import { useUser, useFirestore } from '@/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function Navbar() {
   const router = useRouter();
+  const db = useFirestore();
   const [searchQuery, setSearchQuery] = useState('');
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (!user || user.isAnonymous || !user.email) {
+        setIsAdmin(false);
+        return;
+      }
+      try {
+        const settingsRef = doc(db, 'settings', 'approvedEmails');
+        const snap = await getDoc(settingsRef);
+        if (snap.exists()) {
+          const emails = snap.data().emails || [];
+          setIsAdmin(emails.includes(user.email));
+        }
+      } catch (e) {}
+    };
+    checkAdmin();
+  }, [user, db]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +67,13 @@ export default function Navbar() {
         </form>
 
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Link href="/admin">
+              <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full" title="Admin Dashboard">
+                <Shield className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
           <Link href="/upload">
             <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
               <Upload className="h-5 w-5" />

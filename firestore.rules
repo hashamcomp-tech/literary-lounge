@@ -15,12 +15,17 @@ service cloud.firestore {
 
     match /settings/approvedEmails {
       allow get: if isSignedIn();
-      allow write: if false;
+      // Allow approved users to manage the whitelist (acting as admins)
+      allow write: if isApproved();
     }
 
     match /publishRequests/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow get: if isSignedIn() && (request.auth.uid == userId || isApproved());
+      // Allow administrators to see all requests
+      allow list: if isApproved();
+      // Allow administrators to remove requests after processing
+      allow delete: if isApproved();
     }
 
     match /users/{userId} {
@@ -36,7 +41,7 @@ service cloud.firestore {
 
       // Only allow writes if the user is logged in AND email is whitelisted
       allow create: if isApproved();
-      allow update, delete: if isApproved() && resource.data.metadata.info.ownerId == request.auth.uid;
+      allow update, delete: if isApproved() && (resource == null || resource.data.metadata.info.ownerId == request.auth.uid);
 
       match /metadata/info {
         allow read: if true;
