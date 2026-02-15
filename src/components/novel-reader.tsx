@@ -1,8 +1,7 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -16,6 +15,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
+import { playTextToSpeech } from '@/lib/tts-service';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -27,6 +27,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const { user } = useUser();
   const db = useFirestore();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [mounted, setMounted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -43,7 +44,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     }
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
 
-    // Sync mock collection progress to cloud history if logged in
     if (user && !user.isAnonymous && db) {
       const historyRef = doc(db, 'users', user.uid, 'history', novel.id);
       const historyData = {
@@ -75,6 +75,13 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     }
   }, [novel.id]);
 
+  const handleReadAloud = async () => {
+    if (!currentChapter?.content) return;
+    setIsSpeaking(true);
+    await playTextToSpeech(currentChapter.content);
+    setIsSpeaking(false);
+  };
+
   if (!mounted) return null;
 
   return (
@@ -93,6 +100,16 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               </Button>
 
               <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
+                  onClick={handleReadAloud}
+                  disabled={isSpeaking}
+                  title="Read Aloud"
+                >
+                  <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
+                </Button>
                 <Link href={`/chat/${novel.id}`}>
                   <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5" title="Reader Lounge">
                     <MessageSquare className="h-4 w-4" />

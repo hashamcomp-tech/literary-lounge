@@ -1,15 +1,14 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Navigation, Sun, Moon } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Navigation, Sun, Moon, Volume2 } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { useTheme } from 'next-themes';
+import { playTextToSpeech } from '@/lib/tts-service';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -20,6 +19,7 @@ export default function LocalReader() {
   const [novelData, setNovelData] = useState<any>(null);
   const [allChapters, setAllChapters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -50,6 +50,17 @@ export default function LocalReader() {
     
     loadLocalData();
   }, [id, currentChapterNum]);
+
+  const handleReadAloud = async () => {
+    const chapter = allChapters.find(ch => ch.chapterNumber === currentChapterNum);
+    if (!chapter?.content) return;
+    
+    setIsSpeaking(true);
+    // Strip HTML tags
+    const plainText = chapter.content.replace(/<[^>]*>?/gm, '');
+    await playTextToSpeech(plainText);
+    setIsSpeaking(false);
+  };
 
   if (loading) {
     return (
@@ -99,14 +110,26 @@ export default function LocalReader() {
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back
             </Button>
-            <Button 
-              variant="outline" 
-              size="icon" 
-              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
-              className="rounded-full"
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="icon" 
+                className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
+                onClick={handleReadAloud}
+                disabled={isSpeaking}
+                title="Read Aloud"
+              >
+                <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="icon" 
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
+                className="rounded-full"
+              >
+                {theme === 'dark' ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
+              </Button>
+            </div>
           </div>
           
           <div className="space-y-4">

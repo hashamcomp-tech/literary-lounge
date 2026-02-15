@@ -3,14 +3,13 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
+import { playTextToSpeech } from '@/lib/tts-service';
 
 interface CloudReaderClientProps {
   id: string;
@@ -27,6 +26,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [metadata, setMetadata] = useState<any>(null);
   const [chapters, setChapters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -95,6 +95,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     fetchData();
   }, [firestore, id, user, currentChapterNum]);
 
+  const handleReadAloud = async () => {
+    const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum);
+    if (!currentChapter?.content) return;
+    
+    setIsSpeaking(true);
+    // Strip HTML tags for cleaner speech
+    const plainText = currentChapter.content.replace(/<[^>]*>?/gm, '');
+    await playTextToSpeech(plainText);
+    setIsSpeaking(false);
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-32 space-y-4">
@@ -128,6 +139,16 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
           <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
+              onClick={handleReadAloud}
+              disabled={isSpeaking}
+              title="Read Aloud"
+            >
+              <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
+            </Button>
             <Link href={`/chat/${id}`}>
               <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5 shadow-sm" title="Reader Lounge">
                 <MessageSquare className="h-4 w-4" />
