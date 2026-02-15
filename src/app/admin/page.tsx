@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
-import { collection, doc, getDoc, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 
@@ -22,6 +22,11 @@ export default function AdminPage() {
 
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  
+  // Library Stats
+  const [bookCount, setBookCount] = useState<number>(0);
+  const [chapterCount, setChapterCount] = useState<number>(0);
+  const [isStatsLoading, setIsStatsLoading] = useState(false);
 
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
   const { data: profile } = useDoc(profileRef);
@@ -56,6 +61,33 @@ export default function AdminPage() {
     };
     checkAdmin();
   }, [user, isUserLoading, profile, db]);
+
+  // Fetch Library Statistics
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const fetchStats = async () => {
+      setIsStatsLoading(true);
+      try {
+        const booksSnap = await getDocs(collection(db, 'books'));
+        setBookCount(booksSnap.size);
+
+        let total = 0;
+        // Aggregating chapter counts from subcollections
+        const chapterPromises = booksSnap.docs.map(b => getDocs(collection(db, 'books', b.id, 'chapters')));
+        const chapterSnaps = await Promise.all(chapterPromises);
+        chapterSnaps.forEach(snap => total += snap.size);
+        
+        setChapterCount(total);
+      } catch (err) {
+        console.error("Failed to fetch admin stats:", err);
+      } finally {
+        setIsStatsLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, [db, isAdmin]);
 
   // Fetch pending requests
   const requestsQuery = useMemoFirebase(() => {
@@ -159,6 +191,57 @@ export default function AdminPage() {
               {requests?.length || 0} Pending Requests
             </Badge>
           </header>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+            <Card className="bg-card/50 backdrop-blur border shadow-sm">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-primary/10 p-2.5 rounded-xl">
+                    <BookOpen className="h-5 w-5 text-primary" />
+                  </div>
+                  <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] font-black uppercase">Total Books</Badge>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black">
+                    {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : bookCount.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">Active titles in the cloud</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50 backdrop-blur border shadow-sm">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-accent/10 p-2.5 rounded-xl">
+                    <Layers className="h-5 w-5 text-accent" />
+                  </div>
+                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Total Chapters</Badge>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black">
+                    {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : chapterCount.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">Extracting from all novels</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/50 backdrop-blur border shadow-sm">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-green-500/10 p-2.5 rounded-xl">
+                    <Activity className="h-5 w-5 text-green-600" />
+                  </div>
+                  <Badge variant="secondary" className="bg-green-500/5 text-green-600 border-none text-[10px] font-black uppercase">Status</Badge>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black text-green-600">Active</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Lounge operations normal</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <AdminStorageBar />
 
