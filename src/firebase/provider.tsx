@@ -8,24 +8,11 @@ import { FirebaseStorage } from 'firebase/storage';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { initiateAnonymousSignIn } from '@/firebase/non-blocking-login';
 
-interface FirebaseProviderProps {
-  children: ReactNode;
-  firebaseApp: FirebaseApp;
-  firestore: Firestore;
-  auth: Auth;
-  storage: FirebaseStorage;
-}
-
-// Internal state for user authentication
-interface UserAuthState {
-  user: User | null;
-  isUserLoading: boolean;
-  userError: Error | null;
-}
-
-// Combined state for the Firebase context
-export interface FirebaseContextState {
-  areServicesAvailable: boolean;
+/**
+ * Defines the structure of the Firebase context.
+ * includes core services and user authentication state.
+ */
+export interface FirebaseContextType {
   firebaseApp: FirebaseApp | null;
   firestore: Firestore | null;
   auth: Auth | null;
@@ -33,9 +20,12 @@ export interface FirebaseContextState {
   user: User | null;
   isUserLoading: boolean;
   userError: Error | null;
+  areServicesAvailable: boolean;
 }
 
-// Return type for useFirebase()
+/**
+ * Interface for the set of services and user data returned by useFirebase().
+ */
 export interface FirebaseServicesAndUser {
   firebaseApp: FirebaseApp;
   firestore: Firestore;
@@ -46,19 +36,35 @@ export interface FirebaseServicesAndUser {
   userError: Error | null;
 }
 
-// Return type for useUser()
+/**
+ * Interface for the user hook result.
+ */
 export interface UserHookResult {
   user: User | null;
   isUserLoading: boolean;
   userError: Error | null;
 }
 
-// React Context
-export const FirebaseContext = createContext<FirebaseContextState | undefined>(undefined);
+// React Context for Firebase
+export const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
+
+interface FirebaseProviderProps {
+  children: ReactNode;
+  firebaseApp: FirebaseApp;
+  firestore: Firestore;
+  auth: Auth;
+  storage: FirebaseStorage;
+}
+
+// Internal state for user authentication tracking
+interface UserAuthState {
+  user: User | null;
+  isUserLoading: boolean;
+  userError: Error | null;
+}
 
 /**
- * FirebaseProvider manages and provides Firebase services and user authentication state.
- * It automatically signs in users anonymously if no session exists.
+ * FirebaseProvider component that initializes and shares Firebase services and auth state.
  */
 export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   children,
@@ -84,7 +90,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       auth,
       (firebaseUser) => {
         if (!firebaseUser) {
-          // If no user session is found, initiate anonymous sign-in as a fallback
+          // Fallback to anonymous sign-in if no user session is found
           initiateAnonymousSignIn(auth);
         } else {
           // User is authenticated (either anonymously or via credentials)
@@ -99,11 +105,10 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
     return () => unsubscribe();
   }, [auth]);
 
-  // Memoize the context value
-  const contextValue = useMemo((): FirebaseContextState => {
+  // Memoize the context value to prevent unnecessary re-renders
+  const contextValue = useMemo((): FirebaseContextType => {
     const servicesAvailable = !!(firebaseApp && firestore && auth && storage);
     return {
-      areServicesAvailable: servicesAvailable,
       firebaseApp: servicesAvailable ? firebaseApp : null,
       firestore: servicesAvailable ? firestore : null,
       auth: servicesAvailable ? auth : null,
@@ -111,6 +116,7 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       user: userAuthState.user,
       isUserLoading: userAuthState.isUserLoading,
       userError: userAuthState.userError,
+      areServicesAvailable: servicesAvailable,
     };
   }, [firebaseApp, firestore, auth, storage, userAuthState]);
 
@@ -123,8 +129,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
 };
 
 /**
- * Hook to access core Firebase services and user authentication state.
- * Throws error if core services are not available or used outside provider.
+ * Hook to access the core Firebase services and user authentication state.
+ * Throws if used outside of a FirebaseProvider.
  */
 export const useFirebase = (): FirebaseServicesAndUser => {
   const context = useContext(FirebaseContext);
@@ -148,32 +154,35 @@ export const useFirebase = (): FirebaseServicesAndUser => {
   };
 };
 
-/** Hook to access Firebase Auth instance. */
+/** Hook to access the Firebase Auth instance. */
 export const useAuth = (): Auth => {
   const { auth } = useFirebase();
   return auth;
 };
 
-/** Hook to access Firestore instance. */
+/** Hook to access the Firestore instance. */
 export const useFirestore = (): Firestore => {
   const { firestore } = useFirebase();
   return firestore;
 };
 
-/** Hook to access Firebase App instance. */
+/** Hook to access the Firebase App instance. */
 export const useFirebaseApp = (): FirebaseApp => {
   const { firebaseApp } = useFirebase();
   return firebaseApp;
 };
 
-/** Hook to access Firebase Storage instance. */
-export const useStorage = () => {
+/** Hook to access the Firebase Storage instance. */
+export const useStorage = (): FirebaseStorage => {
   const { storage } = useFirebase();
   return storage;
 };
 
 type MemoFirebase <T> = T & {__memo?: boolean};
 
+/**
+ * Utility hook to memoize Firebase references or queries.
+ */
 export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | (MemoFirebase<T>) {
   const memoized = useMemo(factory, deps);
   
@@ -184,7 +193,7 @@ export function useMemoFirebase<T>(factory: () => T, deps: DependencyList): T | 
 }
 
 /**
- * Hook specifically for accessing the authenticated user's state.
+ * Hook specifically for accessing the currently authenticated user's state.
  */
 export const useUser = (): UserHookResult => {
   const { user, isUserLoading, userError } = useFirebase();
