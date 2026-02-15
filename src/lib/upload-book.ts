@@ -1,5 +1,5 @@
 
-import { doc, setDoc, serverTimestamp, Firestore, increment } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, Firestore, increment, getDoc, updateDoc } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 
@@ -9,6 +9,14 @@ interface Chapter {
   title?: string;
 }
 
+/**
+ * Handles the multi-step process of publishing a novel to the cloud.
+ * 1. Uploads cover image to Storage.
+ * 2. Sets searchable root document.
+ * 3. Sets detailed metadata.
+ * 4. Updates global storage stats.
+ * 5. Uploads individual chapters.
+ */
 export async function uploadBookToCloud({
   db,
   storage,
@@ -76,11 +84,15 @@ export async function uploadBookToCloud({
   const infoRef = doc(db, 'books', bookId, 'metadata', 'info');
   await setDoc(infoRef, metadataInfo, { merge: true });
 
-  // 5. Update Global Storage Usage Stats
+  // 5. Update Global Storage Usage Stats (Using requested pattern)
   const statsRef = doc(db, 'stats', 'storageUsage');
-  await setDoc(statsRef, { 
+  const snap = await getDoc(statsRef);
+  if (!snap.exists()) {
+    await setDoc(statsRef, { storageBytesUsed: 0 });
+  }
+  await updateDoc(statsRef, { 
     storageBytesUsed: increment(coverSize) 
-  }, { merge: true });
+  });
 
   // 6. Set Chapters
   for (const ch of chapters) {
