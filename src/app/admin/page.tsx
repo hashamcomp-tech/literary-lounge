@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -10,9 +9,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
+import Link from 'next/link';
 
 export default function AdminPage() {
   const db = useFirestore();
@@ -187,9 +187,17 @@ export default function AdminPage() {
               </div>
               <h1 className="text-4xl font-headline font-black">Lounge Overview</h1>
             </div>
-            <Badge variant="outline" className="w-fit h-7 border-primary/20 text-primary bg-primary/5">
-              {requests?.length || 0} Pending Requests
-            </Badge>
+            <div className="flex items-center gap-3">
+              <Link href="/admin/dashboard">
+                <Button variant="outline" className="h-9 rounded-xl border-primary/20 text-primary hover:bg-primary/5">
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Full Metrics
+                </Button>
+              </Link>
+              <Badge variant="outline" className="w-fit h-9 border-primary/20 text-primary bg-primary/5 px-4 rounded-xl">
+                {requests?.length || 0} Pending Requests
+              </Badge>
+            </div>
           </header>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
@@ -216,13 +224,13 @@ export default function AdminPage() {
                   <div className="bg-accent/10 p-2.5 rounded-xl">
                     <Layers className="h-5 w-5 text-accent" />
                   </div>
-                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Total Chapters</Badge>
+                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Total Chapters</Layers>
                 </div>
                 <div>
                   <h3 className="text-3xl font-headline font-black">
                     {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : chapterCount.toLocaleString()}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Extracting from all novels</p>
+                  <p className="text-xs text-muted-foreground mt-1">Extracted from all novels</p>
                 </div>
               </CardContent>
             </Card>
