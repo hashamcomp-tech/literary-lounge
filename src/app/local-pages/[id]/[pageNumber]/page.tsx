@@ -1,17 +1,21 @@
-
 "use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 
+/**
+ * @fileOverview Chapter Display Component for Local/Private Novels.
+ * Implements semantic <article> and <nav class="chapter-nav"> structure.
+ * Fetches content from IndexedDB (Browser Local Storage).
+ */
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
   const router = useRouter();
@@ -36,7 +40,6 @@ export default function LocalReader() {
           setTotalChapters(sorted.length);
           
           const pageNum = parseInt(pageNumber);
-          // For local reader, we'll still show one chapter at a time for performance but use the article/nav structure
           const current = sorted.filter(c => c.chapterNumber === pageNum);
           setChapters(current);
 
@@ -64,8 +67,9 @@ export default function LocalReader() {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+          <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+          <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground animate-pulse">Loading Private Archive...</p>
         </div>
       </div>
     );
@@ -77,8 +81,11 @@ export default function LocalReader() {
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
-          <h1 className="text-3xl font-headline font-bold mb-2">Content Not Found</h1>
-          <p className="text-muted-foreground max-w-md">We couldn't locate this page in your local library.</p>
+          <h1 className="text-3xl font-headline font-black mb-2">Content Not Found</h1>
+          <p className="text-muted-foreground max-w-md mb-8">We couldn't locate this page in your local library.</p>
+          <Button variant="outline" className="rounded-xl" onClick={() => router.push('/')}>
+             Return to Library
+          </Button>
         </div>
       </div>
     );
@@ -92,68 +99,93 @@ export default function LocalReader() {
       <Navbar />
       
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
-        <div className="mb-12 flex justify-center">
-           <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2">
-             <HardDrive className="h-3 w-3" /> Local Private Collection
-           </Badge>
-        </div>
+        <header className="mb-12">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => router.back()}
+            className="mb-6 -ml-2 text-muted-foreground hover:text-primary transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          
+          <div className="flex justify-center mb-8">
+             <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-4 py-1">
+               <HardDrive className="h-3 w-3" /> Local Private Collection
+             </Badge>
+          </div>
+        </header>
 
-        <div>
+        {/* Chapters as semantic articles */}
+        <div className="space-y-20">
           {chapters.map((ch) => (
-            <article key={ch.chapterNumber} id={`chapter-${ch.chapterNumber}`} className="mb-20">
-              <header className="mb-12 flex flex-col items-center text-center">
+            <article key={ch.chapterNumber} id={`chapter-${ch.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <header className="mb-16 flex flex-col items-center text-center">
                 {novelData?.coverURL && (
-                  <div className="relative w-[150px] h-[220px] mb-8 shadow-2xl rounded-lg overflow-hidden border border-border/50">
+                  <div className="relative w-[180px] h-[260px] mb-10 shadow-2xl rounded-2xl overflow-hidden border border-border/50">
                     <Image 
                       src={novelData.coverURL} 
                       alt={novelData.title || "Cover"} 
                       fill 
                       className="object-cover"
-                      sizes="150px"
+                      sizes="180px"
                     />
                   </div>
                 )}
-                <h1 className="text-4xl font-headline font-black mb-4">
+                <h1 className="text-5xl font-headline font-black mb-4 leading-tight">
                   {novelData.title}
                 </h1>
-                <p className="text-muted-foreground mb-4">By {novelData.author}</p>
-                <h2 className="text-xl font-headline font-bold text-primary mb-4">
+                <p className="text-xl text-muted-foreground mb-6">By {novelData.author}</p>
+                <h2 className="text-2xl font-headline font-bold text-primary mb-8">
                   Chapter {ch.chapterNumber}: {ch.title || `Chapter ${ch.chapterNumber}`}
                 </h2>
-                <div className="h-1 w-24 bg-primary mx-auto rounded-full" />
+                <div className="h-1.5 w-24 bg-primary/40 mx-auto rounded-full" />
               </header>
 
               <div 
-                className="prose prose-slate dark:prose-invert max-w-none leading-relaxed select-text"
+                className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif"
                 style={{ fontSize: `${fontSize}px` }}
-                dangerouslySetInnerHTML={{ __html: ch.content }}
-              />
+              >
+                {ch.content.split('<p>').filter(Boolean).map((p: string, i: number) => {
+                   const clean = p.replace(/<\/p>/g, '').trim();
+                   if (!clean) return null;
+                   return <p key={i} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3">{clean}</p>
+                })}
+              </div>
             </article>
           ))}
         </div>
 
-        <nav className="chapter-nav flex items-center justify-between mb-12 py-8 border-t">
-          <div className="flex items-center gap-4 w-full">
-            <Button variant="outline" disabled={prevNum < 1} asChild={prevNum >= 1} className="flex-1 rounded-xl h-12">
-              {prevNum >= 1 ? <Link href={`/local-pages/${id}/${prevNum}`}><ChevronLeft className="h-4 w-4 mr-2" /> Previous</Link> : <span>Beginning</span>}
-            </Button>
-            
-            <Button variant="default" disabled={nextNum > totalChapters} asChild={nextNum <= totalChapters} className="flex-1 rounded-xl h-12 bg-primary hover:bg-primary/90">
-              {nextNum <= totalChapters ? <Link href={`/local-pages/${id}/${nextNum}`}>Next <ChevronRight className="h-4 w-4 ml-2" /></Link> : <span>End Reached</span>}
-            </Button>
+        {/* Semantic navigation structure */}
+        <nav className="chapter-nav flex flex-col sm:flex-row items-center justify-between mt-24 py-12 border-t gap-6">
+          <Button variant="outline" disabled={prevNum < 1} asChild={prevNum >= 1} className="w-full sm:w-auto px-10 py-7 rounded-2xl border-primary/20 text-lg font-bold">
+            {prevNum >= 1 ? <Link href={`/local-pages/${id}/${prevNum}`}><ChevronLeft className="h-5 w-5 mr-3" /> Previous</Link> : <span>Beginning</span>}
+          </Button>
+          
+          <div className="text-center px-6">
+             <span className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground/60">
+               {parseInt(pageNumber)} / {totalChapters} Chapters
+             </span>
           </div>
+
+          <Button variant="default" disabled={nextNum > totalChapters} asChild={nextNum <= totalChapters} className="w-full sm:w-auto px-10 py-7 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl text-lg font-bold">
+            {nextNum <= totalChapters ? <Link href={`/local-pages/${id}/${nextNum}`}>Next <ChevronRight className="h-5 w-5 ml-3" /></Link> : <span>The End</span>}
+          </Button>
         </nav>
 
-        <section className="pt-12 border-t">
-          <ReaderControls 
-            chapterNumber={parseInt(pageNumber)} 
-            totalChapters={totalChapters} 
-            onChapterChange={goToPage}
-            fontSize={fontSize}
-            onFontSizeChange={setFontSize}
-            isDarkMode={isDarkMode}
-            onDarkModeToggle={() => setIsDarkMode(!isDarkMode)}
-          />
+        <section className="pt-20 border-t">
+          <div className="max-w-xl mx-auto">
+            <ReaderControls 
+              chapterNumber={parseInt(pageNumber)} 
+              totalChapters={totalChapters} 
+              onChapterChange={goToPage}
+              fontSize={fontSize}
+              onFontSizeChange={setFontSize}
+              isDarkMode={isDarkMode}
+              onDarkModeToggle={() => setIsDarkMode(!isDarkMode)}
+            />
+          </div>
         </section>
       </main>
     </div>

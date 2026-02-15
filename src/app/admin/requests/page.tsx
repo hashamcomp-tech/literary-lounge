@@ -7,16 +7,21 @@ import { collection, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, BookOpen, Clock, Trash2, CheckCircle2, ArrowLeft, MessageSquareQuote } from 'lucide-react';
+import { Loader2, BookOpen, Clock, Trash2, CheckCircle2, ArrowLeft, MessageSquareQuote, User, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
+/**
+ * @fileOverview Admin dashboard for managing cloud upload requests.
+ * Implements real-time monitoring of user-submitted book content.
+ */
 export default function AdminRequestsDashboard() {
   const db = useFirestore();
   const { toast } = useToast();
   const router = useRouter();
   const [processingId, setProcessingId] = useState<string | null>(null);
 
+  // Real-time listener for cloud upload requests
   const requestsQuery = useMemoFirebase(() => {
     if (!db) return null;
     return query(collection(db, 'cloudUploadRequests'), orderBy('requestedAt', 'desc'));
@@ -54,11 +59,11 @@ export default function AdminRequestsDashboard() {
             </Button>
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-4xl font-headline font-black">Content Submissions</h1>
-                <p className="text-muted-foreground mt-2">Review and manage book content requested for cloud publishing.</p>
+                <h1 className="text-4xl font-headline font-black">Cloud Submissions</h1>
+                <p className="text-muted-foreground mt-2">Review novels submitted by readers for promotion to the cloud library.</p>
               </div>
               <Badge variant="outline" className="h-9 px-4 rounded-xl border-primary/20 text-primary bg-primary/5">
-                {requests?.length || 0} Submissions
+                {requests?.length || 0} Pending
               </Badge>
             </div>
           </header>
@@ -70,43 +75,52 @@ export default function AdminRequestsDashboard() {
           ) : requests && requests.length > 0 ? (
             <div className="grid gap-6">
               {requests.map((req) => (
-                <Card key={req.id} className="border-none shadow-lg bg-card/50 backdrop-blur overflow-hidden">
+                <Card key={req.id} className="border-none shadow-lg bg-card/50 backdrop-blur overflow-hidden transition-all hover:shadow-xl">
                   <div className="h-1 bg-primary/20 w-full" />
-                  <CardHeader className="flex flex-row items-start justify-between">
+                  <CardHeader className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                     <div className="space-y-1">
-                      <CardTitle className="text-2xl font-headline font-bold">{req.title}</CardTitle>
-                      <CardDescription className="flex items-center gap-2">
-                        <span className="font-bold text-foreground">By {req.author || 'Anonymous'}</span>
-                        <span className="opacity-50">•</span>
-                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Recently'}</span>
-                      </CardDescription>
+                      <CardTitle className="text-2xl font-headline font-bold flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-primary" />
+                        {req.title}
+                      </CardTitle>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1.5 font-bold text-foreground">
+                          <User className="h-3.5 w-3.5" /> {req.author || 'Anonymous'}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="h-3.5 w-3.5" /> {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Just now'}
+                        </span>
+                        <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] h-5 uppercase font-black">
+                          Chapter {req.chapterNumber || 1}
+                        </Badge>
+                      </div>
                     </div>
-                    <Badge variant="secondary" className="bg-amber-100 text-amber-700 border-none uppercase text-[10px] font-black">
+                    <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none uppercase text-[10px] font-black h-6">
                       {req.status || 'Pending'}
                     </Badge>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="bg-muted/30 p-4 rounded-xl border border-border/50 max-h-40 overflow-y-auto">
-                      <div className="flex items-center gap-2 text-primary mb-2">
+                    <div className="bg-muted/30 p-6 rounded-2xl border border-border/50 max-h-60 overflow-y-auto relative">
+                      <div className="flex items-center gap-2 text-primary mb-3">
                         <MessageSquareQuote className="h-4 w-4" />
                         <span className="text-xs font-bold uppercase tracking-widest">Content Excerpt</span>
                       </div>
-                      <div className="text-sm text-muted-foreground leading-relaxed italic">
-                        {req.content?.substring(0, 1000)}...
+                      <div className="text-sm text-muted-foreground leading-relaxed italic prose prose-slate dark:prose-invert max-w-none">
+                        {req.content?.substring(0, 1500)}...
                       </div>
+                      <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-muted/50 to-transparent pointer-events-none" />
                     </div>
 
-                    <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t gap-4">
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="rounded-lg border-primary/20 text-primary uppercase text-[10px]">
+                        <Badge variant="outline" className="rounded-lg border-primary/20 text-primary uppercase text-[10px] px-3">
                           {req.genre || 'Unspecified Genre'}
                         </Badge>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-3 w-full sm:w-auto">
                         <Button 
                           variant="ghost" 
-                          size="sm" 
-                          className="text-destructive hover:bg-destructive/10 rounded-xl"
+                          className="flex-1 sm:flex-none text-destructive hover:bg-destructive/10 rounded-xl px-6"
                           onClick={() => handleDelete(req.id)}
                           disabled={!!processingId}
                         >
@@ -115,14 +129,13 @@ export default function AdminRequestsDashboard() {
                         </Button>
                         <Button 
                           variant="default" 
-                          size="sm" 
-                          className="bg-primary hover:bg-primary/90 rounded-xl"
+                          className="flex-1 sm:flex-none bg-primary hover:bg-primary/90 rounded-xl px-8 shadow-md"
                           onClick={() => {
-                            toast({ title: "Feature Pending", description: "Full content approval integration coming soon." });
+                            toast({ title: "Feature Pending", description: "Promotion to cloud library integration coming soon." });
                           }}
                         >
                           <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Promote to Cloud
+                          Promote
                         </Button>
                       </div>
                     </div>
@@ -135,7 +148,7 @@ export default function AdminRequestsDashboard() {
               <BookOpen className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-20" />
               <h2 className="text-2xl font-headline font-bold mb-2">No active submissions</h2>
               <p className="text-muted-foreground max-w-md mx-auto">
-                Content requested for cloud review by users will appear here.
+                Novels requested for cloud publishing will appear here in real-time.
               </p>
             </div>
           )}
