@@ -18,11 +18,10 @@ service cloud.firestore {
     }
 
     function isApprovedUploader() {
-      return isSignedIn() && (
-        isAdmin() || 
-        (exists(/databases/$(database)/documents/settings/approvedEmails) && 
-         request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails)
-      );
+      return request.auth != null &&
+        (isSuperAdmin() || 
+         (exists(/databases/$(database)/documents/settings/approvedEmails) && 
+          request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails));
     }
 
     // USER PROFILES
@@ -31,13 +30,12 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if isSignedIn() && request.auth.uid == userId;
       
-      // Allow user to update ONLY their own document and prevent changing sensitive fields like role
       allow update: if isSignedIn() && request.auth.uid == userId
                     && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
                     && (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid);
     }
 
-    // USERNAME MAPPING (Uniqueness check)
+    // USERNAME MAPPING
     match /usernames/{username} {
       allow get: if true;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
@@ -74,7 +72,7 @@ service cloud.firestore {
       }
     }
     
-    // Catch-all for subcollections in books (like roots)
+    // Catch-all for subcollections in books
     match /books/{bookId}/{document=**} {
       allow read: if true;
       allow write: if isApprovedUploader();
