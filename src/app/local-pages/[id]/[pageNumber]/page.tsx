@@ -133,9 +133,6 @@ export default function LocalReader() {
                     />
                   </div>
                 )}
-                <h1 className="text-5xl font-headline font-black mb-4 leading-tight">
-                  {novelData.title}
-                </h1>
                 <p className="text-xl text-muted-foreground mb-6">By {novelData.author}</p>
                 <h2 className="text-2xl font-headline font-bold text-primary mb-8">
                   Chapter {ch.chapterNumber}{ch.title ? `: ${ch.title}` : ''}
