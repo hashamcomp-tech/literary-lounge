@@ -12,6 +12,7 @@ import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/e
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 
 export default function CloudReader() {
   const { id, chapterNumber } = useParams() as { id: string; chapterNumber: string };
@@ -36,12 +37,16 @@ export default function CloudReader() {
     getDoc(metaRef).then((snapshot) => {
       if (snapshot.exists()) {
         setMetadata(snapshot.data());
+      } else {
+        // Fallback to root doc if metadata subcollection is missing/differently structured
+        getDoc(rootRef).then(rootSnap => {
+          if (rootSnap.exists()) setMetadata(rootSnap.data());
+        });
       }
     });
 
-    // Increment views at the root for trending queries (optimized for discovery)
+    // Increment views
     const updatePayload = { views: increment(1) };
-
     updateDoc(rootRef, updatePayload).catch(async (err) => {
       const permissionError = new FirestorePermissionError({
         path: rootRef.path,
@@ -50,13 +55,11 @@ export default function CloudReader() {
       } satisfies SecurityRuleContext);
       errorEmitter.emit('permission-error', permissionError);
     });
-
-    // Also increment in metadata for display consistency
     updateDoc(metaRef, updatePayload).catch(() => {});
     
   }, [db, id]);
 
-  // Fetch Current Chapter from /books/{id}/chapters/{num}
+  // Fetch Current Chapter
   useEffect(() => {
     if (!db || !id) return;
     setLoading(true);
@@ -80,7 +83,7 @@ export default function CloudReader() {
       });
   }, [id, chapterNumber, db]);
 
-  // Fetch All Chapters for Navigation from /books/{id}/chapters
+  // Fetch All Chapters for Navigation
   const chaptersQuery = useMemoFirebase(() => {
     if (!db || !id) return null;
     return query(collection(db, 'books', id, 'chapters'), orderBy('chapterNumber', 'asc'));
@@ -125,7 +128,6 @@ export default function CloudReader() {
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-background'}`}>
       <Navbar />
       
-      {/* Chapter Navigation Bar */}
       <div className="border-b bg-card/50 backdrop-blur sticky top-16 z-40">
         <div className="container max-w-5xl mx-auto px-4">
           <ScrollArea className="w-full whitespace-nowrap">
@@ -151,8 +153,20 @@ export default function CloudReader() {
 
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
         <article className="mb-20">
-          <header className="mb-12 text-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
+          <header className="mb-12 flex flex-col items-center text-center">
+            {metadata?.coverURL && (
+              <div className="relative w-[150px] h-[220px] mb-8 shadow-2xl rounded-lg overflow-hidden border border-border/50">
+                <Image 
+                  src={metadata.coverURL} 
+                  alt={metadata.bookTitle || "Cover"} 
+                  fill 
+                  className="object-cover"
+                  sizes="150px"
+                />
+              </div>
+            )}
+            
+            <div className="flex items-center justify-center gap-2 mb-4">
               <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-bold tracking-widest px-3">
                 {metadata?.genre || 'Novel'}
               </Badge>
@@ -162,6 +176,7 @@ export default function CloudReader() {
                 </div>
               )}
             </div>
+            
             <p className="text-sm font-headline font-medium text-muted-foreground mb-1">
               {metadata?.bookTitle || 'Cloud Novel'}
             </p>

@@ -6,6 +6,7 @@ import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
+import Image from 'next/image';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -34,7 +35,6 @@ export default function LocalReader() {
           const page = sortedChapters.find((p: any) => p.chapterNumber === pageNum);
           setCurrentPage(page || null);
 
-          // Save reading progress locally
           if (pageNum) {
             saveLocalProgress(id, pageNum);
           }
@@ -87,7 +87,18 @@ export default function LocalReader() {
       
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
         <article className="mb-20">
-          <header className="mb-12 text-center">
+          <header className="mb-12 flex flex-col items-center text-center">
+            {novelData?.coverURL && (
+              <div className="relative w-[150px] h-[220px] mb-8 shadow-2xl rounded-lg overflow-hidden border border-border/50">
+                <Image 
+                  src={novelData.coverURL} 
+                  alt={novelData.title || "Cover"} 
+                  fill 
+                  className="object-cover"
+                  sizes="150px"
+                />
+              </div>
+            )}
             <h1 className="text-4xl font-headline font-black mb-4">
               {novelData.title}
             </h1>

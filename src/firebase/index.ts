@@ -27,6 +27,8 @@ export function initializeFirebase() {
 
 export function getSdks(firebaseApp: FirebaseApp) {
   const auth = getAuth(firebaseApp);
+  const firestore = getFirestore(firebaseApp);
+  const storage = getStorage(firebaseApp);
   
   // Explicitly set browser-based persistence to keep users logged in
   if (typeof window !== 'undefined') {
@@ -38,8 +40,8 @@ export function getSdks(firebaseApp: FirebaseApp) {
   return {
     firebaseApp,
     auth,
-    firestore: getFirestore(firebaseApp),
-    storage: getStorage(firebaseApp)
+    firestore,
+    storage
   };
 }
 
