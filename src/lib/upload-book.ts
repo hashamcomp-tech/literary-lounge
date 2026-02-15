@@ -1,4 +1,3 @@
-
 import { doc, setDoc, serverTimestamp, Firestore, increment, getDoc, updateDoc } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
@@ -12,10 +11,10 @@ interface Chapter {
 /**
  * Handles the multi-step process of publishing a novel to the cloud.
  * 1. Uploads cover image to Storage.
- * 2. Sets searchable root document.
+ * 2. Sets searchable root document with full chapters array for fast reading.
  * 3. Sets detailed metadata.
  * 4. Updates global storage stats.
- * 5. Uploads individual chapters.
+ * 5. Uploads individual chapters to subcollection for scalability.
  */
 export async function uploadBookToCloud({
   db,
@@ -60,7 +59,7 @@ export async function uploadBookToCloud({
     coverSize, // Tracking usage
   };
 
-  // 3. Set Root Document (for search and discovery)
+  // 3. Set Root Document (for search and discovery + fast chapter loading)
   const bookRef = doc(db, 'books', bookId);
   const rootPayload = {
     title,
@@ -75,7 +74,12 @@ export async function uploadBookToCloud({
     lastUpdated: serverTimestamp(),
     coverURL,
     coverSize,
-    metadata: { info: metadataInfo }
+    metadata: { info: metadataInfo },
+    // Store chapters array in root doc for simplified fast fetching in the reader
+    chapters: chapters.map(ch => ({
+      ...ch,
+      title: ch.title || `Chapter ${ch.chapterNumber}`
+    }))
   };
 
   await setDoc(bookRef, rootPayload, { merge: true });
@@ -84,7 +88,7 @@ export async function uploadBookToCloud({
   const infoRef = doc(db, 'books', bookId, 'metadata', 'info');
   await setDoc(infoRef, metadataInfo, { merge: true });
 
-  // 5. Update Global Storage Usage Stats (Using requested pattern)
+  // 5. Update Global Storage Usage Stats
   const statsRef = doc(db, 'stats', 'storageUsage');
   const snap = await getDoc(statsRef);
   if (!snap.exists()) {
@@ -94,7 +98,7 @@ export async function uploadBookToCloud({
     storageBytesUsed: increment(coverSize) 
   });
 
-  // 6. Set Chapters
+  // 6. Set Chapters in subcollection (Maintains scalability for very large books)
   for (const ch of chapters) {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
     await setDoc(chRef, {

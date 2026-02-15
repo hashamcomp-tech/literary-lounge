@@ -6,7 +6,7 @@ import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight, TrendingUp } from 'lucide-react';
+import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -41,7 +41,7 @@ export default function AdminDashboard() {
     // 2. Real-time listener for the users collection
     const usersRef = collection(db, 'users');
     const unsubscribeUsers = onSnapshot(usersRef, (snapshot) => {
-      setTotalUsers(snapshot.size);
+      setTotalUsers(snapshot.size); // Firestore snapshot size gives total docs
     });
 
     // 3. Real-time listener for the books collection
