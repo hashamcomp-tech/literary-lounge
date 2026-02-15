@@ -20,6 +20,11 @@
           "description": "The user's registered email address.",
           "format": "email"
         },
+        "role": {
+          "type": "string",
+          "enum": ["user", "admin"],
+          "description": "The user's access role."
+        },
         "createdAt": {
           "type": "string",
           "description": "Timestamp when the user account and profile were created.",

@@ -37,7 +37,11 @@ service cloud.firestore {
       allow get: if isSignedIn() && request.auth.uid == userId;
       allow list: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId;
+      
+      // Allow user to update ONLY their own document and prevent changing sensitive fields like role or uid
+      allow update: if isSignedIn() && request.auth.uid == userId
+                    && (request.resource.data.role == resource.data.role || !('role' in request.resource.data))
+                    && (request.resource.data.uid == resource.data.uid);
     }
 
     match /books/{bookId} {
