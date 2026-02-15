@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 
 /**
  * @fileOverview Chapter Display Component for Local/Private Novels.
- * Implements semantic <article> and <nav class="chapter-nav"> structure.
+ * Implements semantic <article> and paragraph structure.
  * Fetches content from IndexedDB (Browser Local Storage).
  */
 export default function LocalReader() {
@@ -138,7 +138,7 @@ export default function LocalReader() {
                 </h1>
                 <p className="text-xl text-muted-foreground mb-6">By {novelData.author}</p>
                 <h2 className="text-2xl font-headline font-bold text-primary mb-8">
-                  Chapter {ch.chapterNumber}: {ch.title || `Chapter ${ch.chapterNumber}`}
+                  Chapter {ch.chapterNumber}{ch.title ? `: ${ch.title}` : ''}
                 </h2>
                 <div className="h-1.5 w-24 bg-primary/40 mx-auto rounded-full" />
               </header>
@@ -147,10 +147,10 @@ export default function LocalReader() {
                 className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif"
                 style={{ fontSize: `${fontSize}px` }}
               >
-                {ch.content.split('<p>').filter(Boolean).map((p: string, i: number) => {
-                   const clean = p.replace(/<\/p>/g, '').trim();
+                {(ch.content || '').split(/<p>|\n\n/).map((para: string, idx: number) => {
+                   const clean = para.replace(/<\/p>|<[^>]*>?/gm, '').trim();
                    if (!clean) return null;
-                   return <p key={i} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3">{clean}</p>
+                   return <p key={idx} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3">{clean}</p>
                 })}
               </div>
             </article>

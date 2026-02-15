@@ -14,9 +14,8 @@ import { FirestorePermissionError } from '@/firebase/errors';
 
 /**
  * @fileOverview Chapter Display Component for Cloud Novels.
- * Implements semantic <article> and <nav class="chapter-nav"> structure.
- * Fetches chapters from the root novel document for a fast experience,
- * with a fallback to the chapters subcollection for scalability.
+ * Implements semantic <article> and paragraph structure.
+ * Fetches chapters from the root novel document with a subcollection fallback.
  */
 interface CloudReaderClientProps {
   id: string;
@@ -40,7 +39,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setIsLoading(true);
       setError(null);
       try {
-        // 1. Fetch the root novel document
         const bookRef = doc(firestore, 'books', id);
         const snapshot = await getDoc(bookRef);
         
@@ -53,7 +51,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         const data = snapshot.data();
         let chaptersList = data.chapters || [];
         
-        // 2. Fallback: If root chapters array is missing, try fetching from subcollection
+        // Fallback to chapters subcollection
         if (chaptersList.length === 0) {
           const subColRef = collection(firestore, 'books', id, 'chapters');
           const subSnap = await getDocs(subColRef);
@@ -70,7 +68,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           setChapters(chaptersList);
         }
       } catch (err: any) {
-        console.error("Cloud reader fetch error:", err);
         const permError = new FirestorePermissionError({
           path: `books/${id}`,
           operation: 'get'
@@ -165,8 +162,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                  </div>
               </div>
 
-              <h1 className="text-5xl sm:text-6xl font-headline font-black mb-6 leading-tight">
-                {ch.title || `Chapter ${ch.chapterNumber}`}
+              <h1 className="text-4xl sm:text-5xl font-headline font-black mb-6 leading-tight">
+                Chapter {ch.chapterNumber}{ch.title ? `: ${ch.title}` : ''}
               </h1>
               <p className="text-xl text-muted-foreground italic mb-10 flex items-center gap-2">
                 <User className="h-4 w-4" /> By {metadata?.author || 'Unknown'}
@@ -174,13 +171,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               <div className="h-1.5 w-32 bg-primary/40 rounded-full mb-16" />
             </header>
 
-            <div className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed space-y-8 font-serif">
-              {(ch.content || '').split('\n\n').map((p: string, i: number) => {
-                const cleanText = p.replace(/<[^>]*>?/gm, '');
-                if (!cleanText.trim()) return null;
+            <div className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif">
+              {(ch.content || '').split('\n\n').map((para: string, idx: number) => {
+                const cleanPara = para.replace(/<[^>]*>?/gm, '').trim();
+                if (!cleanPara) return null;
                 return (
-                  <p key={i} className="first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3 first-letter:mt-1">
-                    {cleanText}
+                  <p key={idx} className="mb-6 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3 first-letter:mt-1">
+                    {cleanPara}
                   </p>
                 );
               })}
@@ -189,7 +186,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         ))}
       </div>
 
-      {/* Semantic navigation structure */}
       <nav className="chapter-nav mt-24 pt-12 border-t flex flex-col sm:flex-row items-center justify-between gap-6">
         <Button 
           variant="outline" 
