@@ -43,19 +43,18 @@
         "createdAt"
       ]
     },
-    "UsernameMap": {
+    "ChatMessage": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "UsernameMap",
+      "title": "ChatMessage",
       "type": "object",
-      "description": "A mapping of username to UID to ensure uniqueness.",
+      "description": "A message sent within a chat room.",
       "properties": {
-        "uid": {
-          "type": "string"
-        }
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "uid"
-      ]
+      "required": ["senderId", "text", "timestamp"]
     },
     "NovelMetadata": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -63,181 +62,15 @@
       "type": "object",
       "description": "Metadata for a novel.",
       "properties": {
-        "author": {
-          "type": "string"
-        },
-        "authorLower": {
-          "type": "string",
-          "description": "Lowercase version of the author name for search."
-        },
-        "bookTitle": {
-          "type": "string"
-        },
-        "bookTitleLower": {
-          "type": "string",
-          "description": "Lowercase version of the book title for search."
-        },
-        "ownerId": {
-          "type": "string"
-        },
-        "totalChapters": {
-          "type": "number"
-        },
-        "genre": {
-          "type": "string"
-        },
-        "views": {
-          "type": "number"
-        },
-        "coverURL": {
-          "type": "string"
-        },
-        "coverSize": {
-          "type": "number",
-          "description": "Size of the cover image in bytes."
-        },
-        "lastUpdated": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "author",
-        "bookTitle",
-        "ownerId",
-        "lastUpdated"
-      ]
-    },
-    "Chapter": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Chapter",
-      "type": "object",
-      "description": "Represents a single chapter within a novel.",
-      "properties": {
-        "ownerId": {
-          "type": "string"
-        },
-        "chapterNumber": {
-          "type": "number"
-        },
-        "content": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "ownerId",
-        "chapterNumber",
-        "content",
-        "createdAt",
-        "updatedAt"
-      ]
-    },
-    "ReadingProgress": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "ReadingProgress",
-      "type": "object",
-      "description": "Tracks a user's reading progress.",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "userId": {
-          "type": "string"
-        },
-        "novelId": {
-          "type": "string"
-        },
-        "currentChapterNumber": {
-          "type": "number"
-        },
-        "lastReadAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "id",
-        "userId",
-        "novelId",
-        "currentChapterNumber",
-        "lastReadAt"
-      ]
-    },
-    "ApprovedEmails": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "ApprovedEmails",
-      "type": "object",
-      "description": "A list of approved email addresses for sensitive operations.",
-      "properties": {
-        "emails": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "PublishRequest": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "PublishRequest",
-      "type": "object",
-      "description": "A request from a user to become an approved cloud contributor.",
-      "properties": {
-        "email": {
-          "type": "string",
-          "format": "email"
-        },
-        "requestedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "status": {
-          "type": "string",
-          "enum": ["pending", "approved", "rejected"]
-        }
-      },
-      "required": [
-        "email",
-        "requestedAt"
-      ]
-    },
-    "CloudUploadRequest": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "CloudUploadRequest",
-      "type": "object",
-      "description": "A request to upload specific book content to the cloud.",
-      "properties": {
-        "title": { "type": "string" },
         "author": { "type": "string" },
-        "content": { "type": "string" },
+        "bookTitle": { "type": "string" },
+        "ownerId": { "type": "string" },
         "genre": { "type": "string" },
-        "requestedBy": { "type": "string" },
-        "requestedAt": { "type": "string", "format": "date-time" },
-        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+        "views": { "type": "number" },
+        "coverURL": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
       },
-      "required": ["title", "content", "requestedBy", "requestedAt"]
-    },
-    "GlobalStats": {
-      "title": "GlobalStats",
-      "description": "Tracks global application usage metrics.",
-      "type": "object",
-      "properties": {
-        "storageBytesUsed": {
-          "type": "number",
-          "description": "Total bytes consumed by cloud uploads."
-        }
-      }
+      "required": ["author", "bookTitle", "ownerId", "lastUpdated"]
     }
   },
   "auth": {
@@ -252,90 +85,24 @@
         "path": "/users/{userId}",
         "definition": {
           "entityName": "UserProfile",
-          "schema": {
-            "$ref": "#/backend/entities/UserProfile"
-          },
+          "schema": { "$ref": "#/backend/entities/UserProfile" },
           "description": "Stores individual user profiles."
         }
       },
       {
-        "path": "/usernames/{username}",
-        "definition": {
-          "entityName": "UsernameMap",
-          "schema": {
-            "$ref": "#/backend/entities/UsernameMap"
-          },
-          "description": "Stores username to UID mappings."
-        }
-      },
-      {
-        "path": "/books/{bookId}/metadata/info",
+        "path": "/books/{bookId}",
         "definition": {
           "entityName": "NovelMetadata",
-          "schema": {
-            "$ref": "#/backend/entities/NovelMetadata"
-          },
-          "description": "Stores novel metadata."
+          "schema": { "$ref": "#/backend/entities/NovelMetadata" },
+          "description": "Stores novel data and metadata."
         }
       },
       {
-        "path": "/books/{bookId}/chapters/{chapterNumber}",
+        "path": "/chats/{chatId}/messages/{messageId}",
         "definition": {
-          "entityName": "Chapter",
-          "schema": {
-            "$ref": "#/backend/entities/Chapter"
-          },
-          "description": "Stores individual chapters."
-        }
-      },
-      {
-        "path": "/users/{userId}/readingProgress/{progressId}",
-        "definition": {
-          "entityName": "ReadingProgress",
-          "schema": {
-            "$ref": "#/backend/entities/ReadingProgress"
-          },
-          "description": "Tracks a user's reading progress."
-        }
-      },
-      {
-        "path": "/settings/approvedEmails",
-        "definition": {
-          "entityName": "ApprovedEmails",
-          "schema": {
-            "$ref": "#/backend/entities/ApprovedEmails"
-          },
-          "description": "Global whitelist of approved emails."
-        }
-      },
-      {
-        "path": "/publishRequests/{userId}",
-        "definition": {
-          "entityName": "PublishRequest",
-          "schema": {
-            "$ref": "#/backend/entities/PublishRequest"
-          },
-          "description": "Stores requests for publishing permissions."
-        }
-      },
-      {
-        "path": "/cloudUploadRequests/{requestId}",
-        "definition": {
-          "entityName": "CloudUploadRequest",
-          "schema": {
-            "$ref": "#/backend/entities/CloudUploadRequest"
-          },
-          "description": "Stores requests for individual book uploads."
-        }
-      },
-      {
-        "path": "/stats/storageUsage",
-        "definition": {
-          "entityName": "GlobalStats",
-          "schema": {
-            "$ref": "#/backend/entities/GlobalStats"
-          },
-          "description": "Stores aggregated storage usage stats."
+          "entityName": "ChatMessage",
+          "schema": { "$ref": "#/backend/entities/ChatMessage" },
+          "description": "Stores real-time chat messages for a room (chatId corresponds to bookId)."
         }
       }
     ]

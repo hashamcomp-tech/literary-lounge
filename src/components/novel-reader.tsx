@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, Navigation, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, Navigation, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
+import Link from 'next/link';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -73,6 +74,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               </Button>
 
               <div className="flex gap-2">
+                <Link href={`/chat/${novel.id}`}>
+                  <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5" title="Reader Lounge">
+                    <MessageSquare className="h-4 w-4" />
+                  </Button>
+                </Link>
                 <Button 
                   variant="outline" 
                   size="icon" 
