@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -19,6 +18,14 @@ import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { sendAccessRequestEmail } from '@/app/actions/notifications';
+import { GENRES } from '@/lib/genres';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface AutocompleteInputProps {
   type: 'author' | 'book';
@@ -124,7 +131,7 @@ export default function UploadPage() {
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
   const [content, setContent] = useState('');
-  const [genre, setGenre] = useState('Novel');
+  const [genre, setGenre] = useState('Fiction');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
@@ -484,13 +491,18 @@ export default function UploadPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Genre</Label>
-                      <Input 
-                        value={genre}
-                        onChange={(e) => setGenre(e.target.value)}
-                        className="bg-background/50"
-                        placeholder="Fantasy, Romance..."
-                        required
-                      />
+                      <Select value={genre} onValueChange={setGenre}>
+                        <SelectTrigger className="bg-background/50">
+                          <SelectValue placeholder="Select Genre" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {GENRES.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {g}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div className="grid gap-2">
                       <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Start Chapter</Label>
