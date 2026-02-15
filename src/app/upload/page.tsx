@@ -122,7 +122,7 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
 
 export default function UploadPage() {
   const router = useRouter();
-  const { db, storage } = useFirebase();
+  const { firestore: db, storage } = useFirebase();
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
@@ -342,7 +342,7 @@ export default function UploadPage() {
           totalChapters: chapters.length, 
           lastUpdated: new Date().toISOString(),
           isLocalOnly: false,
-          coverURL: null // Will be populated by cloud data or locally if needed
+          coverURL: null 
         };
         
         await saveLocalBook(bookData);
@@ -509,7 +509,6 @@ export default function UploadPage() {
                   </div>
                 </div>
 
-                {/* Cover Image Upload Section */}
                 <div className="space-y-4 pt-4 border-t">
                   <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
                     <ImageIcon className="h-4 w-4" /> Cover Image <span className="text-destructive">*</span>
