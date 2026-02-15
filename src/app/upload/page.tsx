@@ -18,6 +18,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { sendAccessRequestEmail } from '@/app/actions/notifications';
 
 interface AutocompleteInputProps {
   type: 'author' | 'book';
@@ -180,7 +181,7 @@ export default function UploadPage() {
   };
 
   const handleRequestAccess = async () => {
-    if (!user || user.isAnonymous) return;
+    if (!user || user.isAnonymous || !user.email) return;
     
     setLoading(true);
     try {
@@ -191,6 +192,7 @@ export default function UploadPage() {
         status: 'pending'
       };
 
+      // Save to Firestore
       await setDoc(requestRef, requestData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: requestRef.path,
@@ -199,9 +201,12 @@ export default function UploadPage() {
         }));
       });
 
+      // Send email notification (Server Action)
+      await sendAccessRequestEmail(user.email);
+
       toast({
         title: "Access Requested",
-        description: "Your request to become a contributor has been sent to the administrators.",
+        description: "Your request has been sent to the administrators. You will be notified via email upon approval.",
       });
     } catch (error) {
       console.error("Request failed", error);
