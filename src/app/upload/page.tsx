@@ -41,7 +41,8 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
     }
 
     const fetchSuggestions = async () => {
-      const fieldPath = type === 'author' ? 'metadata.info.authorLower' : 'metadata.info.bookTitleLower';
+      // Use the flat lowercase fields at the root for suggestions
+      const fieldPath = type === 'author' ? 'authorLower' : 'titleLower';
       const q = query(
         collection(db, 'books'),
         where(fieldPath, '>=', lowerValue),
@@ -142,7 +143,6 @@ export default function UploadPage() {
         return;
       }
 
-      // Super-admin bypass or explicit admin role
       if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsApprovedUser(true);
         setCheckingApproval(false);
@@ -289,30 +289,38 @@ export default function UploadPage() {
       if (isApprovedUser && user) {
         setLoadingStatus('Publishing to cloud...');
         const bookRef = doc(db, 'books', docId);
-        const metadataMap = {
-          info: {
-            author: finalAuthor,
-            authorLower: finalAuthor.toLowerCase(),
-            bookTitle: finalTitle,
-            bookTitleLower: finalTitle.toLowerCase(),
-            lastUpdated: serverTimestamp(),
-            ownerId: user.uid,
-            totalChapters: chapters.length,
-            genre: genre,
-            views: 0,
-            isLocalOnly: false
-          }
+        
+        const metadataInfo = {
+          author: finalAuthor,
+          authorLower: finalAuthor.toLowerCase(),
+          bookTitle: finalTitle,
+          bookTitleLower: finalTitle.toLowerCase(),
+          lastUpdated: serverTimestamp(),
+          ownerId: user.uid,
+          totalChapters: chapters.length,
+          genre: genre,
+          views: 0,
+          isLocalOnly: false
         };
 
-        await setDoc(bookRef, { metadata: metadataMap }, { merge: true }).catch(err => {
+        const rootPayload = {
+          metadata: { info: metadataInfo },
+          // Flat fields for efficient root-level search
+          titleLower: finalTitle.toLowerCase(),
+          authorLower: finalAuthor.toLowerCase(),
+          lastUpdated: serverTimestamp()
+        };
+
+        await setDoc(bookRef, rootPayload, { merge: true }).catch(err => {
           errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: bookRef.path,
             operation: 'write',
-            requestResourceData: { metadata: metadataMap }
+            requestResourceData: rootPayload
           }));
         });
+
         const infoRef = doc(db, 'books', docId, 'metadata', 'info');
-        await setDoc(infoRef, metadataMap.info, { merge: true });
+        await setDoc(infoRef, metadataInfo, { merge: true });
 
         for (const ch of chapters) {
           const chRef = doc(db, 'books', docId, 'chapters', ch.chapterNumber.toString());

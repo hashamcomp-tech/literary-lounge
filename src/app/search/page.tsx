@@ -57,17 +57,18 @@ function SearchResults() {
 
     const fetchSuggestions = async () => {
       try {
+        // Querying flat fields at the root of 'books'
         const titleQuery = query(
           collection(db, 'books'),
-          where('metadata.info.bookTitleLower', '>=', lowerLocalQuery),
-          where('metadata.info.bookTitleLower', '<=', lowerLocalQuery + '\uf8ff'),
+          where('titleLower', '>=', lowerLocalQuery),
+          where('titleLower', '<=', lowerLocalQuery + '\uf8ff'),
           limit(5)
         );
         
         const authorQuery = query(
           collection(db, 'books'),
-          where('metadata.info.authorLower', '>=', lowerLocalQuery),
-          where('metadata.info.authorLower', '<=', lowerLocalQuery + '\uf8ff'),
+          where('authorLower', '>=', lowerLocalQuery),
+          where('authorLower', '<=', lowerLocalQuery + '\uf8ff'),
           limit(5)
         );
 
@@ -79,12 +80,22 @@ function SearchResults() {
         const items: any[] = [];
         titleSnap.forEach(doc => {
           const data = doc.data();
-          items.push({ id: doc.id, title: data.metadata.info.bookTitle, author: data.metadata.info.author, type: 'book' });
+          items.push({ 
+            id: doc.id, 
+            title: data.metadata?.info?.bookTitle || 'Untitled', 
+            author: data.metadata?.info?.author || 'Unknown', 
+            type: 'book' 
+          });
         });
         authorSnap.forEach(doc => {
           const data = doc.data();
           if (!items.find(i => i.id === doc.id)) {
-            items.push({ id: doc.id, title: data.metadata.info.bookTitle, author: data.metadata.info.author, type: 'author' });
+            items.push({ 
+              id: doc.id, 
+              title: data.metadata?.info?.bookTitle || 'Untitled', 
+              author: data.metadata?.info?.author || 'Unknown', 
+              type: 'author' 
+            });
           }
         });
 
@@ -131,17 +142,19 @@ function SearchResults() {
 
         setSearchMethod('firestore');
         const lowerQuery = queryTerm.toLowerCase();
+        
+        // Optimized case-insensitive queries using flat root fields
         const qTitle = query(
           collection(db, 'books'),
-          where('metadata.info.bookTitleLower', '>=', lowerQuery),
-          where('metadata.info.bookTitleLower', '<=', lowerQuery + '\uf8ff'),
+          where('titleLower', '>=', lowerQuery),
+          where('titleLower', '<=', lowerQuery + '\uf8ff'),
           limit(24)
         );
 
         const qAuthor = query(
           collection(db, 'books'),
-          where('metadata.info.authorLower', '>=', lowerQuery),
-          where('metadata.info.authorLower', '<=', lowerQuery + '\uf8ff'),
+          where('authorLower', '>=', lowerQuery),
+          where('authorLower', '<=', lowerQuery + '\uf8ff'),
           limit(24)
         );
 
@@ -155,9 +168,9 @@ function SearchResults() {
           const data = doc.data();
           combinedMap.set(doc.id, {
             id: doc.id,
-            title: data.metadata.info.bookTitle,
-            author: data.metadata.info.author,
-            genre: 'Novel',
+            title: data.metadata?.info?.bookTitle || 'Untitled',
+            author: data.metadata?.info?.author || 'Unknown Author',
+            genre: data.metadata?.info?.genre || 'Novel',
             coverImage: `https://picsum.photos/seed/${doc.id}/400/600`,
           });
         });
