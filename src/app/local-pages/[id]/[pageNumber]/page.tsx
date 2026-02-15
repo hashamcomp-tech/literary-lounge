@@ -1,12 +1,15 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -81,12 +84,15 @@ export default function LocalReader() {
     );
   }
 
+  const prevNum = parseInt(pageNumber) - 1;
+  const nextNum = parseInt(pageNumber) + 1;
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-background'}`}>
       <Navbar />
       
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
-        <article className="mb-20">
+        <article id={`chapter-${pageNumber}`} className="mb-20">
           <header className="mb-12 flex flex-col items-center text-center">
             {novelData?.coverURL && (
               <div className="relative w-[150px] h-[220px] mb-8 shadow-2xl rounded-lg overflow-hidden border border-border/50">
@@ -116,7 +122,41 @@ export default function LocalReader() {
           />
         </article>
 
-        <section className="pb-12 border-t pt-12">
+        <nav className="chapter-nav flex items-center justify-between mb-12 py-8 border-t">
+          <div className="flex items-center gap-4 w-full">
+            <Button 
+              variant="outline" 
+              disabled={prevNum < 1}
+              asChild={prevNum >= 1}
+              className="flex-1 rounded-xl h-12"
+            >
+              {prevNum >= 1 ? (
+                <Link href={`/local-pages/${id}/${prevNum}`}>
+                  <ChevronLeft className="h-4 w-4 mr-2" /> Previous
+                </Link>
+              ) : (
+                <span><ChevronLeft className="h-4 w-4 mr-2" /> Beginning</span>
+              )}
+            </Button>
+            
+            <Button 
+              variant="default" 
+              disabled={nextNum > totalChapters}
+              asChild={nextNum <= totalChapters}
+              className="flex-1 rounded-xl h-12 bg-primary hover:bg-primary/90"
+            >
+              {nextNum <= totalChapters ? (
+                <Link href={`/local-pages/${id}/${nextNum}`}>
+                  Next <ChevronRight className="h-4 w-4 ml-2" />
+                </Link>
+              ) : (
+                <span>End reached <ChevronRight className="h-4 w-4 ml-2" /></span>
+              )}
+            </Button>
+          </div>
+        </nav>
+
+        <section className="pt-12 border-t">
           <ReaderControls 
             chapterNumber={currentPage.chapterNumber} 
             totalChapters={totalChapters} 

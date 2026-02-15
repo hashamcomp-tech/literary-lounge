@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
+import Link from 'next/link';
 
 export default function CloudReader() {
   const { id, chapterNumber } = useParams() as { id: string; chapterNumber: string };
@@ -124,6 +126,10 @@ export default function CloudReader() {
     );
   }
 
+  const prevNum = parseInt(chapterNumber) - 1;
+  const nextNum = parseInt(chapterNumber) + 1;
+  const hasNext = allChapters && nextNum <= allChapters.length;
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-background'}`}>
       <Navbar />
@@ -152,7 +158,7 @@ export default function CloudReader() {
       </div>
 
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
-        <article className="mb-20">
+        <article id={`chapter-${chapterNumber}`} className="mb-20">
           <header className="mb-12 flex flex-col items-center text-center">
             {metadata?.coverURL && (
               <div className="relative w-[150px] h-[220px] mb-8 shadow-2xl rounded-lg overflow-hidden border border-border/50">
@@ -181,7 +187,7 @@ export default function CloudReader() {
               {metadata?.bookTitle || 'Cloud Novel'}
             </p>
             <h1 className="text-4xl font-headline font-black mb-4">
-              {chapter.title || `Chapter ${chapter.chapterNumber}`}
+              {chapter.title || `Chapter ${chapterNumber}`}
             </h1>
             <div className="h-1 w-24 bg-primary mx-auto rounded-full" />
           </header>
@@ -193,26 +199,41 @@ export default function CloudReader() {
           />
         </article>
 
-        <section className="pb-12 border-t pt-12">
-          <div className="flex items-center justify-between mb-8">
-             <Button 
-                variant="outline" 
-                disabled={parseInt(chapterNumber) <= 1}
-                onClick={() => goToChapter(parseInt(chapterNumber) - 1)}
-                className="gap-2 rounded-xl"
-             >
-                <ChevronLeft className="h-4 w-4" /> Previous
-             </Button>
-             <Button 
-                variant="default" 
-                disabled={allChapters && parseInt(chapterNumber) >= allChapters.length}
-                onClick={() => goToChapter(parseInt(chapterNumber) + 1)}
-                className="gap-2 rounded-xl bg-primary"
-             >
-                Next <ChevronRight className="h-4 w-4" />
-             </Button>
+        <nav className="chapter-nav flex items-center justify-between mb-12 py-8 border-t">
+          <div className="flex items-center gap-4 w-full">
+            <Button 
+              variant="outline" 
+              disabled={prevNum < 1}
+              asChild={prevNum >= 1}
+              className="flex-1 rounded-xl h-12"
+            >
+              {prevNum >= 1 ? (
+                <Link href={`/pages/${id}/${prevNum}`}>
+                  <ChevronLeft className="h-4 w-4 mr-2" /> Previous Chapter
+                </Link>
+              ) : (
+                <span><ChevronLeft className="h-4 w-4 mr-2" /> First Chapter</span>
+              )}
+            </Button>
+            
+            <Button 
+              variant="default" 
+              disabled={!hasNext}
+              asChild={hasNext}
+              className="flex-1 rounded-xl h-12 bg-primary hover:bg-primary/90"
+            >
+              {hasNext ? (
+                <Link href={`/pages/${id}/${nextNum}`}>
+                  Next Chapter <ChevronRight className="h-4 w-4 ml-2" />
+                </Link>
+              ) : (
+                <span>End of Book <ChevronRight className="h-4 w-4 ml-2" /></span>
+              )}
+            </Button>
           </div>
+        </nav>
 
+        <section className="pt-12 border-t">
           <ReaderControls 
             chapterNumber={parseInt(chapterNumber)} 
             totalChapters={metadata?.totalChapters || allChapters?.length || parseInt(chapterNumber)} 
