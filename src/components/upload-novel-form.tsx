@@ -7,19 +7,16 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, Lock, Send, Image as ImageIcon, Sparkles, CloudUpload } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, addDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
-import { saveLocalBook, saveLocalChapter, getLocalBook } from '@/lib/local-library';
+import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { sendAccessRequestEmail } from '@/app/actions/notifications';
 import { GENRES } from '@/lib/genres';
-import { uploadCoverImage } from '@/lib/upload-cover';
 import { uploadBookToCloud } from '@/lib/upload-book';
+import { uploadCoverImage } from '@/lib/upload-cover';
 import {
   Select,
   SelectContent,
@@ -29,8 +26,8 @@ import {
 } from "@/components/ui/select";
 
 /**
- * @fileOverview Refined upload form with explicit Cloud vs Local paths.
- * Implements a premium editorial experience for contributors.
+ * @fileOverview Refined upload form with robust EPUB parsing.
+ * Extracts metadata and chapters automatically for a premium contributor experience.
  */
 
 interface AutocompleteInputProps {
@@ -178,6 +175,27 @@ export function UploadNovelForm() {
     return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
   };
 
+  const handleFileChange = async (file: File) => {
+    setSelectedFile(file);
+    if (file.name.endsWith('.epub')) {
+      setLoading(true);
+      setLoadingStatus('Parsing EPUB Manuscript...');
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const book = ePub(arrayBuffer);
+        await book.ready;
+        const metadata = await book.loaded.metadata;
+        if (metadata.title) setTitle(metadata.title);
+        if (metadata.creator) setAuthor(metadata.creator);
+        toast({ title: "Manuscript Loaded", description: `"${metadata.title}" metadata extracted.` });
+      } catch (e) {
+        toast({ variant: 'destructive', title: "Parsing Error", description: "Failed to read EPUB metadata." });
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
@@ -194,23 +212,29 @@ export function UploadNovelForm() {
         const arrayBuffer = await selectedFile.arrayBuffer();
         const book = ePub(arrayBuffer);
         await book.ready;
-        const metadata = await book.loaded.metadata;
-        finalTitle = metadata.title || finalTitle;
-        finalAuthor = metadata.creator || finalAuthor;
         
         const spine = book.spine;
         let idx = 1;
         // @ts-ignore
         for (const item of spine.items) {
-          const doc = await book.load(item.href);
-          const body = (doc as Document).querySelector('body');
-          if (body && body.innerText.length > 50) {
-            chapters.push({ chapterNumber: idx++, content: body.innerHTML, title: item.idref });
+          const chapterDoc = await book.load(item.href);
+          // @ts-ignore
+          const body = chapterDoc.querySelector('body');
+          if (body && body.innerText.length > 100) {
+            chapters.push({ 
+              chapterNumber: idx++, 
+              content: body.innerHTML, 
+              title: item.idref || `Chapter ${idx - 1}` 
+            });
           }
         }
       } else {
         const html = (content || "").split('\n\n').map(p => `<p>${p}</p>`).join('');
         chapters = [{ chapterNumber: parseInt(chapterNumber) || 1, content: html, title: `Chapter ${chapterNumber}` }];
+      }
+
+      if (chapters.length === 0) {
+        throw new Error("No readable content found in manuscript.");
       }
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
@@ -268,7 +292,7 @@ export function UploadNovelForm() {
             <HardDrive className="h-6 w-6" />
             <AlertTitle className="font-headline font-black text-xl mb-1">Private Local Mode</AlertTitle>
             <AlertDescription className="text-sm font-medium opacity-80 space-y-4">
-              <p>Content is currently saved to your browser's private database. This is perfect for drafts or personal archives.</p>
+              <p>Content is currently saved to your browser's private database. Perfect for personal archives.</p>
               {user && !user.isAnonymous && (
                 <Button 
                   variant="outline" 
@@ -288,7 +312,7 @@ export function UploadNovelForm() {
         <div className="h-2 bg-primary w-full" />
         <CardHeader className="pt-10 pb-6 px-10">
           <CardTitle className="text-3xl font-headline font-black">Manuscript Details</CardTitle>
-          <CardDescription className="text-base">Enter the metadata for your new chapter or novel.</CardDescription>
+          <CardDescription className="text-base">Metadata is automatically extracted from EPUB files.</CardDescription>
         </CardHeader>
         <CardContent className="px-10 pb-10 space-y-8">
           <form onSubmit={handleUpload} className="space-y-8">
@@ -317,10 +341,12 @@ export function UploadNovelForm() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Chapter</Label>
-                  <Input type="number" min={1} value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)} className="bg-background/50 rounded-xl h-12" />
-                </div>
+                {!selectedFile && (
+                  <div className="grid gap-2">
+                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Chapter Number</Label>
+                    <Input type="number" min={1} value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)} className="bg-background/50 rounded-xl h-12" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -347,22 +373,24 @@ export function UploadNovelForm() {
             </div>
 
             <div className="space-y-4 pt-4 border-t border-border/50">
-              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Manuscript Content</Label>
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Manuscript File</Label>
               <div className="grid gap-6">
                 <div className={`relative border-2 border-dashed rounded-[2rem] p-10 transition-all duration-500 ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50 bg-muted/20'}`}>
-                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} />
+                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
                   <div className="flex flex-col items-center justify-center text-center">
                     {selectedFile ? (
                       <div className="space-y-2">
-                        <div className="bg-primary p-3 rounded-full mx-auto w-fit"><Book className="h-6 w-6 text-white" /></div>
+                        <div className="bg-primary p-3 rounded-full mx-auto w-fit">
+                          {selectedFile.name.endsWith('.epub') ? <FileType className="h-6 w-6 text-white" /> : <Book className="h-6 w-6 text-white" />}
+                        </div>
                         <span className="font-black uppercase tracking-widest text-[10px] block">{selectedFile.name}</span>
                         <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }} className="text-xs text-destructive hover:bg-destructive/10">Remove File</Button>
                       </div>
                     ) : (
                       <div className="space-y-3 opacity-50">
-                        <CloudUpload className="h-10 w-10 mx-auto" />
+                        <BookPlus className="h-10 w-10 mx-auto" />
                         <span className="font-black uppercase tracking-widest text-[10px] block">Upload EPUB for Auto-Parsing</span>
-                        <p className="text-[10px] max-w-[200px] mx-auto">Upload a full novel to parse all chapters automatically.</p>
+                        <p className="text-[10px] max-w-[200px] mx-auto">We'll extract all chapters and metadata automatically.</p>
                       </div>
                     )}
                   </div>
@@ -370,7 +398,7 @@ export function UploadNovelForm() {
 
                 {!selectedFile && (
                   <Textarea
-                    placeholder="Paste your chapter content here... We support standard paragraph formatting."
+                    placeholder="Alternatively, paste your chapter content here..."
                     className="min-h-[300px] text-lg leading-relaxed p-6 rounded-[2rem] bg-background/50 border-none shadow-inner focus:bg-background transition-all"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
@@ -393,7 +421,7 @@ export function UploadNovelForm() {
                 ) : isApprovedUser ? (
                   <>
                     <ShieldCheck className="mr-3 h-6 w-6" />
-                    Publish to Cloud Lounge
+                    Publish Volume to Cloud
                   </>
                 ) : (
                   <>
