@@ -36,7 +36,14 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Dynamic Cloud Recommendations */}
+        {/* Dynamic Cloud Recommendations - Recently Added */}
+        <RecommendationsSection 
+          title="New Arrivals" 
+          sortBy="createdAt" 
+          limitCount={6} 
+        />
+
+        {/* Dynamic Cloud Recommendations - Trending */}
         <RecommendationsSection 
           title="Trending Now" 
           sortBy="views" 

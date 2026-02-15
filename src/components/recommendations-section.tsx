@@ -1,18 +1,17 @@
-
 "use client";
 
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, where } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, BookOpen, Eye, Star, Zap } from 'lucide-react';
+import { TrendingUp, BookOpen, Eye, Star, Zap, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 
 interface RecommendationsSectionProps {
   title?: string;
   genre?: string;
-  sortBy?: 'views' | 'lastUpdated';
+  sortBy?: 'views' | 'createdAt' | 'lastUpdated';
   limitCount?: number;
 }
 
@@ -24,27 +23,25 @@ export default function RecommendationsSection({
 }: RecommendationsSectionProps) {
   const db = useFirestore();
 
-  // Fetch books from Firestore with optional genre filter
   const cloudBooksQuery = useMemoFirebase(() => {
     if (!db) return null;
     
-    // Base path is /books
     const booksCol = collection(db, 'books');
     
-    // We use the metadata.info.views or metadata.info.lastUpdated fields
-    // NOTE: Filtering by genre + sorting by views requires a composite index in production.
-    // For development, we'll try to fetch and sort safely.
+    // In production, composite indexes are required for where + orderBy.
+    // For local development and early stages, we prioritize the filter or sort.
     if (genre) {
       return query(
         booksCol,
-        where('metadata.info.genre', '==', genre),
+        where('genre', '==', genre),
         limit(limitCount)
       );
     }
     
+    // Sort by root level fields (views, createdAt, lastUpdated)
     return query(
       booksCol,
-      orderBy(`metadata.info.${sortBy}`, 'desc'),
+      orderBy(sortBy, 'desc'),
       limit(limitCount)
     );
   }, [db, genre, sortBy, limitCount]);
@@ -66,19 +63,20 @@ export default function RecommendationsSection({
     );
   }
 
-  // If no cloud data yet, don't show the section
   if (!books || books.length === 0) return null;
 
-  // Client-side sort if genre filter is active (to avoid index issues in some environments)
+  // Client-side sort if genre filter is active (to ensure correct ordering without complex indexes)
   const sortedBooks = genre 
-    ? [...books].sort((a, b) => (b.metadata.info.views || 0) - (a.metadata.info.views || 0))
+    ? [...books].sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0))
     : books;
 
   return (
     <div className="py-8">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
-          {genre ? (
+          {sortBy === 'createdAt' ? (
+            <Clock className="h-5 w-5 text-primary animate-pulse" />
+          ) : genre ? (
             <Star className="h-5 w-5 text-amber-500 fill-amber-500/20" />
           ) : (
             <TrendingUp className="h-5 w-5 text-accent animate-pulse" />
@@ -87,7 +85,7 @@ export default function RecommendationsSection({
         </div>
         <div className="flex items-center gap-2">
            <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] uppercase font-black tracking-widest px-2 py-0.5">
-             {genre ? genre : 'Trending'}
+             {genre ? genre : sortBy === 'createdAt' ? 'New' : 'Trending'}
            </Badge>
         </div>
       </div>
@@ -100,9 +98,9 @@ export default function RecommendationsSection({
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <CardTitle className="text-lg font-headline font-bold group-hover:text-primary transition-colors line-clamp-1">
-                      {book.metadata.info.bookTitle}
+                      {book.title || book.metadata?.info?.bookTitle}
                     </CardTitle>
-                    <p className="text-sm text-muted-foreground font-medium truncate">By {book.metadata.info.author}</p>
+                    <p className="text-sm text-muted-foreground font-medium truncate">By {book.author || book.metadata?.info?.author}</p>
                   </div>
                   <div className="bg-primary/10 p-2 rounded-xl">
                     <BookOpen className="h-4 w-4 text-primary" />
@@ -113,17 +111,19 @@ export default function RecommendationsSection({
                 <div className="flex items-center gap-4 mb-4">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
                     <Eye className="h-3.5 w-3.5" />
-                    {(book.metadata.info.views || 0).toLocaleString()} views
+                    {(book.views || book.metadata?.info?.views || 0).toLocaleString()} views
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                    <Zap className="h-3.5 w-3.5" />
-                    {book.metadata.info.totalChapters} chapters
-                  </div>
+                  {book.metadata?.info?.totalChapters && (
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                      <Zap className="h-3.5 w-3.5" />
+                      {book.metadata.info.totalChapters} chapters
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex items-center justify-between">
                   <Badge variant="outline" className="text-[10px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10">
-                    {book.metadata.info.genre || 'Novel'}
+                    {book.genre || book.metadata?.info?.genre || 'Novel'}
                   </Badge>
                   <span className="text-xs font-black text-primary group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
                     Read Now →
