@@ -8,7 +8,7 @@ import { ReaderControls } from '@/components/reader-controls';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
+import { FirestorePermissionError, type SecurityRuleContext } from '@/firebase/errors';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -32,19 +32,27 @@ export default function CloudReader() {
     const metaRef = doc(db, 'books', id, 'metadata', 'info');
     const rootRef = doc(db, 'books', id);
 
-    // Fetch metadata
+    // Fetch metadata for display
     getDoc(metaRef).then((snapshot) => {
       if (snapshot.exists()) {
         setMetadata(snapshot.data());
       }
     });
 
-    // Increment views in both the root doc (for ordering) and metadata sub-doc
-    const incrementPayload = { 'metadata.info.views': increment(1) };
-    const subDocPayload = { views: increment(1) };
+    // Increment views at the root for trending queries (optimized for discovery)
+    const updatePayload = { views: increment(1) };
 
-    updateDoc(rootRef, incrementPayload).catch(() => {});
-    updateDoc(metaRef, subDocPayload).catch(() => {});
+    updateDoc(rootRef, updatePayload).catch(async (err) => {
+      const permissionError = new FirestorePermissionError({
+        path: rootRef.path,
+        operation: 'update',
+        requestResourceData: updatePayload
+      } satisfies SecurityRuleContext);
+      errorEmitter.emit('permission-error', permissionError);
+    });
+
+    // Also increment in metadata for display consistency
+    updateDoc(metaRef, updatePayload).catch(() => {});
     
   }, [db, id]);
 
@@ -66,7 +74,7 @@ export default function CloudReader() {
         const permissionError = new FirestorePermissionError({
           path: chapterRef.path,
           operation: 'get',
-        });
+        } satisfies SecurityRuleContext);
         errorEmitter.emit('permission-error', permissionError);
         setLoading(false);
       });
