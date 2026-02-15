@@ -59,11 +59,17 @@ service cloud.firestore {
     // BOOKS & CHAPTERS
     match /books/{bookId} {
       allow read: if true;
-      allow write: if isApprovedUploader();
+      
+      // Allow everyone to increment views, but only uploaders to do full writes
+      allow create, delete: if isApprovedUploader();
+      allow update: if isApprovedUploader() || 
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
 
       match /metadata/info {
         allow read: if true;
-        allow write: if isApprovedUploader();
+        allow update: if isApprovedUploader() || 
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
+        allow create, delete: if isApprovedUploader();
       }
 
       match /chapters/{chapterNumber} {
