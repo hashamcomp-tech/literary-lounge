@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -25,7 +24,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -320,10 +318,10 @@ export default function LoginPage() {
                     </div>
                   )}
                 </div>
-                <CardTitle className="text-2xl font-headline font-bold flex items-center justify-center gap-2">
-                  {isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}
+                <CardTitle className="text-2xl font-headline font-bold flex flex-col items-center justify-center gap-2">
+                  <span>{isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}</span>
                   {profile?.role === 'admin' && (
-                    <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-bold">Admin</Badge>
+                    <span className="admin-badge">Admin</span>
                   )}
                 </CardTitle>
                 <CardDescription>{user.email}</CardDescription>

@@ -60,3 +60,19 @@
     @apply font-headline;
   }
 }
+
+@layer components {
+  .admin-badge {
+    background: #ef4444; /* Standard red-500 for admin urgency */
+    color: white;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+  }
+}
