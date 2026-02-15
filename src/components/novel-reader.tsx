@@ -8,12 +8,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Novel } from '@/lib/mock-data';
 import { Progress } from '@/components/ui/progress';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useUser, useFirestore } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
 
 interface NovelReaderProps {
@@ -26,7 +27,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const { user } = useUser();
   const db = useFirestore();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
-  const [jumpValue, setJumpValue] = useState('');
   const [mounted, setMounted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -46,7 +46,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     // Sync mock collection progress to cloud history if logged in
     if (user && !user.isAnonymous && db) {
       const historyRef = doc(db, 'users', user.uid, 'history', novel.id);
-      setDoc(historyRef, {
+      const historyData = {
         bookId: novel.id,
         title: novel.title,
         author: novel.author,
@@ -54,10 +54,17 @@ export default function NovelReader({ novel }: NovelReaderProps) {
         coverURL: novel.coverImage,
         lastReadChapter: currentChapterIndex + 1,
         lastReadAt: serverTimestamp(),
-        isCloud: false // Mock data is treated as non-cloud for routing purposes
-      }, { merge: true }).catch(err => {
-        console.error("Failed to sync history:", err);
-      });
+        isCloud: false
+      };
+      
+      setDoc(historyRef, historyData, { merge: true })
+        .catch(async () => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: historyRef.path,
+            operation: 'write',
+            requestResourceData: historyData
+          }));
+        });
     }
   }, [currentChapterIndex, novel.id, user, db]);
 

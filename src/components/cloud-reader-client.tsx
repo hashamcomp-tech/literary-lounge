@@ -82,9 +82,15 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               lastReadAt: serverTimestamp(),
               isCloud: true
             };
-            setDoc(historyRef, historyData, { merge: true }).catch(err => {
-              console.error("Failed to sync history:", err);
-            });
+            
+            setDoc(historyRef, historyData, { merge: true })
+              .catch(async () => {
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                  path: historyRef.path,
+                  operation: 'write',
+                  requestResourceData: historyData
+                }));
+              });
           }
         }
       } catch (err: any) {
