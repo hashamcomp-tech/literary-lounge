@@ -8,10 +8,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, Globe, Lock, Send } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, Globe, Lock, Send, Image as ImageIcon } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { useFirestore, useUser, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirestore, useUser, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
@@ -19,6 +19,7 @@ import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { sendAccessRequestEmail } from '@/app/actions/notifications';
 import { GENRES } from '@/lib/genres';
+import { uploadCoverImage } from '@/lib/upload-cover';
 import {
   Select,
   SelectContent,
@@ -120,7 +121,7 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
 
 export default function UploadPage() {
   const router = useRouter();
-  const db = useFirestore();
+  const { db, storage } = useFirebase();
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
@@ -133,6 +134,7 @@ export default function UploadPage() {
   const [content, setContent] = useState('');
   const [genre, setGenre] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   
@@ -187,6 +189,12 @@ export default function UploadPage() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedFile(file);
+    }
+  };
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setCoverFile(e.target.files[0]);
     }
   };
 
@@ -303,6 +311,12 @@ export default function UploadPage() {
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}_${Date.now()}`;
 
+      let coverImageUrl = null;
+      if (coverFile) {
+        setLoadingStatus('Uploading cover image...');
+        coverImageUrl = await uploadCoverImage(storage, coverFile, docId);
+      }
+
       if (isApprovedUser && user) {
         setLoadingStatus('Publishing to cloud...');
         const bookRef = doc(db, 'books', docId);
@@ -317,6 +331,7 @@ export default function UploadPage() {
           totalChapters: chapters.length,
           genre: genre,
           views: 0,
+          coverImage: coverImageUrl,
         };
 
         const rootPayload = {
@@ -330,6 +345,7 @@ export default function UploadPage() {
           ownerId: user.uid,
           createdAt: serverTimestamp(),
           lastUpdated: serverTimestamp(),
+          coverImage: coverImageUrl,
           metadata: { info: metadataInfo }
         };
 
@@ -364,7 +380,8 @@ export default function UploadPage() {
           genre, 
           totalChapters: chapters.length, 
           lastUpdated: new Date().toISOString(),
-          isLocalOnly: false 
+          isLocalOnly: false,
+          coverImage: coverImageUrl
         });
         for (const ch of chapters) {
           await saveLocalChapter({ ...ch, bookId: docId });
@@ -381,7 +398,8 @@ export default function UploadPage() {
           genre: genre,
           totalChapters: chapters.length,
           lastUpdated: new Date().toISOString(),
-          isLocalOnly: true
+          isLocalOnly: true,
+          coverImage: coverImageUrl
         };
 
         await saveLocalBook(bookData);
@@ -518,6 +536,34 @@ export default function UploadPage() {
                         onChange={(e) => setChapterNumber(e.target.value)}
                         className="bg-background/50"
                       />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cover Image Upload Section */}
+                <div className="space-y-4 pt-4 border-t">
+                  <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" /> Cover Image
+                  </Label>
+                  <div className={`relative border-2 border-dashed rounded-xl p-4 transition-colors ${coverFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
+                    <input
+                      type="file"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      accept="image/*"
+                      onChange={handleCoverChange}
+                    />
+                    <div className="flex flex-col items-center justify-center text-center">
+                      {coverFile ? (
+                        <div className="flex items-center gap-2">
+                           <CheckCircle2 className="h-5 w-5 text-primary" />
+                           <span className="text-sm font-medium truncate max-w-[200px]">{coverFile.name}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                           <Upload className="h-4 w-4" />
+                           <span className="text-xs font-medium">Select a cover image (Optional)</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
