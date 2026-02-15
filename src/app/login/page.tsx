@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -94,6 +95,7 @@ export default function LoginPage() {
     
     setLoading(true);
     try {
+      // 1. Check uniqueness (Read operation)
       const usernameRef = doc(db, 'usernames', cleanUsername);
       const usernameSnap = await getDoc(usernameRef);
       if (usernameSnap.exists()) {
@@ -102,21 +104,33 @@ export default function LoginPage() {
         return;
       }
 
+      // 2. Create Auth User (Wait for result to get UID)
       const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      await setDoc(usernameRef, { uid: newUser.uid });
+      // 3. Initiate Firestore Mutations (NON-BLOCKING)
+      
+      // A. Username Map
+      const mapData = { uid: newUser.uid };
+      setDoc(usernameRef, mapData).catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: usernameRef.path,
+          operation: 'create',
+          requestResourceData: mapData,
+        }));
+      });
 
+      // B. User Profile
       const userRef = doc(db, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
         username: cleanUsername,
         email: newUser.email,
-        role: 'user', // Default role
+        role: 'reader', // Assign requested 'reader' role
         createdAt: serverTimestamp(),
       };
 
-      await setDoc(userRef, profileData).catch(async (err) => {
+      setDoc(userRef, profileData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'create',
@@ -172,7 +186,14 @@ export default function LoginPage() {
         return;
       }
 
-      await setDoc(usernameRef, { uid: user!.uid });
+      const mapData = { uid: user!.uid };
+      setDoc(usernameRef, mapData).catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: usernameRef.path,
+          operation: 'create',
+          requestResourceData: mapData
+        }));
+      });
 
       const oldUsername = profile?.username;
       const userRef = doc(db, 'users', user!.uid);
@@ -182,7 +203,7 @@ export default function LoginPage() {
         updatedAt: serverTimestamp()
       };
 
-      await updateDoc(userRef, updateData).catch(async (err) => {
+      updateDoc(userRef, updateData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'update',
@@ -191,7 +212,7 @@ export default function LoginPage() {
       });
 
       if (oldUsername) {
-        await deleteDoc(doc(db, 'usernames', oldUsername));
+        deleteDoc(doc(db, 'usernames', oldUsername)).catch(() => {});
       }
 
       toast({ title: "Success", description: "Your username has been updated." });
@@ -322,6 +343,9 @@ export default function LoginPage() {
                   <span>{isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}</span>
                   {profile?.role === 'admin' && (
                     <span className="admin-badge">Admin</span>
+                  )}
+                  {profile?.role === 'reader' && (
+                    <Badge variant="secondary" className="bg-primary/10 text-primary border-none uppercase text-[10px]">Reader</Badge>
                   )}
                 </CardTitle>
                 <CardDescription>{user.email}</CardDescription>

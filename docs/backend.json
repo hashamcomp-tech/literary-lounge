@@ -22,7 +22,7 @@
         },
         "role": {
           "type": "string",
-          "enum": ["user", "admin"],
+          "enum": ["user", "admin", "reader"],
           "description": "The user's access role."
         },
         "createdAt": {
