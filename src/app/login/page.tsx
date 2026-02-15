@@ -21,7 +21,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
@@ -356,10 +355,10 @@ export default function LoginPage() {
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <DialogContent className="sm:max-w-md rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-primary" />
               Reset Password
-            </DialogTitle>
+            </CardTitle>
             <DialogDescription>
               Enter your registered email address and we'll send you a link to reset your password.
             </DialogDescription>
