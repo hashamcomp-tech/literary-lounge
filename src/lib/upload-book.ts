@@ -1,3 +1,4 @@
+
 import { doc, setDoc, serverTimestamp, Firestore } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
@@ -34,6 +35,7 @@ export async function uploadBookToCloud({
 
   // 1. Upload cover to Storage
   const coverURL = await uploadCoverImage(storage, coverFile, bookId);
+  const coverSize = coverFile.size;
 
   // 2. Prepare Metadata
   const metadataInfo = {
@@ -47,6 +49,7 @@ export async function uploadBookToCloud({
     genre,
     views: 0,
     coverURL,
+    coverSize, // Tracking usage
   };
 
   // 3. Set Root Document (for search and discovery)
@@ -63,6 +66,7 @@ export async function uploadBookToCloud({
     createdAt: serverTimestamp(),
     lastUpdated: serverTimestamp(),
     coverURL,
+    coverSize,
     metadata: { info: metadataInfo }
   };
 

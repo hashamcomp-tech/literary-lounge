@@ -89,6 +89,13 @@
         "views": {
           "type": "number"
         },
+        "coverURL": {
+          "type": "string"
+        },
+        "coverSize": {
+          "type": "number",
+          "description": "Size of the cover image in bytes."
+        },
         "lastUpdated": {
           "type": "string",
           "format": "date-time"
