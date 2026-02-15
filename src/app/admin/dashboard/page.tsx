@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 
@@ -17,40 +17,45 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchStats() {
-      if (!db) return;
-      setIsLoading(true);
-      try {
-        // 1️⃣ Count all books
-        const booksSnap = await getDocs(collection(db, 'books'));
-        setBookCount(booksSnap.size);
+    if (!db) return;
 
-        // 2️⃣ Count all chapters (assuming each book has a 'chapters' subcollection)
-        let totalChapters = 0;
-        const chapterPromises = booksSnap.docs.map(bookDoc => 
+    // 1. Real-time stats listener for storage usage
+    const statsRef = doc(db, 'stats', 'storageUsage');
+    const unsubscribeStats = onSnapshot(statsRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const used = docSnap.data().storageBytesUsed || 0;
+        setStorageUsed(used);
+        setRemainingStorage(MAX_STORAGE_BYTES - used);
+      }
+      setIsLoading(false);
+    }, (err) => {
+      console.error("Real-time stats error:", err);
+    });
+
+    // 2. Real-time listener for the books collection
+    const booksRef = collection(db, 'books');
+    const unsubscribeBooks = onSnapshot(booksRef, async (snapshot) => {
+      setBookCount(snapshot.size);
+
+      // Recalculate total chapters across all books in real-time
+      try {
+        const chapterPromises = snapshot.docs.map(bookDoc => 
           getDocs(collection(db, 'books', bookDoc.id, 'chapters'))
         );
         const chapterSnaps = await Promise.all(chapterPromises);
-        chapterSnaps.forEach(snap => totalChapters += snap.size);
-        setChapterCount(totalChapters);
-
-        // 3️⃣ Fetch storage usage (from manual tracking document)
-        const statsRef = doc(db, 'stats', 'storageUsage');
-        const statsSnap = await getDoc(statsRef);
-        let used = 0;
-        if (statsSnap.exists()) {
-          used = statsSnap.data().storageBytesUsed || 0;
-        }
-        setStorageUsed(used);
-        setRemainingStorage(MAX_STORAGE_BYTES - used);
+        const total = chapterSnaps.reduce((sum, snap) => sum + snap.size, 0);
+        setChapterCount(total);
       } catch (err) {
-        console.error('Error fetching admin stats:', err);
-      } finally {
-        setIsLoading(false);
+        console.warn("Failed to aggregate chapters in real-time:", err);
       }
-    }
+      
+      setIsLoading(false);
+    });
 
-    fetchStats();
+    return () => {
+      unsubscribeStats();
+      unsubscribeBooks();
+    };
   }, [db]);
 
   return (
@@ -60,12 +65,18 @@ export default function AdminDashboard() {
         <div className="max-w-3xl mx-auto bg-card p-10 rounded-3xl shadow-2xl border border-border/50">
           <header className="mb-10">
             <h1 className="text-4xl font-headline font-black">Admin Dashboard</h1>
-            <p className="text-muted-foreground mt-2 font-medium">Real-time metrics for your cloud library.</p>
+            <p className="text-muted-foreground mt-2 font-medium flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </span>
+              Live Lounge Metrics
+            </p>
           </header>
 
           {isLoading ? (
             <div className="py-20 text-center animate-pulse text-muted-foreground font-bold uppercase tracking-widest text-sm">
-              Calculating Lounge statistics...
+              Connecting to live data...
             </div>
           ) : (
             <div className="space-y-10">
