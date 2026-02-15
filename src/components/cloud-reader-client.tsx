@@ -7,7 +7,6 @@ import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, User, S
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -122,8 +121,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const totalChapters = chapters.length;
 
   return (
-    <div className="max-w-3xl mx-auto selection:bg-primary/20 selection:text-primary">
-      <header className="mb-20 text-center sm:text-left">
+    <div className="max-w-[700px] mx-auto px-5 py-5 font-body text-[18px] leading-[1.6] text-[#222]">
+      <header className="mb-10">
         <Button 
           variant="ghost" 
           size="sm" 
@@ -131,47 +130,39 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           className="mb-8 -ml-2 text-muted-foreground hover:text-primary transition-colors"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Library
+          Back
         </Button>
 
-        <div className="space-y-4">
-          <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-4 py-1 tracking-[0.2em] mb-4">
-            Cloud Library Edition
+        <div className="space-y-2">
+          <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-3 py-0.5 tracking-[0.1em] mb-2">
+            Cloud Edition
           </Badge>
-          <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight mb-4">
+          <h1 className="text-4xl font-headline font-black leading-tight tracking-tight mb-2">
             {metadata?.bookTitle || metadata?.title || 'Untitled Novel'}
           </h1>
-          <p className="text-xl sm:text-2xl text-muted-foreground italic flex items-center justify-center sm:justify-start gap-2 pt-2">
-            <User className="h-5 w-5 text-primary/60" /> By {metadata?.author || 'Unknown Author'}
+          <p className="text-lg text-muted-foreground italic flex items-center gap-2">
+            By {metadata?.author || 'Unknown Author'}
           </p>
-          <div className="h-1.5 w-32 bg-primary/30 rounded-full mt-8 mx-auto sm:mx-0" />
         </div>
       </header>
 
-      <article id={`chapter-${currentChapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <header className="mb-16 flex flex-col items-center text-center sm:items-start sm:text-left">
-          <div className="flex items-center gap-3 mb-6">
-             <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
-               <Bookmark className="h-3.5 w-3.5" />
-               Chapter {currentChapter.chapterNumber}
-             </div>
-             <span className="text-xs text-muted-foreground/40 font-bold">•</span>
-             <span className="text-xs font-bold text-muted-foreground/60">
-               Page {currentChapter.chapterNumber} of {totalChapters}
-             </span>
+      <article id={`chapter-${currentChapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <header className="mb-8">
+          <div className="flex items-center gap-3 mb-4 text-xs font-bold uppercase tracking-widest text-primary">
+            <Bookmark className="h-3.5 w-3.5" />
+            Chapter {currentChapter.chapterNumber}
           </div>
-
-          <h2 className="text-4xl sm:text-5xl font-headline font-bold mb-8 leading-tight">
+          <h2 className="text-3xl font-headline font-bold mb-8 leading-tight">
             {currentChapter.title || `Chapter ${currentChapter.chapterNumber}`}
           </h2>
         </header>
 
-        <div className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif">
+        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-[#222]">
           {(currentChapter.content || '').split('\n\n').map((para: string, idx: number) => {
             const cleanPara = para.replace(/<[^>]*>?/gm, '').trim();
             if (!cleanPara) return null;
             return (
-              <p key={idx} className="mb-8 first-letter:text-4xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3 first-letter:mt-1">
+              <p key={idx} className="mb-6 first-letter:text-2xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2">
                 {cleanPara}
               </p>
             );
@@ -179,9 +170,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </article>
 
-      <section className="mt-20 py-12 border-t space-y-8">
-        <form onSubmit={handleJump} className="flex items-center justify-center gap-2">
-          <label htmlFor="chapterJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to chapter:</label>
+      <section className="mt-16 pt-10 border-t space-y-8">
+        <form onSubmit={handleJump} className="flex items-center gap-3">
+          <label htmlFor="chapterJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
           <Input 
             id="chapterJump"
             type="number" 
@@ -189,38 +180,38 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             max={totalChapters}
             value={jumpValue}
             onChange={(e) => setJumpValue(e.target.value)}
-            className="w-20 rounded-xl"
+            className="w-16 h-8 text-sm rounded-lg"
           />
-          <Button type="submit" size="sm" variant="outline" className="rounded-xl">
-            <Navigation className="h-4 w-4 mr-2" /> Go
+          <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
+            <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
           </Button>
         </form>
 
-        <nav className="chapter-nav flex flex-col sm:flex-row items-center justify-between gap-8">
+        <nav className="chapter-nav flex items-center justify-between">
           <Button 
             variant="outline" 
-            className="w-full sm:w-auto px-12 py-8 rounded-2xl border-primary/20 hover:bg-primary/5 group text-lg font-bold"
+            className="h-10 px-6 rounded-xl border-primary/20 hover:bg-primary/5 font-bold"
             disabled={currentChapterNum <= 1}
             onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
           >
-            <ChevronLeft className="mr-3 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+            <ChevronLeft className="mr-2 h-4 w-4" />
             Previous
           </Button>
 
-          <div className="text-center px-6">
-             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
-               {currentChapterNum} / {totalChapters} Chapters
+          <div className="text-center">
+             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+               {currentChapterNum} / {totalChapters}
              </span>
           </div>
 
           <Button 
             variant="default" 
-            className="w-full sm:w-auto px-12 py-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl group text-lg font-bold"
+            className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
             disabled={currentChapterNum >= totalChapters}
             onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
           >
-            Next Chapter
-            <ChevronRight className="ml-3 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+            Next
+            <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         </nav>
       </section>

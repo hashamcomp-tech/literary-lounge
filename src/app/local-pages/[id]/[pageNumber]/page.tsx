@@ -61,7 +61,7 @@ export default function LocalReader() {
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center space-y-4">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-          <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground animate-pulse">Loading Private Archive...</p>
+          <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground animate-pulse">Loading Archive...</p>
         </div>
       </div>
     );
@@ -75,10 +75,10 @@ export default function LocalReader() {
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
-          <h1 className="text-3xl font-headline font-black mb-2">Content Not Found</h1>
-          <p className="text-muted-foreground max-w-md mb-8">We couldn't locate this page in your local library.</p>
+          <h1 className="text-3xl font-headline font-black mb-2">Not Found</h1>
+          <p className="text-muted-foreground max-w-md mb-8">This page isn't in your local library.</p>
           <Button variant="outline" className="rounded-xl" onClick={() => router.push('/')}>
-             Return to Library
+             Return Home
           </Button>
         </div>
       </div>
@@ -89,51 +89,48 @@ export default function LocalReader() {
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar />
       
-      <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
-        <header className="mb-12 text-center sm:text-left">
+      <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-[#222]">
+        <header className="mb-10">
           <Button 
             variant="ghost" 
             size="sm" 
             onClick={() => router.back()}
-            className="mb-6 -ml-2 text-muted-foreground hover:text-primary transition-colors"
+            className="mb-8 -ml-2 text-muted-foreground hover:text-primary transition-colors"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
           
-          <div className="flex flex-col gap-4">
-            <div className="flex justify-center sm:justify-start">
-               <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-4 py-1">
-                 <HardDrive className="h-3 w-3" /> Local Private Collection
-               </Badge>
-            </div>
-            <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight mb-4">
+          <div className="space-y-2">
+            <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-3 py-0.5 text-[10px]">
+              <HardDrive className="h-3 w-3" /> Private Collection
+            </Badge>
+            <h1 className="text-4xl font-headline font-black leading-tight tracking-tight mb-2">
               {novelData?.title || 'Untitled Novel'}
             </h1>
+            <p className="text-lg text-muted-foreground">By {novelData?.author || 'Unknown Author'}</p>
           </div>
         </header>
 
-        <article id={`chapter-${chapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <header className="mb-16 flex flex-col items-center text-center">
-            <p className="text-xl text-muted-foreground mb-6">By {novelData?.author || 'Unknown Author'}</p>
-            <h2 className="text-4xl font-headline font-bold text-primary mb-8">
+        <article id={`chapter-${chapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <header className="mb-8">
+            <h2 className="text-3xl font-headline font-bold text-primary mb-6">
               Chapter {chapter.chapterNumber}{chapter.title ? `: ${chapter.title}` : ''}
             </h2>
-            <div className="h-1.5 w-24 bg-primary/40 mx-auto rounded-full" />
           </header>
 
-          <div className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif">
+          <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-[#222]">
             {(chapter.content || '').split(/<p>|\n\n/).map((para: string, idx: number) => {
                const clean = para.replace(/<\/p>|<[^>]*>?/gm, '').trim();
                if (!clean) return null;
-               return <p key={idx} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3">{clean}</p>
+               return <p key={idx} className="mb-6 first-letter:text-2xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2">{clean}</p>
             })}
           </div>
         </article>
 
-        <section className="mt-20 py-12 border-t space-y-8">
-          <form onSubmit={handleJump} className="flex items-center justify-center gap-2">
-            <label htmlFor="localJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to chapter:</label>
+        <section className="mt-16 pt-10 border-t space-y-8">
+          <form onSubmit={handleJump} className="flex items-center gap-3">
+            <label htmlFor="localJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
             <Input 
               id="localJump"
               type="number" 
@@ -141,36 +138,36 @@ export default function LocalReader() {
               max={allChapters.length}
               value={jumpValue}
               onChange={(e) => setJumpValue(e.target.value)}
-              className="w-20 rounded-xl"
+              className="w-16 h-8 text-sm rounded-lg"
             />
-            <Button type="submit" size="sm" variant="outline" className="rounded-xl">
-              <Navigation className="h-4 w-4 mr-2" /> Go
+            <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
+              <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
             </Button>
           </form>
 
-          <nav className="chapter-nav flex flex-col sm:flex-row items-center justify-between gap-8">
+          <nav className="chapter-nav flex items-center justify-between">
             <Button 
               variant="outline" 
-              className="w-full sm:w-auto px-10 py-7 rounded-2xl border-primary/20 text-lg font-bold"
+              className="h-10 px-6 rounded-xl border-primary/20 font-bold"
               disabled={currentChapterNum <= 1}
               onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
             >
-              <ChevronLeft className="h-5 w-5 mr-3" /> Previous
+              <ChevronLeft className="h-4 w-4 mr-2" /> Previous
             </Button>
             
             <div className="text-center px-6">
-               <span className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground/60">
-                 {currentChapterNum} / {allChapters.length} Chapters
+               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+                 {currentChapterNum} / {allChapters.length}
                </span>
             </div>
 
             <Button 
               variant="default" 
-              className="w-full sm:w-auto px-10 py-7 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl text-lg font-bold"
+              className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
               disabled={currentChapterNum >= allChapters.length}
               onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
             >
-              Next <ChevronRight className="h-5 w-5 ml-3" />
+              Next <ChevronRight className="h-4 w-4 ml-2" />
             </Button>
           </nav>
         </section>
