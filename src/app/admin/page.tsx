@@ -7,7 +7,7 @@ import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useFirestore, useUser, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc, getDoc, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert } from 'lucide-react';
@@ -22,6 +22,9 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
+  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  const { data: profile } = useDoc(profileRef);
+
   // Check if current user is approved/admin
   useEffect(() => {
     const checkAdmin = async () => {
@@ -31,8 +34,8 @@ export default function AdminPage() {
         return;
       }
 
-      // Super-admin bypass
-      if (user.email === 'hashamcomp@gmail.com') {
+      // Super-admin bypass or explicit admin role
+      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
@@ -51,7 +54,7 @@ export default function AdminPage() {
       }
     };
     checkAdmin();
-  }, [user, isUserLoading, db]);
+  }, [user, isUserLoading, profile, db]);
 
   // Fetch pending requests
   const requestsQuery = useMemoFirebase(() => {

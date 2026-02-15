@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, Globe, Lock, Send } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/firebase';
+import { useFirestore, useUser, useDoc, useMemoFirebase } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { useToast } from '@/hooks/use-toast';
@@ -116,6 +116,9 @@ export default function UploadPage() {
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
+  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  const { data: profile } = useDoc(profileRef);
+
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
@@ -138,8 +141,8 @@ export default function UploadPage() {
         return;
       }
 
-      // Super-admin bypass
-      if (user.email === 'hashamcomp@gmail.com') {
+      // Super-admin bypass or explicit admin role
+      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsApprovedUser(true);
         setCheckingApproval(false);
         return;
@@ -162,7 +165,7 @@ export default function UploadPage() {
     };
 
     checkApproval();
-  }, [user, isUserLoading, db]);
+  }, [user, isUserLoading, profile, db]);
 
   const slugify = (text: string) => {
     return text
@@ -192,7 +195,6 @@ export default function UploadPage() {
         status: 'pending'
       };
 
-      // Save to Firestore
       await setDoc(requestRef, requestData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: requestRef.path,
@@ -201,7 +203,6 @@ export default function UploadPage() {
         }));
       });
 
-      // Send email notification (Server Action)
       await sendAccessRequestEmail(user.email);
 
       toast({

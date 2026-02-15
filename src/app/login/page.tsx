@@ -9,9 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -95,7 +96,6 @@ export default function LoginPage() {
     
     setLoading(true);
     try {
-      // 1. Final check for username availability
       const usernameRef = doc(db, 'usernames', cleanUsername);
       const usernameSnap = await getDoc(usernameRef);
       if (usernameSnap.exists()) {
@@ -104,19 +104,17 @@ export default function LoginPage() {
         return;
       }
 
-      // 2. Create Auth User
       const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      // 3. Claim username
       await setDoc(usernameRef, { uid: newUser.uid });
 
-      // 4. Create Profile
       const userRef = doc(db, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
         username: cleanUsername,
         email: newUser.email,
+        role: 'user', // Default role
         createdAt: serverTimestamp(),
       };
 
@@ -147,7 +145,6 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // 1. Rate limiting check (24 hours)
       const oneDay = 24 * 60 * 60 * 1000;
       const lastChange = profile?.lastUsernameChange;
       
@@ -168,7 +165,6 @@ export default function LoginPage() {
         }
       }
 
-      // 2. Check if username doc exists
       const usernameRef = doc(db, 'usernames', clean);
       const snapshot = await getDoc(usernameRef);
 
@@ -178,10 +174,8 @@ export default function LoginPage() {
         return;
       }
 
-      // 3. Claim NEW username doc
       await setDoc(usernameRef, { uid: user!.uid });
 
-      // 4. Update user profile
       const oldUsername = profile?.username;
       const userRef = doc(db, 'users', user!.uid);
       const updateData = {
@@ -198,7 +192,6 @@ export default function LoginPage() {
         }));
       });
 
-      // 5. Delete OLD username doc
       if (oldUsername) {
         await deleteDoc(doc(db, 'usernames', oldUsername));
       }
@@ -319,11 +312,19 @@ export default function LoginPage() {
           ) : (
             <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
               <CardHeader className="text-center">
-                <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 relative">
                   <UserIcon className="h-10 w-10 text-primary" />
+                  {profile?.role === 'admin' && (
+                    <div className="absolute -bottom-1 -right-1 bg-primary text-white p-1 rounded-full border-2 border-background">
+                      <Shield className="h-3 w-3" />
+                    </div>
+                  )}
                 </div>
-                <CardTitle className="text-2xl font-headline font-bold">
+                <CardTitle className="text-2xl font-headline font-bold flex items-center justify-center gap-2">
                   {isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}
+                  {profile?.role === 'admin' && (
+                    <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-bold">Admin</Badge>
+                  )}
                 </CardTitle>
                 <CardDescription>{user.email}</CardDescription>
               </CardHeader>

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useUser, useFirestore } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 export default function Navbar() {
@@ -17,17 +17,22 @@ export default function Navbar() {
   const { user, isUserLoading } = useUser();
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  const { data: profile } = useDoc(profileRef);
+
   useEffect(() => {
     const checkAdmin = async () => {
       if (!user || user.isAnonymous || !user.email) {
         setIsAdmin(false);
         return;
       }
-      // Super-admin bypass
-      if (user.email === 'hashamcomp@gmail.com') {
+      
+      // Super-admin bypass or explicit admin role
+      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
+      
       try {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
         const snap = await getDoc(settingsRef);
@@ -38,7 +43,7 @@ export default function Navbar() {
       } catch (e) {}
     };
     checkAdmin();
-  }, [user, db]);
+  }, [user, profile, db]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
