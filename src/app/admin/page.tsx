@@ -31,6 +31,12 @@ export default function AdminPage() {
         return;
       }
 
+      // Super-admin bypass
+      if (user.email === 'hashamcomp@gmail.com') {
+        setIsAdmin(true);
+        return;
+      }
+
       try {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
         const snap = await getDoc(settingsRef);

@@ -23,6 +23,11 @@ export default function Navbar() {
         setIsAdmin(false);
         return;
       }
+      // Super-admin bypass
+      if (user.email === 'hashamcomp@gmail.com') {
+        setIsAdmin(true);
+        return;
+      }
       try {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
         const snap = await getDoc(settingsRef);
@@ -55,7 +60,7 @@ export default function Navbar() {
           <span className="text-xl font-headline font-bold hidden sm:inline-block">Literary Lounge</span>
         </Link>
 
-        <form onSubmit={handleSearch} className="flex-1 max-w-md relative group">
+        <form onSubmit={handleSearch} className="flex-1-max-w-md relative group">
           <Input
             type="search"
             placeholder="Search novels or authors..."

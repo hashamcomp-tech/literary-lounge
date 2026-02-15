@@ -8,9 +8,11 @@ service cloud.firestore {
     }
 
     function isApproved() {
-      return isSignedIn() && 
-             exists(/databases/$(database)/documents/settings/approvedEmails) &&
-             request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails;
+      return isSignedIn() && (
+             request.auth.token.email == "hashamcomp@gmail.com" ||
+             (exists(/databases/$(database)/documents/settings/approvedEmails) &&
+              request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails)
+      );
     }
 
     match /settings/approvedEmails {

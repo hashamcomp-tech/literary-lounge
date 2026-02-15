@@ -137,6 +137,13 @@ export default function UploadPage() {
         return;
       }
 
+      // Super-admin bypass
+      if (user.email === 'hashamcomp@gmail.com') {
+        setIsApprovedUser(true);
+        setCheckingApproval(false);
+        return;
+      }
+
       try {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
         const snap = await getDoc(settingsRef);
