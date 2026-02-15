@@ -1,19 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, User } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, User, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 /**
  * @fileOverview Chapter Display Component for Cloud Novels.
  * Implements semantic <article> and <nav class="chapter-nav"> structure.
- * Fetches chapters from the root novel document for a fast, continuous reading experience.
+ * Fetches chapters from the root novel document for a fast experience,
+ * with a fallback to the chapters subcollection for scalability.
  */
 interface CloudReaderClientProps {
   id: string;
@@ -28,30 +31,52 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [metadata, setMetadata] = useState<any>(null);
   const [chapters, setChapters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firestore || !id) return;
 
     const fetchData = async () => {
       setIsLoading(true);
+      setError(null);
       try {
-        // Fetch the root novel document which contains metadata and the chapters array
+        // 1. Fetch the root novel document
         const bookRef = doc(firestore, 'books', id);
         const snapshot = await getDoc(bookRef);
         
         if (!snapshot.exists()) {
-          setError(true);
+          setError('Document not found in the cloud library.');
           setIsLoading(false);
           return;
         }
 
         const data = snapshot.data();
-        setMetadata(data.metadata?.info || data);
-        setChapters(data.chapters || []);
-      } catch (err) {
+        let chaptersList = data.chapters || [];
+        
+        // 2. Fallback: If root chapters array is missing, try fetching from subcollection
+        if (chaptersList.length === 0) {
+          const subColRef = collection(firestore, 'books', id, 'chapters');
+          const subSnap = await getDocs(subColRef);
+          chaptersList = subSnap.docs.map(d => ({ 
+            id: d.id, 
+            ...d.data() 
+          })).sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+        }
+
+        if (chaptersList.length === 0) {
+          setError('This novel exists but has no chapters published yet.');
+        } else {
+          setMetadata(data.metadata?.info || data);
+          setChapters(chaptersList);
+        }
+      } catch (err: any) {
         console.error("Cloud reader fetch error:", err);
-        setError(true);
+        const permError = new FirestorePermissionError({
+          path: `books/${id}`,
+          operation: 'get'
+        });
+        errorEmitter.emit('permission-error', permError);
+        setError('Insufficient permissions or network error.');
       } finally {
         setIsLoading(false);
       }
@@ -72,9 +97,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   if (error || chapters.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
-        <h1 className="text-3xl font-headline font-black mb-2">Novel Not Found</h1>
-        <p className="text-muted-foreground max-w-md mb-8">This novel doesn't seem to exist in the cloud library yet.</p>
+        {error?.includes('permissions') ? (
+          <ShieldAlert className="h-16 w-16 text-destructive mb-4 opacity-20" />
+        ) : (
+          <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
+        )}
+        <h1 className="text-3xl font-headline font-black mb-2">
+          {error?.includes('permissions') ? 'Access Restricted' : 'Novel Not Found'}
+        </h1>
+        <p className="text-muted-foreground max-w-md mb-8">
+          {error || "This novel doesn't seem to exist in the cloud library yet."}
+        </p>
         <Button variant="outline" className="rounded-xl px-8" onClick={() => router.push('/')}>
           Return to Library
         </Button>
@@ -86,8 +119,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const nextNum = currentChapterNum + 1;
   const totalChapters = chapters.length;
 
-  // For continuous flow, we might want to show all chapters or a window.
-  // Here we follow the semantic multi-article request.
   return (
     <div className="max-w-3xl mx-auto selection:bg-primary/20 selection:text-primary">
       <header className="mb-12">

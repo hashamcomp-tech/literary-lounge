@@ -39,6 +39,7 @@ export async function uploadBookToCloud({
 }) {
   if (!genre) throw new Error("Genre is required for cloud books.");
   if (!coverFile) throw new Error("Cover image is required for cloud books.");
+  if (!chapters || chapters.length === 0) throw new Error("Cannot publish a book with no chapters.");
 
   // 1. Upload cover to Storage
   const coverURL = await uploadCoverImage(storage, coverFile, bookId);
@@ -77,11 +78,14 @@ export async function uploadBookToCloud({
     metadata: { info: metadataInfo },
     // Store chapters array in root doc for simplified fast fetching in the reader
     chapters: chapters.map(ch => ({
-      ...ch,
+      chapterNumber: ch.chapterNumber,
+      content: ch.content,
       title: ch.title || `Chapter ${ch.chapterNumber}`
     }))
   };
 
+  // We use setDoc without await to keep the UI responsive, 
+  // but since this is a multi-step critical upload, we await the first key steps.
   await setDoc(bookRef, rootPayload, { merge: true });
 
   // 4. Set Detailed Metadata
@@ -101,7 +105,7 @@ export async function uploadBookToCloud({
   // 6. Set Chapters in subcollection (Maintains scalability for very large books)
   for (const ch of chapters) {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
-    await setDoc(chRef, {
+    setDoc(chRef, {
       ...ch,
       title: ch.title || `Chapter ${ch.chapterNumber}`,
       ownerId,
