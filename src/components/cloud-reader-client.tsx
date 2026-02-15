@@ -3,20 +3,15 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, User, ShieldAlert } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, User, ShieldAlert, Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
-/**
- * @fileOverview Chapter Display Component for Cloud Novels.
- * Implements semantic <article> and paragraph structure.
- * The primary heading is the Novel Title.
- */
 interface CloudReaderClientProps {
   id: string;
   chapterNumber: string;
@@ -31,6 +26,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [chapters, setChapters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [jumpValue, setJumpValue] = useState('');
 
   useEffect(() => {
     if (!firestore || !id) return;
@@ -51,7 +47,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         const data = snapshot.data();
         let chaptersList = data.chapters || [];
         
-        // Fallback to chapters subcollection
         if (chaptersList.length === 0) {
           const subColRef = collection(firestore, 'books', id, 'chapters');
           const subSnap = await getDocs(subColRef);
@@ -81,6 +76,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     fetchData();
   }, [firestore, id]);
+
+  const handleJump = (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = parseInt(jumpValue);
+    if (!isNaN(num) && num >= 1 && num <= chapters.length) {
+      router.push(`/pages/${id}/${num}`);
+      setJumpValue('');
+    } else {
+      alert(`Invalid chapter number. Must be between 1 and ${chapters.length}`);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -112,8 +118,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     );
   }
 
-  const prevNum = currentChapterNum - 1;
-  const nextNum = currentChapterNum + 1;
+  const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum) || chapters[0];
   const totalChapters = chapters.length;
 
   return (
@@ -143,98 +148,82 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </header>
 
-      {/* Chapters as semantic articles */}
-      <div className="space-y-32">
-        {chapters.map((ch) => (
-          <article key={ch.chapterNumber} id={`chapter-${ch.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <header className="mb-16 flex flex-col items-center text-center sm:items-start sm:text-left">
-              {metadata?.coverURL && ch.chapterNumber === 1 && (
-                <div className="relative w-[200px] h-[300px] mb-12 shadow-2xl rounded-2xl overflow-hidden border border-border/50 group">
-                  <Image 
-                    src={metadata.coverURL} 
-                    alt={metadata.bookTitle || metadata.title || "Cover"} 
-                    fill 
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                    sizes="200px"
-                  />
-                  <div className="absolute top-3 right-3">
-                    <Badge className="bg-primary/90 text-white backdrop-blur-sm border-none shadow-lg">
-                      {metadata.genre}
-                    </Badge>
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex items-center gap-3 mb-6">
-                 <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
-                   <Bookmark className="h-3.5 w-3.5" />
-                   Chapter {ch.chapterNumber}
-                 </div>
-                 <span className="text-xs text-muted-foreground/40 font-bold">•</span>
-                 <span className="text-xs font-bold text-muted-foreground/60">
-                   Part {ch.chapterNumber} of {totalChapters}
-                 </span>
-              </div>
+      <article id={`chapter-${currentChapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <header className="mb-16 flex flex-col items-center text-center sm:items-start sm:text-left">
+          <div className="flex items-center gap-3 mb-6">
+             <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-primary">
+               <Bookmark className="h-3.5 w-3.5" />
+               Chapter {currentChapter.chapterNumber}
+             </div>
+             <span className="text-xs text-muted-foreground/40 font-bold">•</span>
+             <span className="text-xs font-bold text-muted-foreground/60">
+               Page {currentChapter.chapterNumber} of {totalChapters}
+             </span>
+          </div>
 
-              <h2 className="text-4xl sm:text-5xl font-headline font-bold mb-8 leading-tight">
-                {ch.title || `Chapter ${ch.chapterNumber}`}
-              </h2>
-            </header>
+          <h2 className="text-4xl sm:text-5xl font-headline font-bold mb-8 leading-tight">
+            {currentChapter.title || `Chapter ${currentChapter.chapterNumber}`}
+          </h2>
+        </header>
 
-            <div className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif">
-              {(ch.content || '').split('\n\n').map((para: string, idx: number) => {
-                const cleanPara = para.replace(/<[^>]*>?/gm, '').trim();
-                if (!cleanPara) return null;
-                return (
-                  <p key={idx} className="mb-8 first-letter:text-4xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3 first-letter:mt-1">
-                    {cleanPara}
-                  </p>
-                );
-              })}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <nav className="chapter-nav mt-32 pt-16 border-t flex flex-col sm:flex-row items-center justify-between gap-8">
-        <Button 
-          variant="outline" 
-          className="w-full sm:w-auto px-12 py-8 rounded-2xl border-primary/20 hover:bg-primary/5 group text-lg font-bold"
-          disabled={prevNum < 1}
-          asChild={prevNum >= 1}
-        >
-          {prevNum >= 1 ? (
-            <Link href={`/pages/${id}/${prevNum}`}>
-              <ChevronLeft className="mr-3 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
-              Previous
-            </Link>
-          ) : (
-            <span>Beginning</span>
-          )}
-        </Button>
-
-        <div className="text-center px-6">
-           <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
-             End of Book Navigation
-           </span>
+        <div className="prose prose-slate dark:prose-invert max-w-none text-xl leading-relaxed font-serif">
+          {(currentChapter.content || '').split('\n\n').map((para: string, idx: number) => {
+            const cleanPara = para.replace(/<[^>]*>?/gm, '').trim();
+            if (!cleanPara) return null;
+            return (
+              <p key={idx} className="mb-8 first-letter:text-4xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-3 first-letter:mt-1">
+                {cleanPara}
+              </p>
+            );
+          })}
         </div>
+      </article>
 
-        <Button 
-          variant="default" 
-          className="w-full sm:w-auto px-12 py-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl group text-lg font-bold"
-          disabled={nextNum > totalChapters}
-          asChild={nextNum <= totalChapters}
-        >
-          {nextNum <= totalChapters ? (
-            <Link href={`/pages/${id}/${nextNum}`}>
-              Next Chapter
-              <ChevronRight className="ml-3 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-            </Link>
-          ) : (
-            <span>The End</span>
-          )}
-        </Button>
-      </nav>
+      <section className="mt-20 py-12 border-t space-y-8">
+        <form onSubmit={handleJump} className="flex items-center justify-center gap-2">
+          <label htmlFor="chapterJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to chapter:</label>
+          <Input 
+            id="chapterJump"
+            type="number" 
+            min={1} 
+            max={totalChapters}
+            value={jumpValue}
+            onChange={(e) => setJumpValue(e.target.value)}
+            className="w-20 rounded-xl"
+          />
+          <Button type="submit" size="sm" variant="outline" className="rounded-xl">
+            <Navigation className="h-4 w-4 mr-2" /> Go
+          </Button>
+        </form>
+
+        <nav className="chapter-nav flex flex-col sm:flex-row items-center justify-between gap-8">
+          <Button 
+            variant="outline" 
+            className="w-full sm:w-auto px-12 py-8 rounded-2xl border-primary/20 hover:bg-primary/5 group text-lg font-bold"
+            disabled={currentChapterNum <= 1}
+            onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
+          >
+            <ChevronLeft className="mr-3 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+            Previous
+          </Button>
+
+          <div className="text-center px-6">
+             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
+               {currentChapterNum} / {totalChapters} Chapters
+             </span>
+          </div>
+
+          <Button 
+            variant="default" 
+            className="w-full sm:w-auto px-12 py-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl group text-lg font-bold"
+            disabled={currentChapterNum >= totalChapters}
+            onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
+          >
+            Next Chapter
+            <ChevronRight className="ml-3 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+          </Button>
+        </nav>
+      </section>
     </div>
   );
 }
