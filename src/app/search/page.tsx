@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, Suspense, useMemo, useRef } from 'react';
@@ -196,12 +195,7 @@ function SearchResults() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-headline font-black">Search results</h1>
-              {searchMethod === 'algolia' && (
-                <Badge variant="secondary" className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none flex items-center gap-1">
-                  <Zap className="h-3 w-3 fill-current" /> Full-text
-                </Badge>
-              )}
+              <h1 className="text-3xl font-headline font-black">Search Results</h1>
             </div>
             <p className="text-muted-foreground">
               {loading ? "Searching..." : `${results.length} results for "${queryTerm}"`}
