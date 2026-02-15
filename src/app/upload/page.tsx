@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -8,9 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, Globe, Lock, Send, Image as ImageIcon } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Info, Globe, Lock, Send, Image as ImageIcon, Sparkles } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit, addDoc } from 'firebase/firestore';
 import { useFirestore, useUser, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -233,6 +234,33 @@ export default function UploadPage() {
     }
   };
 
+  const handleRequestCloudUpload = async () => {
+    if (!title.trim() || !content.trim()) {
+      toast({ variant: 'destructive', title: 'Missing Info', description: 'Title and content are required for review.' });
+      return;
+    }
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const requestData = {
+        title: title.trim(),
+        author: author.trim() || 'Anonymous',
+        content: content.trim(),
+        genre: genre || 'Unspecified',
+        requestedBy: user.uid,
+        requestedAt: serverTimestamp(),
+        status: 'pending',
+      };
+      await addDoc(collection(db, 'cloudUploadRequests'), requestData);
+      toast({ title: "Review Requested", description: "Admins will review your content for cloud publishing." });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Request Failed', description: 'Could not submit request.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const processEpub = async (file: File) => {
     setLoadingStatus('Initializing EPUB reader...');
     const arrayBuffer = await file.arrayBuffer();
@@ -431,16 +459,28 @@ export default function UploadPage() {
                 <AlertDescription className="text-sm flex flex-col gap-3">
                   <p>Content will be saved only to your browser's private database. No cloud publishing.</p>
                   {canRequestAccess && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={handleRequestAccess}
-                      disabled={loading}
-                      className="w-fit bg-blue-600/10 border-blue-600/20 text-blue-700 hover:bg-blue-600/20 rounded-lg gap-2"
-                    >
-                      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                      Request Publish Access
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handleRequestAccess}
+                        disabled={loading}
+                        className="w-fit bg-blue-600/10 border-blue-600/20 text-blue-700 hover:bg-blue-600/20 rounded-lg gap-2"
+                      >
+                        {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        Request Contributor Access
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={handleRequestCloudUpload}
+                        disabled={loading}
+                        className="w-fit bg-amber-600/10 border-amber-600/20 text-amber-700 hover:bg-amber-600/20 rounded-lg gap-2"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Request Content Review
+                      </Button>
+                    </div>
                   )}
                 </AlertDescription>
               </Alert>

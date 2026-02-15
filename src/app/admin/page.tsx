@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -9,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3 } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -89,13 +90,20 @@ export default function AdminPage() {
     fetchStats();
   }, [db, isAdmin]);
 
-  // Fetch pending requests
+  // Fetch pending contributor requests
   const requestsQuery = useMemoFirebase(() => {
     if (!isAdmin) return null;
     return query(collection(db, 'publishRequests'), orderBy('requestedAt', 'desc'));
   }, [db, isAdmin]);
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
+
+  // Fetch pending book requests
+  const bookRequestsQuery = useMemoFirebase(() => {
+    if (!isAdmin) return null;
+    return query(collection(db, 'cloudUploadRequests'));
+  }, [db, isAdmin]);
+  const { data: bookRequests } = useCollection(bookRequestsQuery);
 
   const handleApprove = async (requestId: string, email: string) => {
     setProcessingId(requestId);
@@ -188,15 +196,21 @@ export default function AdminPage() {
               <h1 className="text-4xl font-headline font-black">Lounge Overview</h1>
             </div>
             <div className="flex items-center gap-3">
+              <Link href="/admin/requests">
+                <Button variant="outline" className="h-9 rounded-xl border-amber-500/20 text-amber-600 hover:bg-amber-500/5">
+                  <Inbox className="h-4 w-4 mr-2" />
+                  Book Submissions
+                  {bookRequests && bookRequests.length > 0 && (
+                    <Badge className="ml-2 bg-amber-500 h-5 px-1.5 min-w-5 flex items-center justify-center">{bookRequests.length}</Badge>
+                  )}
+                </Button>
+              </Link>
               <Link href="/admin/dashboard">
                 <Button variant="outline" className="h-9 rounded-xl border-primary/20 text-primary hover:bg-primary/5">
                   <BarChart3 className="h-4 w-4 mr-2" />
                   Full Metrics
                 </Button>
               </Link>
-              <Badge variant="outline" className="w-fit h-9 border-primary/20 text-primary bg-primary/5 px-4 rounded-xl">
-                {requests?.length || 0} Pending Requests
-              </Badge>
             </div>
           </header>
 
@@ -224,7 +238,7 @@ export default function AdminPage() {
                   <div className="bg-accent/10 p-2.5 rounded-xl">
                     <Layers className="h-5 w-5 text-accent" />
                   </div>
-                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Total Chapters</Layers>
+                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Total Chapters</Badge>
                 </div>
                 <div>
                   <h3 className="text-3xl font-headline font-black">

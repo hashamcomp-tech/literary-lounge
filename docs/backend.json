@@ -212,6 +212,22 @@
         "requestedAt"
       ]
     },
+    "CloudUploadRequest": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CloudUploadRequest",
+      "type": "object",
+      "description": "A request to upload specific book content to the cloud.",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "content": { "type": "string" },
+        "genre": { "type": "string" },
+        "requestedBy": { "type": "string" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      },
+      "required": ["title", "content", "requestedBy", "requestedAt"]
+    },
     "GlobalStats": {
       "title": "GlobalStats",
       "description": "Tracks global application usage metrics.",
@@ -300,6 +316,16 @@
             "$ref": "#/backend/entities/PublishRequest"
           },
           "description": "Stores requests for publishing permissions."
+        }
+      },
+      {
+        "path": "/cloudUploadRequests/{requestId}",
+        "definition": {
+          "entityName": "CloudUploadRequest",
+          "schema": {
+            "$ref": "#/backend/entities/CloudUploadRequest"
+          },
+          "description": "Stores requests for individual book uploads."
         }
       },
       {
