@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -8,9 +9,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -24,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -47,6 +49,10 @@ export default function LoginPage() {
   
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const [loading, setLoading] = useState(false);
+
+  // Username change states
+  const [newUsername, setNewUsername] = useState('');
+  const [isChangingUsername, setIsChangingUsername] = useState(false);
 
   useEffect(() => {
     const checkUsername = async () => {
@@ -119,6 +125,50 @@ export default function LoginPage() {
       router.push('/');
     } catch (error: any) {
       toast({ variant: "destructive", title: "Registration failed", description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = newUsername.trim().toLowerCase();
+    if (!clean || clean === profile?.username) {
+      setIsChangingUsername(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1. Check if username already exists
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('username', '==', clean), limit(1));
+      const snapshot = await getDocs(q);
+
+      if (!snapshot.empty) {
+        toast({ variant: "destructive", title: "Error", description: "Username already taken." });
+        setLoading(false);
+        return;
+      }
+
+      // 2. Update username
+      const userRef = doc(db, 'users', user!.uid);
+      await updateDoc(userRef, {
+        username: clean,
+        updatedAt: serverTimestamp()
+      }).catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: userRef.path,
+          operation: 'update',
+          requestResourceData: { username: clean, updatedAt: 'SERVER_TIMESTAMP' }
+        }));
+      });
+
+      toast({ title: "Success", description: "Your username has been updated." });
+      setIsChangingUsername(false);
+      setNewUsername('');
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Update failed", description: error.message });
     } finally {
       setLoading(false);
     }
@@ -238,7 +288,62 @@ export default function LoginPage() {
                 </CardTitle>
                 <CardDescription>{user.email}</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6">
+                <div className="space-y-4 pt-4 border-t">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Account Settings</Label>
+                  
+                  {!isChangingUsername ? (
+                    <Button 
+                      variant="outline" 
+                      className="w-full justify-between h-12 rounded-xl border-muted"
+                      onClick={() => {
+                        setIsChangingUsername(true);
+                        setNewUsername(profile?.username || '');
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <UserIcon className="h-4 w-4 text-primary" />
+                        <span>Change Username</span>
+                      </div>
+                      <Pencil className="h-3.5 w-3.5 opacity-50" />
+                    </Button>
+                  ) : (
+                    <form onSubmit={handleUpdateUsername} className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="space-y-1">
+                        <Label htmlFor="new-username" className="text-xs">New Username</Label>
+                        <Input 
+                          id="new-username"
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
+                          placeholder="Enter unique username"
+                          className="rounded-xl h-11"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          className="flex-1 rounded-xl"
+                          onClick={() => setIsChangingUsername(false)}
+                          disabled={loading}
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          type="submit" 
+                          className="flex-1 rounded-xl"
+                          disabled={loading || !newUsername.trim() || newUsername.trim() === profile?.username}
+                        >
+                          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                <Separator />
+
                 <Button variant="outline" className="w-full py-6 text-lg text-destructive hover:bg-destructive/5 rounded-xl border-destructive/20" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-5 w-5" /> Sign Out
                 </Button>
