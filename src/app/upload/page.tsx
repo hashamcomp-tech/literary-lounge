@@ -20,6 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { sendAccessRequestEmail } from '@/app/actions/notifications';
 import { GENRES } from '@/lib/genres';
 import { uploadCoverImage } from '@/lib/upload-cover';
+import { uploadBookToCloud } from '@/lib/upload-book';
 import {
   Select,
   SelectContent,
@@ -271,8 +272,14 @@ export default function UploadPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (!genre) {
       toast({ variant: 'destructive', title: 'Error', description: 'Genre is required.' });
+      return;
+    }
+
+    if (isApprovedUser && !coverFile) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Cover image is required for cloud publishing.' });
       return;
     }
 
@@ -311,69 +318,23 @@ export default function UploadPage() {
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}_${Date.now()}`;
 
-      let coverImageUrl = null;
-      if (coverFile) {
-        setLoadingStatus('Uploading cover image...');
-        coverImageUrl = await uploadCoverImage(storage, coverFile, docId);
-      }
-
-      if (isApprovedUser && user) {
+      if (isApprovedUser && user && coverFile) {
         setLoadingStatus('Publishing to cloud...');
-        const bookRef = doc(db, 'books', docId);
         
-        const metadataInfo = {
-          author: finalAuthor,
-          authorLower: finalAuthor.toLowerCase(),
-          bookTitle: finalTitle,
-          bookTitleLower: finalTitle.toLowerCase(),
-          lastUpdated: serverTimestamp(),
-          ownerId: user.uid,
-          totalChapters: chapters.length,
-          genre: genre,
-          views: 0,
-          coverImage: coverImageUrl,
-        };
-
-        const rootPayload = {
+        await uploadBookToCloud({
+          db,
+          storage,
+          bookId: docId,
           title: finalTitle,
-          titleLower: finalTitle.toLowerCase(),
           author: finalAuthor,
-          authorLower: finalAuthor.toLowerCase(),
-          genre: genre,
-          views: 0,
-          isCloud: true,
-          ownerId: user.uid,
-          createdAt: serverTimestamp(),
-          lastUpdated: serverTimestamp(),
-          coverImage: coverImageUrl,
-          metadata: { info: metadataInfo }
-        };
-
-        await setDoc(bookRef, rootPayload, { merge: true }).catch(err => {
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: bookRef.path,
-            operation: 'write',
-            requestResourceData: rootPayload
-          }));
+          genre,
+          chapters,
+          coverFile,
+          ownerId: user.uid
         });
 
-        const infoRef = doc(db, 'books', docId, 'metadata', 'info');
-        await setDoc(infoRef, metadataInfo, { merge: true });
-
-        for (const ch of chapters) {
-          const chRef = doc(db, 'books', docId, 'chapters', ch.chapterNumber.toString());
-          await setDoc(chRef, {
-            content: ch.content,
-            chapterNumber: ch.chapterNumber,
-            title: ch.title || `Chapter ${ch.chapterNumber}`,
-            ownerId: user.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        }
-
         setLoadingStatus('Caching locally...');
-        await saveLocalBook({ 
+        const bookData = { 
           id: docId, 
           title: finalTitle, 
           author: finalAuthor, 
@@ -381,8 +342,10 @@ export default function UploadPage() {
           totalChapters: chapters.length, 
           lastUpdated: new Date().toISOString(),
           isLocalOnly: false,
-          coverImage: coverImageUrl
-        });
+          coverImage: null // Will be updated by caching logic or fetched from cloud
+        };
+        
+        await saveLocalBook(bookData);
         for (const ch of chapters) {
           await saveLocalChapter({ ...ch, bookId: docId });
         }
@@ -391,6 +354,12 @@ export default function UploadPage() {
         router.push(`/pages/${docId}/${chapters[0]?.chapterNumber || 1}`);
       } else {
         setLoadingStatus('Saving locally...');
+        
+        let coverImageUrl = null;
+        if (coverFile) {
+          coverImageUrl = await uploadCoverImage(storage, coverFile, docId);
+        }
+
         const bookData = {
           id: docId,
           title: finalTitle,
@@ -410,9 +379,9 @@ export default function UploadPage() {
         toast({ title: "Saved Locally", description: "Novel added to your browser's private database." });
         router.push(`/local-pages/${docId}/1`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Upload failed", error);
-      toast({ variant: "destructive", title: "Operation Failed", description: "An error occurred during save." });
+      toast({ variant: "destructive", title: "Operation Failed", description: error.message || "An error occurred during save." });
     } finally {
       setLoading(false);
     }
@@ -543,7 +512,7 @@ export default function UploadPage() {
                 {/* Cover Image Upload Section */}
                 <div className="space-y-4 pt-4 border-t">
                   <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                    <ImageIcon className="h-4 w-4" /> Cover Image
+                    <ImageIcon className="h-4 w-4" /> Cover Image {isApprovedUser && <span className="text-destructive">*</span>}
                   </Label>
                   <div className={`relative border-2 border-dashed rounded-xl p-4 transition-colors ${coverFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
                     <input
@@ -561,7 +530,7 @@ export default function UploadPage() {
                       ) : (
                         <div className="flex items-center gap-2 text-muted-foreground">
                            <Upload className="h-4 w-4" />
-                           <span className="text-xs font-medium">Select a cover image (Optional)</span>
+                           <span className="text-xs font-medium">Select a cover image</span>
                         </div>
                       )}
                     </div>
