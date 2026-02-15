@@ -71,6 +71,23 @@
         "lastUpdated": { "type": "string", "format": "date-time" }
       },
       "required": ["author", "bookTitle", "ownerId", "lastUpdated"]
+    },
+    "ReadingHistory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ReadingHistory",
+      "type": "object",
+      "description": "Tracks a user's reading progress for a specific book.",
+      "properties": {
+        "bookId": { "type": "string" },
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "coverURL": { "type": "string" },
+        "lastReadChapter": { "type": "number" },
+        "lastReadAt": { "type": "string", "format": "date-time" },
+        "isCloud": { "type": "boolean" },
+        "genre": { "type": "string" }
+      },
+      "required": ["bookId", "lastReadChapter", "lastReadAt"]
     }
   },
   "auth": {
@@ -87,6 +104,14 @@
           "entityName": "UserProfile",
           "schema": { "$ref": "#/backend/entities/UserProfile" },
           "description": "Stores individual user profiles."
+        }
+      },
+      {
+        "path": "/users/{userId}/history/{bookId}",
+        "definition": {
+          "entityName": "ReadingHistory",
+          "schema": { "$ref": "#/backend/entities/ReadingHistory" },
+          "description": "Stores user reading progress for specific books."
         }
       },
       {

@@ -32,7 +32,12 @@ service cloud.firestore {
       
       allow update: if isSignedIn() && request.auth.uid == userId
                     && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
-                    && (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid);
+                    && (!('uid' in request.resource.data) || request.auth.uid == userId);
+
+      // READING HISTORY
+      match /history/{bookId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     // USERNAME MAPPING
@@ -88,6 +93,17 @@ service cloud.firestore {
         allow read: if true;
         allow write: if isApprovedUploader();
       }
+      
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+      }
+    }
+
+    // CHATS (legacy or separate path if needed)
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if true;
+      allow create: if isSignedIn();
     }
     
     // Catch-all for subcollections in books

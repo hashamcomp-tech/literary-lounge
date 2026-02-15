@@ -115,10 +115,12 @@ export default function Navbar() {
                   <span>Reading Preferences</span>
                 </DropdownMenuItem>
               </Link>
-              <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
-                <History className="mr-2 h-4 w-4 text-muted-foreground" />
-                <span>Reading History</span>
-              </DropdownMenuItem>
+              <Link href="/history">
+                <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                  <History className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <span>Reading History</span>
+                </DropdownMenuItem>
+              </Link>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
                 <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />

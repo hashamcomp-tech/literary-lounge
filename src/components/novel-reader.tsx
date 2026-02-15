@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, Navigation, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
+import { useUser, useFirestore } from '@/firebase';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Link from 'next/link';
 
 interface NovelReaderProps {
@@ -21,6 +23,8 @@ interface NovelReaderProps {
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { user } = useUser();
+  const db = useFirestore();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [jumpValue, setJumpValue] = useState('');
   const [mounted, setMounted] = useState(false);
@@ -38,7 +42,24 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       scrollRef.current.scrollTo(0, 0);
     }
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
-  }, [currentChapterIndex, novel.id]);
+
+    // Sync mock collection progress to cloud history if logged in
+    if (user && !user.isAnonymous && db) {
+      const historyRef = doc(db, 'users', user.uid, 'history', novel.id);
+      setDoc(historyRef, {
+        bookId: novel.id,
+        title: novel.title,
+        author: novel.author,
+        genre: novel.genre,
+        coverURL: novel.coverImage,
+        lastReadChapter: currentChapterIndex + 1,
+        lastReadAt: serverTimestamp(),
+        isCloud: false // Mock data is treated as non-cloud for routing purposes
+      }, { merge: true }).catch(err => {
+        console.error("Failed to sync history:", err);
+      });
+    }
+  }, [currentChapterIndex, novel.id, user, db]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
@@ -46,15 +67,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       setCurrentChapterIndex(parseInt(saved));
     }
   }, [novel.id]);
-
-  const handleJump = (e: React.FormEvent) => {
-    e.preventDefault();
-    const num = parseInt(jumpValue);
-    if (!isNaN(num) && num >= 1 && num <= novel.chapters.length) {
-      setCurrentChapterIndex(num - 1);
-      setJumpValue('');
-    }
-  };
 
   if (!mounted) return null;
 
@@ -143,21 +155,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
           <section className="mt-16 pt-10 border-t space-y-8">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-              <form onSubmit={handleJump} className="flex items-center gap-3">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
-                <Input 
-                  type="number" 
-                  min={1} 
-                  max={novel.chapters.length}
-                  value={jumpValue}
-                  onChange={(e) => setJumpValue(e.target.value)}
-                  className="w-16 h-8 text-sm"
-                />
-                <Button type="submit" size="sm" variant="outline" className="h-8">
-                  <Navigation className="h-3.5 w-3.5" />
-                </Button>
-              </form>
-
               <nav className="chapter-nav flex items-center gap-4">
                 <Button 
                   variant="outline" 

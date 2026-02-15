@@ -2,15 +2,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import { useFirebase } from '@/firebase/provider';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Navigation, Sun, Moon } from 'lucide-react';
+import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirebase, useUser } from '@/firebase';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { Input } from '@/components/ui/input';
 import { useTheme } from 'next-themes';
 
 interface CloudReaderClientProps {
@@ -20,6 +19,7 @@ interface CloudReaderClientProps {
 
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore } = useFirebase();
+  const { user } = useUser();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const currentChapterNum = parseInt(chapterNumber);
@@ -28,7 +28,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [chapters, setChapters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [jumpValue, setJumpValue] = useState('');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -66,8 +65,27 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         if (chaptersList.length === 0) {
           setError('This novel exists but has no chapters published yet.');
         } else {
-          setMetadata(data.metadata?.info || data);
+          const meta = data.metadata?.info || data;
+          setMetadata(meta);
           setChapters(chaptersList);
+
+          // Save progress to cloud history if user is logged in
+          if (user && !user.isAnonymous) {
+            const historyRef = doc(firestore, 'users', user.uid, 'history', id);
+            const historyData = {
+              bookId: id,
+              title: meta.bookTitle || meta.title || 'Untitled',
+              author: meta.author || 'Unknown',
+              coverURL: meta.coverURL || null,
+              genre: meta.genre || 'Novel',
+              lastReadChapter: currentChapterNum,
+              lastReadAt: serverTimestamp(),
+              isCloud: true
+            };
+            setDoc(historyRef, historyData, { merge: true }).catch(err => {
+              console.error("Failed to sync history:", err);
+            });
+          }
         }
       } catch (err: any) {
         const permError = new FirestorePermissionError({
@@ -82,7 +100,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
 
     fetchData();
-  }, [firestore, id]);
+  }, [firestore, id, user, currentChapterNum]);
 
   if (isLoading) {
     return (
