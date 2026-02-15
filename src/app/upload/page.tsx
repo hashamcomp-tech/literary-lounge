@@ -41,7 +41,6 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
     }
 
     const fetchSuggestions = async () => {
-      // Use the flat lowercase fields at the root for suggestions
       const fieldPath = type === 'author' ? 'authorLower' : 'titleLower';
       const q = query(
         collection(db, 'books'),
@@ -54,7 +53,7 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
         const items: string[] = [];
         snap.forEach(doc => {
           const data = doc.data();
-          const val = type === 'author' ? data.metadata?.info?.author : data.metadata?.info?.bookTitle;
+          const val = type === 'author' ? data.author : data.title;
           if (val) items.push(val);
         });
         setSuggestions([...new Set(items)]);
@@ -257,6 +256,11 @@ export default function UploadPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!genre.trim()) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Genre is required.' });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -304,11 +308,17 @@ export default function UploadPage() {
         };
 
         const rootPayload = {
-          metadata: { info: metadataInfo },
-          // Flat fields for efficient root-level search
+          title: finalTitle,
           titleLower: finalTitle.toLowerCase(),
+          author: finalAuthor,
           authorLower: finalAuthor.toLowerCase(),
-          lastUpdated: serverTimestamp()
+          genre: genre,
+          views: 0,
+          isCloud: true,
+          ownerId: user.uid,
+          createdAt: serverTimestamp(),
+          lastUpdated: serverTimestamp(),
+          metadata: { info: metadataInfo }
         };
 
         await setDoc(bookRef, rootPayload, { merge: true }).catch(err => {
@@ -479,6 +489,7 @@ export default function UploadPage() {
                         onChange={(e) => setGenre(e.target.value)}
                         className="bg-background/50"
                         placeholder="Fantasy, Romance..."
+                        required
                       />
                     </div>
                     <div className="grid gap-2">
