@@ -1,51 +1,94 @@
 
-import { doc, getDoc, collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
-import { initializeFirebase } from '@/firebase';
+"use client";
+
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { doc, collection, query, where, orderBy, limit, getDoc, getDocs } from 'firebase/firestore';
+import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import { ReaderControls } from '@/components/reader-controls';
-import { BookX, ChevronLeft, ChevronRight, TrendingUp } from 'lucide-react';
+import { BookX, ChevronLeft, ChevronRight, TrendingUp, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 
-export default async function CloudReader({ params }: { params: Promise<{ id: string; chapterNumber: string }> }) {
-  const { id, chapterNumber } = await params;
-  const { firestore: db } = initializeFirebase();
+export default function CloudReader() {
+  const { id, chapterNumber } = useParams() as { id: string; chapterNumber: string };
+  const db = useFirestore();
+  const router = useRouter();
   
   const currentChapterNum = parseInt(chapterNumber);
   
-  // 1. Fetch Metadata
-  const metaRef = doc(db, 'books', id, 'metadata', 'info');
-  const metaSnap = await getDoc(metaRef);
-  const metadata = metaSnap.exists() ? metaSnap.data() : null;
+  const [metadata, setMetadata] = useState<any>(null);
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  if (!metadata) {
-    notFound();
+  useEffect(() => {
+    if (!db || !id || !chapterNumber) return;
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        // 1. Fetch Metadata
+        const metaRef = doc(db, 'books', id, 'metadata', 'info');
+        const metaSnap = await getDoc(metaRef);
+        
+        if (!metaSnap.exists()) {
+          setError(true);
+          setIsLoading(false);
+          return;
+        }
+        setMetadata(metaSnap.data());
+
+        // 2. Fetch Chapters (Current and Next)
+        const chaptersRef = collection(db, 'books', id, 'chapters');
+        const q = query(
+          chaptersRef, 
+          where('chapterNumber', '>=', currentChapterNum),
+          orderBy('chapterNumber', 'asc'),
+          limit(2)
+        );
+        
+        const chaptersSnap = await getDocs(q);
+        const fetchedChapters = chaptersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        if (fetchedChapters.length === 0) {
+          setError(true);
+        } else {
+          setChapters(fetchedChapters);
+        }
+      } catch (err) {
+        console.error("Cloud reader fetch error:", err);
+        setError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [db, id, chapterNumber, currentChapterNum]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+        </div>
+      </div>
+    );
   }
 
-  // 2. Fetch Chapters (Loading multiple chapters server-side)
-  // We'll fetch the current chapter and the next one to allow the requested "Load Multiple" logic
-  const chaptersRef = collection(db, 'books', id, 'chapters');
-  const q = query(
-    chaptersRef, 
-    where('chapterNumber', '>=', currentChapterNum),
-    orderBy('chapterNumber', 'asc'),
-    limit(2)
-  );
-  
-  const chaptersSnap = await getDocs(q);
-  const chapters = chaptersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-  if (chapters.length === 0) {
+  if (error || chapters.length === 0) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
           <h1 className="text-3xl font-headline font-bold mb-2">Chapter Not Found</h1>
-          <p className="text-muted-foreground max-w-md">We couldn't locate this content in the cloud.</p>
+          <p className="text-muted-foreground max-w-md">We couldn't locate this content in the cloud library.</p>
           <Button variant="outline" className="mt-6" asChild>
             <Link href="/">Back to Library</Link>
           </Button>
@@ -54,9 +97,8 @@ export default async function CloudReader({ params }: { params: Promise<{ id: st
     );
   }
 
-  const nextChapter = chapters.length > 1 ? chapters[1] : null;
   const activeChapter = chapters[0];
-
+  const nextChapter = chapters.length > 1 ? chapters[1] : null;
   const prevNum = currentChapterNum - 1;
   const nextNum = currentChapterNum + 1;
   const hasNext = !!nextChapter || (metadata?.totalChapters && nextNum <= metadata.totalChapters);
@@ -67,7 +109,6 @@ export default async function CloudReader({ params }: { params: Promise<{ id: st
       
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
         <div>
-          {/* Mapping through chapters as requested for the multi-chapter structure */}
           {chapters.map((ch: any) => (
             <article key={ch.chapterNumber} id={`chapter-${ch.chapterNumber}`} className="mb-24 last:mb-0">
               <header className="mb-12 flex flex-col items-center text-center">
