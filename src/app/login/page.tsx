@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -63,10 +63,9 @@ export default function LoginPage() {
 
       setUsernameStatus('checking');
       try {
-        const usersRef = collection(db, 'users');
-        const q = query(usersRef, where('username', '==', clean), limit(1));
-        const snapshot = await getDocs(q);
-        setUsernameStatus(snapshot.empty ? 'available' : 'taken');
+        const usernameRef = doc(db, 'usernames', clean);
+        const snapshot = await getDoc(usernameRef);
+        setUsernameStatus(snapshot.exists() ? 'taken' : 'available');
       } catch (err) {
         setUsernameStatus('idle');
       }
@@ -94,16 +93,25 @@ export default function LoginPage() {
     e.preventDefault();
     const cleanUsername = registerUsername.trim().toLowerCase();
     
-    if (usernameStatus === 'taken') {
-      toast({ variant: "destructive", title: "Username Taken", description: "Please choose another username." });
-      return;
-    }
-
     setLoading(true);
     try {
+      // 1. Final check for username availability
+      const usernameRef = doc(db, 'usernames', cleanUsername);
+      const usernameSnap = await getDoc(usernameRef);
+      if (usernameSnap.exists()) {
+        toast({ variant: "destructive", title: "Username Taken", description: "Please choose another username." });
+        setLoading(false);
+        return;
+      }
+
+      // 2. Create Auth User
       const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
+      // 3. Claim username
+      await setDoc(usernameRef, { uid: newUser.uid });
+
+      // 4. Create Profile
       const userRef = doc(db, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
@@ -160,18 +168,21 @@ export default function LoginPage() {
         }
       }
 
-      // 2. Check if username already exists
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('username', '==', clean), limit(1));
-      const snapshot = await getDocs(q);
+      // 2. Check if username doc exists
+      const usernameRef = doc(db, 'usernames', clean);
+      const snapshot = await getDoc(usernameRef);
 
-      if (!snapshot.empty) {
+      if (snapshot.exists()) {
         toast({ variant: "destructive", title: "Error", description: "Username already taken." });
         setLoading(false);
         return;
       }
 
-      // 3. Update username and rate limit timestamp
+      // 3. Claim NEW username doc
+      await setDoc(usernameRef, { uid: user!.uid });
+
+      // 4. Update user profile
+      const oldUsername = profile?.username;
       const userRef = doc(db, 'users', user!.uid);
       const updateData = {
         username: clean,
@@ -186,6 +197,11 @@ export default function LoginPage() {
           requestResourceData: updateData
         }));
       });
+
+      // 5. Delete OLD username doc
+      if (oldUsername) {
+        await deleteDoc(doc(db, 'usernames', oldUsername));
+      }
 
       toast({ title: "Success", description: "Your username has been updated." });
       setIsChangingUsername(false);

@@ -17,17 +17,20 @@ service cloud.firestore {
 
     match /settings/approvedEmails {
       allow get: if isSignedIn();
-      // Allow approved users to manage the whitelist (acting as admins)
       allow write: if isApproved();
     }
 
     match /publishRequests/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow get: if isSignedIn() && (request.auth.uid == userId || isApproved());
-      // Allow administrators to see all requests
       allow list: if isApproved();
-      // Allow administrators to remove requests after processing
       allow delete: if isApproved();
+    }
+
+    match /usernames/{username} {
+      allow get: if true;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
     match /users/{userId} {
@@ -38,10 +41,7 @@ service cloud.firestore {
     }
 
     match /books/{bookId} {
-      // Anyone can read books
       allow read: if true;
-
-      // Only allow writes if the user is logged in AND email is whitelisted
       allow create: if isApproved();
       allow update, delete: if isApproved() && (resource == null || resource.data.metadata.info.ownerId == request.auth.uid);
 
