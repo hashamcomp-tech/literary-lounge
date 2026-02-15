@@ -15,7 +15,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 /**
  * @fileOverview Chapter Display Component for Cloud Novels.
  * Implements semantic <article> and paragraph structure.
- * The primary heading is now removed to focus on chapters.
+ * The primary heading is the Novel Title.
  */
 interface CloudReaderClientProps {
   id: string;
@@ -133,6 +133,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-4 py-1 tracking-[0.2em] mb-4">
             Cloud Library Edition
           </Badge>
+          <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight mb-4">
+            {metadata?.bookTitle || metadata?.title || 'Untitled Novel'}
+          </h1>
           <p className="text-xl sm:text-2xl text-muted-foreground italic flex items-center justify-center sm:justify-start gap-2 pt-2">
             <User className="h-5 w-5 text-primary/60" /> By {metadata?.author || 'Unknown Author'}
           </p>

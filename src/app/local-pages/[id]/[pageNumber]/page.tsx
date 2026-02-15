@@ -14,7 +14,6 @@ import { Badge } from '@/components/ui/badge';
 /**
  * @fileOverview Chapter Display Component for Local/Private Novels.
  * Implements semantic <article> and paragraph structure.
- * Fetches content from IndexedDB (Browser Local Storage).
  */
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -99,7 +98,7 @@ export default function LocalReader() {
       <Navbar />
       
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-12">
-        <header className="mb-12">
+        <header className="mb-12 text-center sm:text-left">
           <Button 
             variant="ghost" 
             size="sm" 
@@ -110,10 +109,15 @@ export default function LocalReader() {
             Back
           </Button>
           
-          <div className="flex justify-center mb-8">
-             <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-4 py-1">
-               <HardDrive className="h-3 w-3" /> Local Private Collection
-             </Badge>
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-center sm:justify-start">
+               <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-4 py-1">
+                 <HardDrive className="h-3 w-3" /> Local Private Collection
+               </Badge>
+            </div>
+            <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight mb-4">
+              {novelData?.title || 'Untitled Novel'}
+            </h1>
           </div>
         </header>
 
