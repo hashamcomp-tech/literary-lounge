@@ -23,6 +23,8 @@ export default function NovelCard({ novel }: NovelCardProps) {
   }
 
   const authorName = novel.author || 'Unknown Author';
+  // Favor coverURL from Firestore, fallback to legacy coverImage or placeholder
+  const displayImage = novel.coverURL || novel.coverImage || `https://picsum.photos/seed/${novel.id}/400/600`;
 
   return (
     <Link href={href}>
@@ -30,12 +32,15 @@ export default function NovelCard({ novel }: NovelCardProps) {
         <CardContent className="p-0">
           <div className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl mb-3 shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-all duration-500">
             <Image
-              src={novel.coverImage || `https://picsum.photos/seed/${novel.id}/400/600`}
+              src={displayImage}
               alt={novel.title}
               fill
               className="object-cover transition-transform duration-700 group-hover:scale-110"
               sizes="(max-width: 768px) 50vw, (max-width: 1200px) 25vw, 20vw"
               data-ai-hint="book cover"
+              style={{
+                borderRadius: "8px"
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
               <Badge variant="secondary" className="bg-white/95 backdrop-blur-sm text-primary border-none font-bold py-1 px-3">

@@ -278,8 +278,8 @@ export default function UploadPage() {
       return;
     }
 
-    if (isApprovedUser && !coverFile) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Cover image is required for cloud publishing.' });
+    if (!coverFile) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Cover image is required.' });
       return;
     }
 
@@ -342,7 +342,7 @@ export default function UploadPage() {
           totalChapters: chapters.length, 
           lastUpdated: new Date().toISOString(),
           isLocalOnly: false,
-          coverImage: null // Will be updated by caching logic or fetched from cloud
+          coverURL: null // Will be populated by cloud data or locally if needed
         };
         
         await saveLocalBook(bookData);
@@ -355,9 +355,9 @@ export default function UploadPage() {
       } else {
         setLoadingStatus('Saving locally...');
         
-        let coverImageUrl = null;
+        let coverURL = null;
         if (coverFile) {
-          coverImageUrl = await uploadCoverImage(storage, coverFile, docId);
+          coverURL = await uploadCoverImage(storage, coverFile, docId);
         }
 
         const bookData = {
@@ -368,7 +368,7 @@ export default function UploadPage() {
           totalChapters: chapters.length,
           lastUpdated: new Date().toISOString(),
           isLocalOnly: true,
-          coverImage: coverImageUrl
+          coverURL: coverURL
         };
 
         await saveLocalBook(bookData);
@@ -512,7 +512,7 @@ export default function UploadPage() {
                 {/* Cover Image Upload Section */}
                 <div className="space-y-4 pt-4 border-t">
                   <Label className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                    <ImageIcon className="h-4 w-4" /> Cover Image {isApprovedUser && <span className="text-destructive">*</span>}
+                    <ImageIcon className="h-4 w-4" /> Cover Image <span className="text-destructive">*</span>
                   </Label>
                   <div className={`relative border-2 border-dashed rounded-xl p-4 transition-colors ${coverFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50'}`}>
                     <input
@@ -520,6 +520,7 @@ export default function UploadPage() {
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       accept="image/*"
                       onChange={handleCoverChange}
+                      required
                     />
                     <div className="flex flex-col items-center justify-center text-center">
                       {coverFile ? (

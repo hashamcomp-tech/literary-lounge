@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, BookOpen, Eye, Star, Zap, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 
 interface RecommendationsSectionProps {
   title?: string;
@@ -28,8 +29,6 @@ export default function RecommendationsSection({
     
     const booksCol = collection(db, 'books');
     
-    // In production, composite indexes are required for where + orderBy.
-    // For local development and early stages, we prioritize the filter or sort.
     if (genre) {
       return query(
         booksCol,
@@ -38,7 +37,6 @@ export default function RecommendationsSection({
       );
     }
     
-    // Sort by root level fields (views, createdAt, lastUpdated)
     return query(
       booksCol,
       orderBy(sortBy, 'desc'),
@@ -65,7 +63,6 @@ export default function RecommendationsSection({
 
   if (!books || books.length === 0) return null;
 
-  // Client-side sort if genre filter is active (to ensure correct ordering without complex indexes)
   const sortedBooks = genre 
     ? [...books].sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0))
     : books;
@@ -93,43 +90,48 @@ export default function RecommendationsSection({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedBooks.map((book) => (
           <Link key={book.id} href={`/pages/${book.id}/1`}>
-            <Card className="bg-card/50 border-none shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer h-full flex flex-col">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-lg font-headline font-bold group-hover:text-primary transition-colors line-clamp-1">
+            <Card className="bg-card/50 border-none shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer h-full flex flex-col overflow-hidden">
+              <div className="flex flex-row">
+                <div className="relative w-[100px] h-[150px] shrink-0 m-4 shadow-md">
+                  <Image 
+                    src={book.coverURL || book.coverImage || `https://picsum.photos/seed/${book.id}/400/600`}
+                    alt={book.title || "Book Cover"}
+                    fill
+                    className="object-cover rounded-md"
+                    data-ai-hint="book cover"
+                  />
+                </div>
+                <div className="flex-1 flex flex-col py-4 pr-4 min-w-0">
+                  <CardHeader className="p-0 mb-2">
+                    <CardTitle className="text-lg font-headline font-bold group-hover:text-primary transition-colors line-clamp-2">
                       {book.title || book.metadata?.info?.bookTitle}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground font-medium truncate">By {book.author || book.metadata?.info?.author}</p>
-                  </div>
-                  <div className="bg-primary/10 p-2 rounded-xl">
-                    <BookOpen className="h-4 w-4 text-primary" />
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col justify-between pt-2">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                    <Eye className="h-3.5 w-3.5" />
-                    {(book.views || book.metadata?.info?.views || 0).toLocaleString()} views
-                  </div>
-                  {book.metadata?.info?.totalChapters && (
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
-                      <Zap className="h-3.5 w-3.5" />
-                      {book.metadata.info.totalChapters} chapters
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 flex flex-col justify-between">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                        <Eye className="h-3 w-3" />
+                        {(book.views || book.metadata?.info?.views || 0).toLocaleString()}
+                      </div>
+                      {book.metadata?.info?.totalChapters && (
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                          <Zap className="h-3 w-3" />
+                          {book.metadata.info.totalChapters} ch
+                        </div>
+                      )}
                     </div>
-                  )}
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10">
+                        {book.genre || book.metadata?.info?.genre || 'Novel'}
+                      </Badge>
+                      <span className="text-[10px] font-black text-primary group-hover:translate-x-1 transition-transform">
+                        Read Now →
+                      </span>
+                    </div>
+                  </CardContent>
                 </div>
-                
-                <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-[10px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10">
-                    {book.genre || book.metadata?.info?.genre || 'Novel'}
-                  </Badge>
-                  <span className="text-xs font-black text-primary group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
-                    Read Now →
-                  </span>
-                </div>
-              </CardContent>
+              </div>
             </Card>
           </Link>
         ))}

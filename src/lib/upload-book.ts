@@ -33,7 +33,7 @@ export async function uploadBookToCloud({
   if (!coverFile) throw new Error("Cover image is required for cloud books.");
 
   // 1. Upload cover to Storage
-  const coverImage = await uploadCoverImage(storage, coverFile, bookId);
+  const coverURL = await uploadCoverImage(storage, coverFile, bookId);
 
   // 2. Prepare Metadata
   const metadataInfo = {
@@ -46,7 +46,7 @@ export async function uploadBookToCloud({
     totalChapters: chapters.length,
     genre,
     views: 0,
-    coverImage,
+    coverURL,
   };
 
   // 3. Set Root Document (for search and discovery)
@@ -62,7 +62,7 @@ export async function uploadBookToCloud({
     ownerId,
     createdAt: serverTimestamp(),
     lastUpdated: serverTimestamp(),
-    coverImage,
+    coverURL,
     metadata: { info: metadataInfo }
   };
 
@@ -84,5 +84,5 @@ export async function uploadBookToCloud({
     }, { merge: true });
   }
 
-  return { bookId, coverImage };
+  return { bookId, coverURL };
 }
