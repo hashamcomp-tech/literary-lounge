@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -41,7 +41,6 @@ export default function AdminPage() {
         return;
       }
 
-      // Super-admin bypass or explicit admin role
       if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsAdmin(true);
         return;
@@ -77,7 +76,6 @@ export default function AdminPage() {
         setTotalUsers(usersSnap.size);
 
         let total = 0;
-        // Aggregating chapter counts from subcollections
         const chapterPromises = booksSnap.docs.map(b => getDocs(collection(db, 'books', b.id, 'chapters')));
         const chapterSnaps = await Promise.all(chapterPromises);
         chapterSnaps.forEach(snap => total += snap.size);
@@ -93,7 +91,6 @@ export default function AdminPage() {
     fetchStats();
   }, [db, isAdmin]);
 
-  // Fetch pending contributor requests
   const requestsQuery = useMemoFirebase(() => {
     if (!isAdmin) return null;
     return query(collection(db, 'publishRequests'), orderBy('requestedAt', 'desc'));
@@ -101,7 +98,6 @@ export default function AdminPage() {
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
-  // Fetch pending book requests
   const bookRequestsQuery = useMemoFirebase(() => {
     if (!isAdmin) return null;
     return query(collection(db, 'cloudUploadRequests'));
@@ -112,25 +108,12 @@ export default function AdminPage() {
     setProcessingId(requestId);
     try {
       const approvedRef = doc(db, 'settings', 'approvedEmails');
-      
-      // Add email to whitelist
-      await updateDoc(approvedRef, {
-        emails: arrayUnion(email)
-      });
-
-      // Remove the request
+      await updateDoc(approvedRef, { emails: arrayUnion(email) });
       await deleteDoc(doc(db, 'publishRequests', requestId));
 
-      toast({
-        title: "User Approved",
-        description: `${email} has been added to the cloud contributors.`,
-      });
+      toast({ title: "User Approved", description: `${email} has been added to the cloud contributors.` });
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Approval Failed",
-        description: "Could not update the whitelist.",
-      });
+      toast({ variant: "destructive", title: "Approval Failed", description: "Could not update the whitelist." });
     } finally {
       setProcessingId(null);
     }
@@ -140,16 +123,9 @@ export default function AdminPage() {
     setProcessingId(requestId);
     try {
       await deleteDoc(doc(db, 'publishRequests', requestId));
-      toast({
-        title: "Request Rejected",
-        description: "The request has been removed.",
-      });
+      toast({ title: "Request Rejected", description: "The request has been removed." });
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Rejection Failed",
-        description: "Could not remove the request.",
-      });
+      toast({ variant: "destructive", title: "Rejection Failed", description: "Could not remove the request." });
     } finally {
       setProcessingId(null);
     }
@@ -160,7 +136,7 @@ export default function AdminPage() {
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
         </div>
       </div>
     );
@@ -173,178 +149,130 @@ export default function AdminPage() {
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
           <ShieldAlert className="h-16 w-16 text-destructive mb-4 opacity-20" />
           <h1 className="text-3xl font-headline font-black mb-2">Access Denied</h1>
-          <p className="text-muted-foreground max-w-md">
-            This area is reserved for administrators. If you believe this is an error, please contact support.
-          </p>
-          <Button variant="outline" className="mt-6 rounded-xl" onClick={() => router.push('/')}>
-            Return Home
-          </Button>
+          <p className="text-muted-foreground max-w-md">This area is reserved for administrators.</p>
+          <Button variant="outline" className="mt-6 rounded-xl" onClick={() => router.push('/')}>Return Home</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-20 bg-background">
+    <div className="min-h-screen pb-20 bg-background transition-colors duration-500">
       <Navbar />
-      
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-5xl mx-auto">
-          <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+          <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
             <div>
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-2">
                 <ShieldCheck className="h-5 w-5 text-primary" />
-                <span className="text-xs font-bold uppercase tracking-widest text-primary">Admin Control Panel</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Authority Dashboard</span>
               </div>
-              <h1 className="text-4xl font-headline font-black">Lounge Overview</h1>
+              <h1 className="text-5xl font-headline font-black leading-none">Lounge Control</h1>
+              <p className="text-muted-foreground mt-2 text-lg">Manage the global shelf and contributor whitelist.</p>
             </div>
             <div className="flex items-center gap-3">
               <Link href="/admin/requests">
-                <Button variant="outline" className="h-9 rounded-xl border-amber-500/20 text-amber-600 hover:bg-amber-500/5">
+                <Button variant="outline" className="h-12 rounded-2xl border-amber-500/20 text-amber-700 bg-amber-500/5 hover:bg-amber-500/10 transition-all font-bold">
                   <Inbox className="h-4 w-4 mr-2" />
-                  Book Submissions
+                  Manuscripts
                   {bookRequests && bookRequests.length > 0 && (
-                    <Badge className="ml-2 bg-amber-500 h-5 px-1.5 min-w-5 flex items-center justify-center">{bookRequests.length}</Badge>
+                    <Badge className="ml-2 bg-amber-500 h-5 px-1.5 min-w-5">{bookRequests.length}</Badge>
                   )}
                 </Button>
               </Link>
               <Link href="/admin/dashboard">
-                <Button variant="outline" className="h-9 rounded-xl border-primary/20 text-primary hover:bg-primary/5">
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Full Metrics
+                <Button className="h-12 rounded-2xl bg-primary text-primary-foreground shadow-xl hover:shadow-primary/20 transition-all font-bold px-6">
+                  <BarChart3 className="h-4 w-4 mr-2" /> Live Analytics
                 </Button>
               </Link>
             </div>
           </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-            <Card className="bg-card/50 backdrop-blur border shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-primary/10 p-2.5 rounded-xl">
-                    <Users className="h-5 w-5 text-primary" />
-                  </div>
-                  <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] font-black uppercase">Users</Badge>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-headline font-black">
-                    {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : totalUsers.toLocaleString()}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Total readers</p>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
+            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
+              <div className="h-1 bg-primary w-full opacity-20 group-hover:opacity-100 transition-opacity" />
+              <CardContent className="p-8">
+                <Users className="h-6 w-6 text-primary mb-4" />
+                <h3 className="text-4xl font-headline font-black">{totalUsers.toLocaleString()}</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">Active Readers</p>
               </CardContent>
             </Card>
 
-            <Card className="bg-card/50 backdrop-blur border shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-primary/10 p-2.5 rounded-xl">
-                    <BookOpen className="h-5 w-5 text-primary" />
-                  </div>
-                  <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] font-black uppercase">Books</Badge>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-headline font-black">
-                    {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : bookCount.toLocaleString()}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Active cloud titles</p>
-                </div>
+            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
+              <div className="h-1 bg-primary w-full opacity-20 group-hover:opacity-100 transition-opacity" />
+              <CardContent className="p-8">
+                <BookOpen className="h-6 w-6 text-primary mb-4" />
+                <h3 className="text-4xl font-headline font-black">{bookCount.toLocaleString()}</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">Cloud Volumes</p>
               </CardContent>
             </Card>
 
-            <Card className="bg-card/50 backdrop-blur border shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-accent/10 p-2.5 rounded-xl">
-                    <Layers className="h-5 w-5 text-accent" />
-                  </div>
-                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Chapters</Badge>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-headline font-black">
-                    {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : chapterCount.toLocaleString()}
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Total cloud chapters</p>
-                </div>
+            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
+              <div className="h-1 bg-accent w-full opacity-20 group-hover:opacity-100 transition-opacity" />
+              <CardContent className="p-8">
+                <Layers className="h-6 w-6 text-accent mb-4" />
+                <h3 className="text-4xl font-headline font-black">{chapterCount.toLocaleString()}</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">Total Chapters</p>
               </CardContent>
             </Card>
 
-            <Card className="bg-card/50 backdrop-blur border shadow-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="bg-green-500/10 p-2.5 rounded-xl">
-                    <Activity className="h-5 w-5 text-green-600" />
-                  </div>
-                  <Badge variant="secondary" className="bg-green-500/5 text-green-600 border-none text-[10px] font-black uppercase">Status</Badge>
-                </div>
-                <div>
-                  <h3 className="text-3xl font-headline font-black text-green-600">Active</h3>
-                  <p className="text-xs text-muted-foreground mt-1">Operations normal</p>
-                </div>
+            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
+              <div className="h-1 bg-green-500 w-full opacity-20 group-hover:opacity-100 transition-opacity" />
+              <CardContent className="p-8">
+                <Activity className="h-6 w-6 text-green-600 mb-4" />
+                <h3 className="text-4xl font-headline font-black text-green-600">Stable</h3>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">System Status</p>
               </CardContent>
             </Card>
           </div>
 
           <AdminStorageBar />
 
-          <Card className="border-none shadow-xl bg-card/80 backdrop-blur overflow-hidden">
-            <CardHeader className="border-b bg-muted/30">
-              <CardTitle>Contributor Requests</CardTitle>
-              <CardDescription>Review users requesting access to publish novels to the cloud.</CardDescription>
+          <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
+            <CardHeader className="bg-muted/30 p-10">
+              <CardTitle className="text-2xl font-headline font-black">Contributor Applications</CardTitle>
+              <CardDescription className="text-base">Vet users requesting global publishing privileges.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               {isRequestsLoading ? (
-                <div className="p-12 flex justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
-                </div>
+                <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>
               ) : requests && requests.length > 0 ? (
                 <Table>
                   <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="pl-6">User Email</TableHead>
-                      <TableHead>Requested On</TableHead>
-                      <TableHead className="text-right pr-6">Actions</TableHead>
+                    <TableRow className="bg-muted/10 border-none">
+                      <TableHead className="pl-10 font-black uppercase tracking-widest text-[10px]">Candidate Email</TableHead>
+                      <TableHead className="font-black uppercase tracking-widest text-[10px]">Applied On</TableHead>
+                      <TableHead className="text-right pr-10 font-black uppercase tracking-widest text-[10px]">Decision</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {requests.map((req) => (
-                      <TableRow key={req.id} className="group transition-colors">
-                        <TableCell className="pl-6 font-medium">
-                          <div className="flex items-center gap-2">
-                            <Mail className="h-4 w-4 text-muted-foreground" />
+                      <TableRow key={req.id} className="border-border/50 hover:bg-primary/5 transition-colors h-24">
+                        <TableCell className="pl-10 font-bold text-lg">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 rounded-xl"><Mail className="h-5 w-5 text-primary" /></div>
                             {req.email}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                            <Calendar className="h-3.5 w-3.5" />
-                            {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Just now'}
-                          </div>
+                        <TableCell className="text-muted-foreground font-medium">
+                          {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Pending Sync'}
                         </TableCell>
-                        <TableCell className="text-right pr-6">
-                          <div className="flex items-center justify-end gap-2">
+                        <TableCell className="text-right pr-10">
+                          <div className="flex items-center justify-end gap-3">
                             <Button 
                               variant="ghost" 
-                              size="sm" 
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                              className="text-destructive hover:bg-destructive/10 rounded-xl font-bold"
                               onClick={() => handleReject(req.id)}
                               disabled={!!processingId}
                             >
-                              <UserX className="h-4 w-4 mr-1.5" />
-                              Reject
+                              <UserX className="h-4 w-4 mr-2" /> Discard
                             </Button>
                             <Button 
-                              variant="default" 
-                              size="sm" 
-                              className="bg-primary hover:bg-primary/90 rounded-lg"
+                              className="bg-primary hover:bg-primary/90 shadow-lg rounded-xl font-bold px-6"
                               onClick={() => handleApprove(req.id, req.email)}
                               disabled={!!processingId}
                             >
-                              {processingId === req.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <UserCheck className="h-4 w-4 mr-1.5" />
-                              )}
+                              {processingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4 mr-2" />}
                               Approve
                             </Button>
                           </div>
@@ -354,9 +282,10 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
               ) : (
-                <div className="p-12 text-center">
-                  <UserCheck className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
-                  <p className="text-muted-foreground">No pending requests at this time.</p>
+                <div className="p-24 text-center opacity-50 flex flex-col items-center">
+                  <Star className="h-16 w-16 mb-4 text-primary animate-pulse" />
+                  <p className="text-xl font-headline font-bold">No Pending Applications</p>
+                  <p className="text-sm mt-1">The Lounge is currently well-staffed.</p>
                 </div>
               )}
             </CardContent>
