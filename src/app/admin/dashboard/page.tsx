@@ -6,7 +6,7 @@ import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight } from 'lucide-react';
+import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +19,7 @@ export default function AdminDashboard() {
   
   const [bookCount, setBookCount] = useState(0);
   const [chapterCount, setChapterCount] = useState(0);
-  const [userCount, setUserCount] = useState(0);
+  const [totalUsers, setTotalUsers] = useState(0);
   const [storageUsed, setStorageUsed] = useState(0);
   const [remainingStorage, setRemainingStorage] = useState(MAX_STORAGE_BYTES);
   const [recentRequests, setRecentRequests] = useState<any[]>([]);
@@ -41,7 +41,7 @@ export default function AdminDashboard() {
     // 2. Real-time listener for the users collection
     const usersRef = collection(db, 'users');
     const unsubscribeUsers = onSnapshot(usersRef, (snapshot) => {
-      setUserCount(snapshot.size);
+      setTotalUsers(snapshot.size);
     });
 
     // 3. Real-time listener for the books collection
@@ -110,14 +110,17 @@ export default function AdminDashboard() {
             <div className="grid gap-8">
               {/* Primary Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="border-none shadow-lg bg-card/50 backdrop-blur">
+                <Card className="border-none shadow-lg bg-card/50 backdrop-blur relative overflow-hidden group">
+                  <div className="absolute right-0 top-0 p-4 opacity-5 transition-transform group-hover:scale-110">
+                    <Users className="h-24 w-24 text-primary" />
+                  </div>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Registered Users</CardTitle>
+                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Total Registered Users</CardTitle>
                     <Users className="h-4 w-4 text-primary" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-4xl font-headline font-black text-primary">{userCount.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground mt-1">Total readers in the community</p>
+                    <div className="text-4xl font-headline font-black text-primary">{totalUsers.toLocaleString()}</div>
+                    <p className="text-xs text-muted-foreground mt-1">Active readers in the community</p>
                   </CardContent>
                 </Card>
 

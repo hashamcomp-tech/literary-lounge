@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -10,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
 import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -27,6 +26,7 @@ export default function AdminPage() {
   // Library Stats
   const [bookCount, setBookCount] = useState<number>(0);
   const [chapterCount, setChapterCount] = useState<number>(0);
+  const [totalUsers, setTotalUsers] = useState<number>(0);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
 
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
@@ -72,6 +72,9 @@ export default function AdminPage() {
       try {
         const booksSnap = await getDocs(collection(db, 'books'));
         setBookCount(booksSnap.size);
+
+        const usersSnap = await getDocs(collection(db, 'users'));
+        setTotalUsers(usersSnap.size);
 
         let total = 0;
         // Aggregating chapter counts from subcollections
@@ -214,20 +217,37 @@ export default function AdminPage() {
             </div>
           </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+            <Card className="bg-card/50 backdrop-blur border shadow-sm">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="bg-primary/10 p-2.5 rounded-xl">
+                    <Users className="h-5 w-5 text-primary" />
+                  </div>
+                  <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] font-black uppercase">Users</Badge>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-headline font-black">
+                    {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : totalUsers.toLocaleString()}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">Total readers</p>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="bg-card/50 backdrop-blur border shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="bg-primary/10 p-2.5 rounded-xl">
                     <BookOpen className="h-5 w-5 text-primary" />
                   </div>
-                  <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] font-black uppercase">Total Books</Badge>
+                  <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] font-black uppercase">Books</Badge>
                 </div>
                 <div>
                   <h3 className="text-3xl font-headline font-black">
                     {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : bookCount.toLocaleString()}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Active titles in the cloud</p>
+                  <p className="text-xs text-muted-foreground mt-1">Active cloud titles</p>
                 </div>
               </CardContent>
             </Card>
@@ -238,13 +258,13 @@ export default function AdminPage() {
                   <div className="bg-accent/10 p-2.5 rounded-xl">
                     <Layers className="h-5 w-5 text-accent" />
                   </div>
-                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Total Chapters</Badge>
+                  <Badge variant="secondary" className="bg-accent/5 text-accent border-none text-[10px] font-black uppercase">Chapters</Badge>
                 </div>
                 <div>
                   <h3 className="text-3xl font-headline font-black">
                     {isStatsLoading ? <Loader2 className="h-6 w-6 animate-spin opacity-20" /> : chapterCount.toLocaleString()}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Extracted from all novels</p>
+                  <p className="text-xs text-muted-foreground mt-1">Total cloud chapters</p>
                 </div>
               </CardContent>
             </Card>
@@ -259,7 +279,7 @@ export default function AdminPage() {
                 </div>
                 <div>
                   <h3 className="text-3xl font-headline font-black text-green-600">Active</h3>
-                  <p className="text-xs text-muted-foreground mt-1">Lounge operations normal</p>
+                  <p className="text-xs text-muted-foreground mt-1">Operations normal</p>
                 </div>
               </CardContent>
             </Card>
