@@ -211,6 +211,17 @@
         "email",
         "requestedAt"
       ]
+    },
+    "GlobalStats": {
+      "title": "GlobalStats",
+      "description": "Tracks global application usage metrics.",
+      "type": "object",
+      "properties": {
+        "storageBytesUsed": {
+          "type": "number",
+          "description": "Total bytes consumed by cloud uploads."
+        }
+      }
     }
   },
   "auth": {
@@ -289,6 +300,16 @@
             "$ref": "#/backend/entities/PublishRequest"
           },
           "description": "Stores requests for publishing permissions."
+        }
+      },
+      {
+        "path": "/stats/storageUsage",
+        "definition": {
+          "entityName": "GlobalStats",
+          "schema": {
+            "$ref": "#/backend/entities/GlobalStats"
+          },
+          "description": "Stores aggregated storage usage stats."
         }
       }
     ]

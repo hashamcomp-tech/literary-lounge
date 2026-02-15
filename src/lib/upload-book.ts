@@ -1,5 +1,5 @@
 
-import { doc, setDoc, serverTimestamp, Firestore } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, Firestore, increment } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 
@@ -76,7 +76,13 @@ export async function uploadBookToCloud({
   const infoRef = doc(db, 'books', bookId, 'metadata', 'info');
   await setDoc(infoRef, metadataInfo, { merge: true });
 
-  // 5. Set Chapters
+  // 5. Update Global Storage Usage Stats
+  const statsRef = doc(db, 'stats', 'storageUsage');
+  await setDoc(statsRef, { 
+    storageBytesUsed: increment(coverSize) 
+  }, { merge: true });
+
+  // 6. Set Chapters
   for (const ch of chapters) {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
     await setDoc(chRef, {

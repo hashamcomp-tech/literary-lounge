@@ -12,6 +12,7 @@ import { collection, doc, getDoc, updateDoc, deleteDoc, arrayUnion, query, order
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import AdminStorageBar from '@/components/admin-storage-bar';
 
 export default function AdminPage() {
   const db = useFirestore();
@@ -152,16 +153,18 @@ export default function AdminPage() {
                 <ShieldCheck className="h-5 w-5 text-primary" />
                 <span className="text-xs font-bold uppercase tracking-widest text-primary">Admin Control Panel</span>
               </div>
-              <h1 className="text-4xl font-headline font-black">Contributor Requests</h1>
+              <h1 className="text-4xl font-headline font-black">Lounge Overview</h1>
             </div>
             <Badge variant="outline" className="w-fit h-7 border-primary/20 text-primary bg-primary/5">
               {requests?.length || 0} Pending Requests
             </Badge>
           </header>
 
+          <AdminStorageBar />
+
           <Card className="border-none shadow-xl bg-card/80 backdrop-blur overflow-hidden">
             <CardHeader className="border-b bg-muted/30">
-              <CardTitle>Approval Queue</CardTitle>
+              <CardTitle>Contributor Requests</CardTitle>
               <CardDescription>Review users requesting access to publish novels to the cloud.</CardDescription>
             </CardHeader>
             <CardContent className="p-0">
