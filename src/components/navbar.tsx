@@ -2,7 +2,7 @@
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings, Upload, Shield } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -10,6 +10,14 @@ import { useState, useEffect } from 'react';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { ModeToggle } from '@/components/mode-toggle';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function Navbar() {
   const router = useRouter();
@@ -28,7 +36,6 @@ export default function Navbar() {
         return;
       }
       
-      // Super-admin bypass or explicit admin role
       if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsAdmin(true);
         return;
@@ -90,12 +97,36 @@ export default function Navbar() {
               <Upload className="h-5 w-5" />
             </Button>
           </Link>
+          
           <ModeToggle />
-          <Link href="/setup">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Preferences">
-              <Settings className="h-5 w-5" />
-            </Button>
-          </Link>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Settings">
+                <Settings className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 rounded-xl border shadow-xl">
+              <DropdownMenuLabel className="font-headline font-bold">Lounge Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <Link href="/setup">
+                <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                  <SlidersHorizontal className="mr-2 h-4 w-4 text-primary" />
+                  <span>Reading Preferences</span>
+                </DropdownMenuItem>
+              </Link>
+              <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                <History className="mr-2 h-4 w-4 text-muted-foreground" />
+                <span>Reading History</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+                <span>Help & Support</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Link href="/login">
             <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
               <User className="h-5 w-5" />
