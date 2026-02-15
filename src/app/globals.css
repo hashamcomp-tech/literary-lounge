@@ -4,48 +4,68 @@
 
 @layer base {
   :root {
-    --background: 216 15% 95%;
-    --foreground: 222 47% 11%;
+    /* Soft Warm Paper Palette */
+    --background: 36 24% 98%;
+    --foreground: 222 47% 12%;
+    
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 222 47% 12%;
+    
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 231 44% 64%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 210 40% 96.1%;
+    --popover-foreground: 222 47% 12%;
+    
+    /* Elegant Indigo */
+    --primary: 221 45% 45%;
+    --primary-foreground: 210 40% 98%;
+    
+    --secondary: 36 15% 92%;
     --secondary-foreground: 222 47% 11.2%;
-    --muted: 210 40% 96.1%;
+    
+    --muted: 36 15% 92%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 262 47% 63%;
-    --accent-foreground: 0 0% 100%;
+    
+    /* Muted Violet Accent */
+    --accent: 262 30% 55%;
+    --accent-foreground: 210 40% 98%;
+    
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 231 44% 64%;
-    --radius: 0.75rem;
+    
+    --border: 36 10% 88%;
+    --input: 36 10% 88%;
+    --ring: 221 45% 45%;
+    --radius: 1rem;
   }
 
   .dark {
-    --background: 222 47% 11%;
+    /* Deep Midnight Palette */
+    --background: 222 47% 6%;
     --foreground: 210 40% 98%;
-    --card: 222 47% 11%;
+    
+    --card: 222 47% 8%;
     --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
+    
+    --popover: 222 47% 6%;
     --popover-foreground: 210 40% 98%;
-    --primary: 231 44% 64%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 217.2 32.6% 17.5%;
+    
+    --primary: 221 45% 65%;
+    --primary-foreground: 222 47% 6%;
+    
+    --secondary: 217.2 32.6% 14.5%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
+    
+    --muted: 217.2 32.6% 14.5%;
     --muted-foreground: 215 20.2% 65.1%;
-    --accent: 262 47% 63%;
-    --accent-foreground: 0 0% 100%;
+    
+    --accent: 262 40% 65%;
+    --accent-foreground: 222 47% 6%;
+    
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 231 44% 64%;
+    
+    --border: 217.2 32.6% 14.5%;
+    --input: 217.2 32.6% 14.5%;
+    --ring: 221 45% 65%;
   }
 }
 
@@ -57,17 +77,17 @@
     @apply bg-background text-foreground font-body;
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-headline;
+    @apply font-headline tracking-tight;
   }
 }
 
 @layer components {
   .admin-badge {
-    background: #ef4444; /* Standard red-500 for admin urgency */
+    background: #ef4444;
     color: white;
     padding: 4px 8px;
-    font-size: 12px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 800;
     border-radius: 6px;
     text-transform: uppercase;
     letter-spacing: 0.05em;

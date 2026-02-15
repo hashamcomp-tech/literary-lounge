@@ -12,24 +12,35 @@ export default function Home() {
   const mockGenres = Array.from(new Set(MOCK_NOVELS.map(n => n.genre)));
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-20 bg-background">
       <Navbar />
       
       <main className="container mx-auto px-4 pt-8">
         <section className="mb-12">
-          <div className="bg-primary/10 rounded-3xl p-8 sm:p-12 mb-8 relative overflow-hidden group">
+          <div className="bg-primary/5 rounded-[2.5rem] p-8 sm:p-16 mb-8 relative overflow-hidden group border border-primary/10">
             <div className="max-w-2xl relative z-10">
-              <h1 className="text-4xl sm:text-5xl font-headline font-black mb-4 leading-tight">
-                Escape into a <span className="text-primary">new world</span> today.
+              <div className="flex items-center gap-2 mb-6">
+                <span className="h-px w-8 bg-primary/40" />
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">Curation • Connection • Comfort</span>
+              </div>
+              <h1 className="text-5xl sm:text-7xl font-headline font-black mb-6 leading-[1.1]">
+                Escape into a <span className="text-primary italic">new world</span> today.
               </h1>
-              <p className="text-lg text-muted-foreground mb-8">
-                Explore thousands of hand-picked novels across every genre. 
-                Your next great adventure is just a chapter away.
+              <p className="text-xl text-muted-foreground/80 mb-10 leading-relaxed font-medium">
+                Explore a sanctuary of hand-picked literature. 
+                Your next great chapter is waiting in the Lounge.
               </p>
+              <div className="flex gap-4">
+                <Link href="/search">
+                  <button className="bg-primary text-primary-foreground px-8 py-4 rounded-2xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">
+                    Explore Library
+                  </button>
+                </Link>
+              </div>
             </div>
-            <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-accent/20 rounded-full blur-3xl group-hover:bg-accent/30 transition-colors duration-1000" />
-            <div className="absolute right-10 top-10 opacity-10">
-              <svg width="120" height="120" viewBox="0 0 24 24" fill="currentColor">
+            <div className="absolute -right-20 -bottom-20 w-[40rem] h-[40rem] bg-accent/5 rounded-full blur-[100px] pointer-events-none" />
+            <div className="absolute right-12 top-12 opacity-[0.03] pointer-events-none">
+              <svg width="240" height="240" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
               </svg>
             </div>
@@ -51,10 +62,10 @@ export default function Home() {
         />
 
         {/* Browse by Genre Section */}
-        <section className="my-16">
-          <div className="flex items-center gap-2 mb-8">
-            <div className="h-6 w-1 bg-primary rounded-full" />
-            <h2 className="text-3xl font-headline font-black">Explore Genres</h2>
+        <section className="my-20">
+          <div className="flex flex-col items-center text-center mb-12">
+            <h2 className="text-4xl font-headline font-black mb-4">The Genre Shelf</h2>
+            <p className="text-muted-foreground max-w-md">Discovery through diverse perspectives and timeless themes.</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-4">
             {GENRES.map((genre) => (
@@ -63,13 +74,10 @@ export default function Home() {
                 href={`/genre/${encodeURIComponent(genre)}`}
                 className="group"
               >
-                <div className="h-full px-4 py-8 bg-card border border-transparent hover:border-primary/20 hover:bg-primary/5 rounded-2xl transition-all duration-300 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md">
+                <div className="h-full px-4 py-8 bg-card border border-transparent hover:border-primary/20 hover:bg-primary/5 rounded-3xl transition-all duration-500 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-xl">
                   <span className="font-headline font-bold text-sm group-hover:text-primary transition-colors">
                     {genre}
                   </span>
-                  <Badge variant="ghost" className="mt-2 text-[8px] uppercase tracking-tighter opacity-0 group-hover:opacity-50 transition-opacity">
-                    View All
-                  </Badge>
                 </div>
               </Link>
             ))}
@@ -86,14 +94,14 @@ export default function Home() {
         />
 
         {/* Curated Library */}
-        <section className="space-y-8 mt-12 pt-12 border-t">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-2xl font-headline font-bold">Mock Collection</h2>
+        <section className="space-y-12 mt-20 pt-20 border-t">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <h2 className="text-3xl font-headline font-black">Mock Collection</h2>
             <Tabs defaultValue="all" className="w-full sm:w-auto">
-              <TabsList className="bg-muted/50 w-full sm:w-auto overflow-x-auto">
-                <TabsTrigger value="all">All Genres</TabsTrigger>
+              <TabsList className="bg-muted/50 w-full sm:w-auto overflow-x-auto p-1 rounded-2xl">
+                <TabsTrigger value="all" className="rounded-xl px-6">All</TabsTrigger>
                 {mockGenres.map(genre => (
-                  <TabsTrigger key={genre} value={genre.toLowerCase()}>
+                  <TabsTrigger key={genre} value={genre.toLowerCase()} className="rounded-xl px-6">
                     {genre}
                   </TabsTrigger>
                 ))}
@@ -101,7 +109,7 @@ export default function Home() {
             </Tabs>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6 sm:gap-8">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
             {MOCK_NOVELS.map((novel) => (
               <NovelCard key={novel.id} novel={novel} />
             ))}
