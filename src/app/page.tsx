@@ -1,12 +1,15 @@
+import Link from 'next/link';
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
 import RecommendationsSection from '@/components/recommendations-section';
 import LocalLibrarySection from '@/components/local-library-section';
 import { MOCK_NOVELS } from '@/lib/mock-data';
+import { GENRES } from '@/lib/genres';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 
 export default function Home() {
-  const genres = Array.from(new Set(MOCK_NOVELS.map(n => n.genre)));
+  const mockGenres = Array.from(new Set(MOCK_NOVELS.map(n => n.genre)));
 
   return (
     <div className="min-h-screen pb-20">
@@ -40,6 +43,32 @@ export default function Home() {
           limitCount={6} 
         />
 
+        {/* Browse by Genre Section */}
+        <section className="my-16">
+          <div className="flex items-center gap-2 mb-8">
+            <div className="h-6 w-1 bg-primary rounded-full" />
+            <h2 className="text-3xl font-headline font-black">Explore Genres</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-4">
+            {GENRES.map((genre) => (
+              <Link 
+                key={genre} 
+                href={`/genre/${encodeURIComponent(genre)}`}
+                className="group"
+              >
+                <div className="h-full px-4 py-8 bg-card border border-transparent hover:border-primary/20 hover:bg-primary/5 rounded-2xl transition-all duration-300 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md">
+                  <span className="font-headline font-bold text-sm group-hover:text-primary transition-colors">
+                    {genre}
+                  </span>
+                  <Badge variant="ghost" className="mt-2 text-[8px] uppercase tracking-tighter opacity-0 group-hover:opacity-50 transition-opacity">
+                    View All
+                  </Badge>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+
         {/* Your Private Browser Library */}
         <LocalLibrarySection />
 
@@ -52,11 +81,11 @@ export default function Home() {
         {/* Curated Library */}
         <section className="space-y-8 mt-12 pt-12 border-t">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-2xl font-headline font-bold">Curated Library</h2>
+            <h2 className="text-2xl font-headline font-bold">Mock Collection</h2>
             <Tabs defaultValue="all" className="w-full sm:w-auto">
               <TabsList className="bg-muted/50 w-full sm:w-auto overflow-x-auto">
                 <TabsTrigger value="all">All Genres</TabsTrigger>
-                {genres.map(genre => (
+                {mockGenres.map(genre => (
                   <TabsTrigger key={genre} value={genre.toLowerCase()}>
                     {genre}
                   </TabsTrigger>
