@@ -24,6 +24,11 @@
           "type": "string",
           "description": "Timestamp when the user account and profile were created.",
           "format": "date-time"
+        },
+        "lastUsernameChange": {
+          "type": "string",
+          "description": "Timestamp of the last username change for rate limiting.",
+          "format": "date-time"
         }
       },
       "required": [

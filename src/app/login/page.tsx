@@ -11,7 +11,7 @@ import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/fireb
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, setDoc, updateDoc, serverTimestamp, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -139,7 +139,28 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // 1. Check if username already exists
+      // 1. Rate limiting check (24 hours)
+      const oneDay = 24 * 60 * 60 * 1000;
+      const lastChange = profile?.lastUsernameChange;
+      
+      if (lastChange) {
+        const lastChangeMillis = lastChange.toMillis ? lastChange.toMillis() : new Date(lastChange).getTime();
+        const now = Date.now();
+        if (now - lastChangeMillis < oneDay) {
+          const timeLeft = oneDay - (now - lastChangeMillis);
+          const hoursLeft = Math.ceil(timeLeft / (1000 * 60 * 60));
+          
+          toast({ 
+            variant: "destructive", 
+            title: "Wait a bit", 
+            description: `You can change your username again in about ${hoursLeft} hour(s).` 
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 2. Check if username already exists
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('username', '==', clean), limit(1));
       const snapshot = await getDocs(q);
@@ -150,16 +171,19 @@ export default function LoginPage() {
         return;
       }
 
-      // 2. Update username
+      // 3. Update username and rate limit timestamp
       const userRef = doc(db, 'users', user!.uid);
-      await updateDoc(userRef, {
+      const updateData = {
         username: clean,
+        lastUsernameChange: serverTimestamp(),
         updatedAt: serverTimestamp()
-      }).catch(async (err) => {
+      };
+
+      await updateDoc(userRef, updateData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'update',
-          requestResourceData: { username: clean, updatedAt: 'SERVER_TIMESTAMP' }
+          requestResourceData: updateData
         }));
       });
 
@@ -292,20 +316,26 @@ export default function LoginPage() {
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Account Settings</Label>
                   
                   {!isChangingUsername ? (
-                    <Button 
-                      variant="outline" 
-                      className="w-full justify-between h-12 rounded-xl border-muted"
-                      onClick={() => {
-                        setIsChangingUsername(true);
-                        setNewUsername(profile?.username || '');
-                      }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <UserIcon className="h-4 w-4 text-primary" />
-                        <span>Change Username</span>
-                      </div>
-                      <Pencil className="h-3.5 w-3.5 opacity-50" />
-                    </Button>
+                    <div className="space-y-3">
+                      <Button 
+                        variant="outline" 
+                        className="w-full justify-between h-12 rounded-xl border-muted"
+                        onClick={() => {
+                          setIsChangingUsername(true);
+                          setNewUsername(profile?.username || '');
+                        }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <UserIcon className="h-4 w-4 text-primary" />
+                          <span>Change Username</span>
+                        </div>
+                        <Pencil className="h-3.5 w-3.5 opacity-50" />
+                      </Button>
+                      
+                      <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 px-1">
+                        <Clock className="h-3 w-3" /> Usernames can be changed once every 24 hours.
+                      </p>
+                    </div>
                   ) : (
                     <form onSubmit={handleUpdateUsername} className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="space-y-1">
