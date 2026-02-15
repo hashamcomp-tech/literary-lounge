@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, User, ShieldAlert, Navigation } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Navigation, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -122,7 +122,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   return (
     <div className="max-w-[700px] mx-auto px-5 py-5 font-body text-[18px] leading-[1.6] text-[#222]">
-      <header className="mb-10">
+      <header className="mb-10 text-center sm:text-left">
         <Button 
           variant="ghost" 
           size="sm" 
@@ -133,26 +133,26 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           Back
         </Button>
 
-        <div className="space-y-2">
-          <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-3 py-0.5 tracking-[0.1em] mb-2">
+        <div className="space-y-4">
+          <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-3 py-0.5 tracking-[0.1em]">
             Cloud Edition
           </Badge>
-          <h1 className="text-4xl font-headline font-black leading-tight tracking-tight mb-2">
+          <h1 className="text-4xl sm:text-5xl font-headline font-black leading-tight tracking-tight mb-2">
             {metadata?.bookTitle || metadata?.title || 'Untitled Novel'}
           </h1>
-          <p className="text-lg text-muted-foreground italic flex items-center gap-2">
+          <p className="text-lg text-muted-foreground italic">
             By {metadata?.author || 'Unknown Author'}
           </p>
         </div>
       </header>
 
       <article id={`chapter-${currentChapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        <header className="mb-8">
-          <div className="flex items-center gap-3 mb-4 text-xs font-bold uppercase tracking-widest text-primary">
+        <header className="mb-8 border-b pb-8">
+          <div className="flex items-center justify-center sm:justify-start gap-3 mb-4 text-xs font-bold uppercase tracking-widest text-primary">
             <Bookmark className="h-3.5 w-3.5" />
             Chapter {currentChapter.chapterNumber}
           </div>
-          <h2 className="text-3xl font-headline font-bold mb-8 leading-tight">
+          <h2 className="text-3xl font-headline font-bold leading-tight">
             {currentChapter.title || `Chapter ${currentChapter.chapterNumber}`}
           </h2>
         </header>
@@ -171,49 +171,51 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       </article>
 
       <section className="mt-16 pt-10 border-t space-y-8">
-        <form onSubmit={handleJump} className="flex items-center gap-3">
-          <label htmlFor="chapterJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
-          <Input 
-            id="chapterJump"
-            type="number" 
-            min={1} 
-            max={totalChapters}
-            value={jumpValue}
-            onChange={(e) => setJumpValue(e.target.value)}
-            className="w-16 h-8 text-sm rounded-lg"
-          />
-          <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
-            <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
-          </Button>
-        </form>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+          <form onSubmit={handleJump} className="flex items-center gap-3">
+            <label htmlFor="chapterJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
+            <Input 
+              id="chapterJump"
+              type="number" 
+              min={1} 
+              max={totalChapters}
+              value={jumpValue}
+              onChange={(e) => setJumpValue(e.target.value)}
+              className="w-16 h-8 text-sm rounded-lg"
+            />
+            <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
+              <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
+            </Button>
+          </form>
 
-        <nav className="chapter-nav flex items-center justify-between">
-          <Button 
-            variant="outline" 
-            className="h-10 px-6 rounded-xl border-primary/20 hover:bg-primary/5 font-bold"
-            disabled={currentChapterNum <= 1}
-            onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
-          >
-            <ChevronLeft className="mr-2 h-4 w-4" />
-            Previous
-          </Button>
+          <nav className="chapter-nav flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              className="h-10 px-6 rounded-xl border-primary/20 hover:bg-primary/5 font-bold"
+              disabled={currentChapterNum <= 1}
+              onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
+            >
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Prev
+            </Button>
 
-          <div className="text-center">
-             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
-               {currentChapterNum} / {totalChapters}
-             </span>
-          </div>
+            <div className="text-center min-w-[60px]">
+               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+                 {currentChapterNum} / {totalChapters}
+               </span>
+            </div>
 
-          <Button 
-            variant="default" 
-            className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
-            disabled={currentChapterNum >= totalChapters}
-            onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
-          >
-            Next
-            <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        </nav>
+            <Button 
+              variant="default" 
+              className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
+              disabled={currentChapterNum >= totalChapters}
+              onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
+            >
+              Next
+              <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </nav>
+        </div>
       </section>
     </div>
   );

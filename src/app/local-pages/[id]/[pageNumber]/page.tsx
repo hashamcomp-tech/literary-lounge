@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -90,7 +90,7 @@ export default function LocalReader() {
       <Navbar />
       
       <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-[#222]">
-        <header className="mb-10">
+        <header className="mb-10 text-center sm:text-left">
           <Button 
             variant="ghost" 
             size="sm" 
@@ -101,11 +101,11 @@ export default function LocalReader() {
             Back
           </Button>
           
-          <div className="space-y-2">
+          <div className="space-y-4">
             <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-3 py-0.5 text-[10px]">
               <HardDrive className="h-3 w-3" /> Private Collection
             </Badge>
-            <h1 className="text-4xl font-headline font-black leading-tight tracking-tight mb-2">
+            <h1 className="text-4xl sm:text-5xl font-headline font-black leading-tight tracking-tight mb-2">
               {novelData?.title || 'Untitled Novel'}
             </h1>
             <p className="text-lg text-muted-foreground">By {novelData?.author || 'Unknown Author'}</p>
@@ -113,8 +113,8 @@ export default function LocalReader() {
         </header>
 
         <article id={`chapter-${chapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-          <header className="mb-8">
-            <h2 className="text-3xl font-headline font-bold text-primary mb-6">
+          <header className="mb-8 border-b pb-8">
+            <h2 className="text-3xl font-headline font-bold text-primary">
               Chapter {chapter.chapterNumber}{chapter.title ? `: ${chapter.title}` : ''}
             </h2>
           </header>
@@ -129,47 +129,49 @@ export default function LocalReader() {
         </article>
 
         <section className="mt-16 pt-10 border-t space-y-8">
-          <form onSubmit={handleJump} className="flex items-center gap-3">
-            <label htmlFor="localJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
-            <Input 
-              id="localJump"
-              type="number" 
-              min={1} 
-              max={allChapters.length}
-              value={jumpValue}
-              onChange={(e) => setJumpValue(e.target.value)}
-              className="w-16 h-8 text-sm rounded-lg"
-            />
-            <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
-              <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
-            </Button>
-          </form>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+            <form onSubmit={handleJump} className="flex items-center gap-3">
+              <label htmlFor="localJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
+              <Input 
+                id="localJump"
+                type="number" 
+                min={1} 
+                max={allChapters.length}
+                value={jumpValue}
+                onChange={(e) => setJumpValue(e.target.value)}
+                className="w-16 h-8 text-sm rounded-lg"
+              />
+              <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
+                <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
+              </Button>
+            </form>
 
-          <nav className="chapter-nav flex items-center justify-between">
-            <Button 
-              variant="outline" 
-              className="h-10 px-6 rounded-xl border-primary/20 font-bold"
-              disabled={currentChapterNum <= 1}
-              onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
-            >
-              <ChevronLeft className="h-4 w-4 mr-2" /> Previous
-            </Button>
-            
-            <div className="text-center px-6">
-               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
-                 {currentChapterNum} / {allChapters.length}
-               </span>
-            </div>
+            <nav className="chapter-nav flex items-center gap-4">
+              <Button 
+                variant="outline" 
+                className="h-10 px-6 rounded-xl border-primary/20 font-bold"
+                disabled={currentChapterNum <= 1}
+                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
+              >
+                <ChevronLeft className="h-4 w-4 mr-2" /> Prev
+              </Button>
+              
+              <div className="text-center min-w-[60px]">
+                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+                   {currentChapterNum} / {allChapters.length}
+                 </span>
+              </div>
 
-            <Button 
-              variant="default" 
-              className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
-              disabled={currentChapterNum >= allChapters.length}
-              onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
-            >
-              Next <ChevronRight className="h-4 w-4 ml-2" />
-            </Button>
-          </nav>
+              <Button 
+                variant="default" 
+                className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
+                disabled={currentChapterNum >= allChapters.length}
+                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
+              >
+                Next <ChevronRight className="h-4 w-4 ml-2" />
+              </Button>
+            </nav>
+          </div>
         </section>
       </main>
     </div>
