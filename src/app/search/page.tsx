@@ -49,7 +49,8 @@ function SearchResults() {
   };
 
   useEffect(() => {
-    if (!db || localQuery.length < 2) {
+    const lowerLocalQuery = localQuery.toLowerCase();
+    if (!db || lowerLocalQuery.length < 2) {
       setSuggestions([]);
       return;
     }
@@ -58,15 +59,15 @@ function SearchResults() {
       try {
         const titleQuery = query(
           collection(db, 'books'),
-          where('metadata.info.bookTitle', '>=', localQuery),
-          where('metadata.info.bookTitle', '<=', localQuery + '\uf8ff'),
+          where('metadata.info.bookTitleLower', '>=', lowerLocalQuery),
+          where('metadata.info.bookTitleLower', '<=', lowerLocalQuery + '\uf8ff'),
           limit(5)
         );
         
         const authorQuery = query(
           collection(db, 'books'),
-          where('metadata.info.author', '>=', localQuery),
-          where('metadata.info.author', '<=', localQuery + '\uf8ff'),
+          where('metadata.info.authorLower', '>=', lowerLocalQuery),
+          where('metadata.info.authorLower', '<=', lowerLocalQuery + '\uf8ff'),
           limit(5)
         );
 
@@ -129,17 +130,18 @@ function SearchResults() {
         }
 
         setSearchMethod('firestore');
+        const lowerQuery = queryTerm.toLowerCase();
         const qTitle = query(
           collection(db, 'books'),
-          where('metadata.info.bookTitle', '>=', queryTerm),
-          where('metadata.info.bookTitle', '<=', queryTerm + '\uf8ff'),
+          where('metadata.info.bookTitleLower', '>=', lowerQuery),
+          where('metadata.info.bookTitleLower', '<=', lowerQuery + '\uf8ff'),
           limit(24)
         );
 
         const qAuthor = query(
           collection(db, 'books'),
-          where('metadata.info.author', '>=', queryTerm),
-          where('metadata.info.author', '<=', queryTerm + '\uf8ff'),
+          where('metadata.info.authorLower', '>=', lowerQuery),
+          where('metadata.info.authorLower', '<=', lowerQuery + '\uf8ff'),
           limit(24)
         );
 

@@ -34,17 +34,18 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!db || value.length < 2) {
+    const lowerValue = value.toLowerCase();
+    if (!db || lowerValue.length < 2) {
       setSuggestions([]);
       return;
     }
 
     const fetchSuggestions = async () => {
-      const fieldPath = type === 'author' ? 'metadata.info.author' : 'metadata.info.bookTitle';
+      const fieldPath = type === 'author' ? 'metadata.info.authorLower' : 'metadata.info.bookTitleLower';
       const q = query(
         collection(db, 'books'),
-        where(fieldPath, '>=', value),
-        where(fieldPath, '<=', value + '\uf8ff'),
+        where(fieldPath, '>=', lowerValue),
+        where(fieldPath, '<=', lowerValue + '\uf8ff'),
         limit(5)
       );
       try {
@@ -291,7 +292,9 @@ export default function UploadPage() {
         const metadataMap = {
           info: {
             author: finalAuthor,
+            authorLower: finalAuthor.toLowerCase(),
             bookTitle: finalTitle,
+            bookTitleLower: finalTitle.toLowerCase(),
             lastUpdated: serverTimestamp(),
             ownerId: user.uid,
             totalChapters: chapters.length,

@@ -66,8 +66,16 @@
         "author": {
           "type": "string"
         },
+        "authorLower": {
+          "type": "string",
+          "description": "Lowercase version of the author name for search."
+        },
         "bookTitle": {
           "type": "string"
+        },
+        "bookTitleLower": {
+          "type": "string",
+          "description": "Lowercase version of the book title for search."
         },
         "ownerId": {
           "type": "string"
