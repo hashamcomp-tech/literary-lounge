@@ -3,11 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Navigation } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -17,7 +16,6 @@ export default function LocalReader() {
   const [novelData, setNovelData] = useState<any>(null);
   const [allChapters, setAllChapters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [jumpValue, setJumpValue] = useState('');
 
   useEffect(() => {
     const loadLocalData = async () => {
@@ -43,17 +41,6 @@ export default function LocalReader() {
     
     loadLocalData();
   }, [id, currentChapterNum]);
-
-  const handleJump = (e: React.FormEvent) => {
-    e.preventDefault();
-    const num = parseInt(jumpValue);
-    if (!isNaN(num) && num >= 1 && num <= allChapters.length) {
-      router.push(`/local-pages/${id}/${num}`);
-      setJumpValue('');
-    } else {
-      alert(`Invalid chapter number. Must be between 1 and ${allChapters.length}`);
-    }
-  };
 
   if (loading) {
     return (
@@ -128,50 +115,32 @@ export default function LocalReader() {
           </div>
         </article>
 
-        <section className="mt-16 pt-10 border-t space-y-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-            <form onSubmit={handleJump} className="flex items-center gap-3">
-              <label htmlFor="localJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
-              <Input 
-                id="localJump"
-                type="number" 
-                min={1} 
-                max={allChapters.length}
-                value={jumpValue}
-                onChange={(e) => setJumpValue(e.target.value)}
-                className="w-16 h-8 text-sm rounded-lg"
-              />
-              <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
-                <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
-              </Button>
-            </form>
+        <section className="mt-16 pt-10 border-t">
+          <nav className="chapter-nav flex items-center justify-between gap-4">
+            <Button 
+              variant="outline" 
+              className="h-10 px-6 rounded-xl border-primary/20 font-bold"
+              disabled={currentChapterNum <= 1}
+              onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
+            >
+              <ChevronLeft className="h-4 w-4 mr-2" /> Prev
+            </Button>
+            
+            <div className="text-center min-w-[60px]">
+               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+                 {currentChapterNum} / {allChapters.length}
+               </span>
+            </div>
 
-            <nav className="chapter-nav flex items-center gap-4">
-              <Button 
-                variant="outline" 
-                className="h-10 px-6 rounded-xl border-primary/20 font-bold"
-                disabled={currentChapterNum <= 1}
-                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
-              >
-                <ChevronLeft className="h-4 w-4 mr-2" /> Prev
-              </Button>
-              
-              <div className="text-center min-w-[60px]">
-                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
-                   {currentChapterNum} / {allChapters.length}
-                 </span>
-              </div>
-
-              <Button 
-                variant="default" 
-                className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
-                disabled={currentChapterNum >= allChapters.length}
-                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
-              >
-                Next <ChevronRight className="h-4 w-4 ml-2" />
-              </Button>
-            </nav>
-          </div>
+            <Button 
+              variant="default" 
+              className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
+              disabled={currentChapterNum >= allChapters.length}
+              onClick={() => router.push(`/local-pages/${id}/${currentChapterNum + 1}`)}
+            >
+              Next <ChevronRight className="h-4 w-4 ml-2" />
+            </Button>
+          </nav>
         </section>
       </main>
     </div>

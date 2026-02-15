@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Navigation, ShieldAlert } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
@@ -25,7 +24,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [chapters, setChapters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [jumpValue, setJumpValue] = useState('');
 
   useEffect(() => {
     if (!firestore || !id) return;
@@ -75,17 +73,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     fetchData();
   }, [firestore, id]);
-
-  const handleJump = (e: React.FormEvent) => {
-    e.preventDefault();
-    const num = parseInt(jumpValue);
-    if (!isNaN(num) && num >= 1 && num <= chapters.length) {
-      router.push(`/pages/${id}/${num}`);
-      setJumpValue('');
-    } else {
-      alert(`Invalid chapter number. Must be between 1 and ${chapters.length}`);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -170,52 +157,34 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </article>
 
-      <section className="mt-16 pt-10 border-t space-y-8">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-          <form onSubmit={handleJump} className="flex items-center gap-3">
-            <label htmlFor="chapterJump" className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Jump to:</label>
-            <Input 
-              id="chapterJump"
-              type="number" 
-              min={1} 
-              max={totalChapters}
-              value={jumpValue}
-              onChange={(e) => setJumpValue(e.target.value)}
-              className="w-16 h-8 text-sm rounded-lg"
-            />
-            <Button type="submit" size="sm" variant="outline" className="h-8 rounded-lg px-3">
-              <Navigation className="h-3.5 w-3.5 mr-1.5" /> Go
-            </Button>
-          </form>
+      <section className="mt-16 pt-10 border-t">
+        <nav className="chapter-nav flex items-center justify-between gap-4">
+          <Button 
+            variant="outline" 
+            className="h-10 px-6 rounded-xl border-primary/20 hover:bg-primary/5 font-bold"
+            disabled={currentChapterNum <= 1}
+            onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
+          >
+            <ChevronLeft className="mr-2 h-4 w-4" />
+            Prev
+          </Button>
 
-          <nav className="chapter-nav flex items-center gap-4">
-            <Button 
-              variant="outline" 
-              className="h-10 px-6 rounded-xl border-primary/20 hover:bg-primary/5 font-bold"
-              disabled={currentChapterNum <= 1}
-              onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
-            >
-              <ChevronLeft className="mr-2 h-4 w-4" />
-              Prev
-            </Button>
+          <div className="text-center min-w-[60px]">
+             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
+               {currentChapterNum} / {totalChapters}
+             </span>
+          </div>
 
-            <div className="text-center min-w-[60px]">
-               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
-                 {currentChapterNum} / {totalChapters}
-               </span>
-            </div>
-
-            <Button 
-              variant="default" 
-              className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
-              disabled={currentChapterNum >= totalChapters}
-              onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
-            >
-              Next
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
-          </nav>
-        </div>
+          <Button 
+            variant="default" 
+            className="h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 shadow-md font-bold"
+            disabled={currentChapterNum >= totalChapters}
+            onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
+          >
+            Next
+            <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        </nav>
       </section>
     </div>
   );
