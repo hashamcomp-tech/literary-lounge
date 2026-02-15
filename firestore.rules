@@ -3,61 +3,81 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // HELPER FUNCTIONS
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isApproved() {
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == "hashamcomp@gmail.com";
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+        (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin");
+    }
+
+    function isApprovedUploader() {
       return isSignedIn() && (
-             request.auth.token.email == "hashamcomp@gmail.com" ||
-             (exists(/databases/$(database)/documents/settings/approvedEmails) &&
-              request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails)
+        isAdmin() || 
+        (exists(/databases/$(database)/documents/settings/approvedEmails) && 
+         request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails)
       );
     }
 
-    match /settings/approvedEmails {
-      allow get: if isSignedIn();
-      allow write: if isApproved();
-    }
-
-    match /publishRequests/{userId} {
+    // USER PROFILES
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
       allow create: if isSignedIn() && request.auth.uid == userId;
-      allow get: if isSignedIn() && (request.auth.uid == userId || isApproved());
-      allow list: if isApproved();
-      allow delete: if isApproved();
+      
+      // Allow user to update ONLY their own document and prevent changing sensitive fields like role
+      allow update: if isSignedIn() && request.auth.uid == userId
+                    && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
+                    && (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid);
     }
 
+    // USERNAME MAPPING (Uniqueness check)
     match /usernames/{username} {
       allow get: if true;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
-    match /users/{userId} {
-      allow get: if isSignedIn() && request.auth.uid == userId;
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      
-      // Allow user to update ONLY their own document and prevent changing sensitive fields
-      allow update: if isSignedIn() && request.auth.uid == userId
-                    && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
-                    && (!('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid);
+    // SETTINGS & WHITELIST
+    match /settings/approvedEmails {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
+    // PUBLISH REQUESTS
+    match /publishRequests/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // BOOKS & CHAPTERS
     match /books/{bookId} {
       allow read: if true;
-      allow create: if isApproved();
-      allow update, delete: if isApproved() && (resource == null || resource.data.metadata.info.ownerId == request.auth.uid);
+      allow write: if isApprovedUploader();
 
       match /metadata/info {
         allow read: if true;
-        allow write: if isApproved();
+        allow write: if isApprovedUploader();
       }
 
       match /chapters/{chapterNumber} {
         allow read: if true;
-        allow write: if isApproved();
+        allow write: if isApprovedUploader();
       }
+    }
+    
+    // Catch-all for subcollections in books (like roots)
+    match /books/{bookId}/{document=**} {
+      allow read: if true;
+      allow write: if isApprovedUploader();
     }
   }
 }
