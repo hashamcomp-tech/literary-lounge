@@ -32,7 +32,7 @@ export default function AdminPage() {
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
 
-  // Guard the profile reference to ensure we only try to fetch it when auth is ready
+  // Guard the profile reference
   const profileRef = useMemoFirebase(() => {
     if (!db || !user || user.isAnonymous || isUserLoading) return null;
     return doc(db, 'users', user.uid);
@@ -40,48 +40,72 @@ export default function AdminPage() {
   
   const { data: profile } = useDoc(profileRef);
 
-  // Check if current user is approved/admin
+  // Robust Admin Verification Logic
   useEffect(() => {
-    const checkAdmin = async () => {
+    const checkAdminStatus = async () => {
       if (isOfflineMode) {
         setIsAdmin(false);
         return;
       }
+      
       if (isUserLoading || !db) return;
-      if (!user) {
+
+      // 1. Block anonymous users immediately
+      if (!user || user.isAnonymous) {
+        setIsAdmin(false);
         return;
       }
 
-      // Updated to include both admin emails
-      if (user.email === 'hashamcomp@gmail.com' || user.email === 'hashammazher@gmail.com') {
+      // 2. Super admin hardcoded override
+      const superAdmins = ['hashamcomp@gmail.com', 'hashammazher@gmail.com'];
+      if (user.email && superAdmins.includes(user.email)) {
         setIsAdmin(true);
         return;
       }
 
-      // If the Firestore profile confirms the admin role
+      // 3. Profile role check
       if (profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
 
-      // Check the settings whitelist
-      try {
-        const settingsRef = doc(db, 'settings', 'approvedEmails');
-        const snap = await getDoc(settingsRef);
-        if (snap.exists()) {
-          const emails = snap.data().emails || [];
-          setIsAdmin(emails.includes(user.email));
-        } else {
+      // 4. Whitelist check
+      if (user.email) {
+        try {
+          const settingsRef = doc(db, 'settings', 'approvedEmails');
+          const snap = await getDoc(settingsRef);
+          if (snap.exists()) {
+            const emails = snap.data().emails || [];
+            setIsAdmin(emails.includes(user.email));
+          } else {
+            setIsAdmin(false);
+          }
+        } catch (e) {
+          // If the whitelist read is denied (which it is for non-admins), 
+          // we treat them as not an admin.
           setIsAdmin(false);
         }
-      } catch (e) {
-        console.warn("Admin check deferred due to connection state.");
+      } else {
+        setIsAdmin(false);
       }
     };
-    checkAdmin();
+
+    checkAdminStatus();
   }, [user, isUserLoading, profile, db, isOfflineMode]);
 
-  // Fetch Library Statistics
+  // Redirect if unauthorized
+  useEffect(() => {
+    if (isAdmin === false) {
+      toast({
+        variant: "destructive",
+        title: "Access Denied",
+        description: "Redirecting to safety."
+      });
+      router.push('/');
+    }
+  }, [isAdmin, router, toast]);
+
+  // Fetch Library Statistics (Only if admin)
   useEffect(() => {
     if (!isAdmin || isOfflineMode || !db) return;
 
@@ -185,19 +209,8 @@ export default function AdminPage() {
     );
   }
 
-  if (isAdmin === false) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <ShieldAlert className="h-16 w-16 text-destructive mb-4 opacity-20" />
-          <h1 className="text-3xl font-headline font-black mb-2">Access Denied</h1>
-          <p className="text-muted-foreground max-w-md">This area is reserved for administrators.</p>
-          <Button variant="outline" className="mt-6 rounded-xl" onClick={() => router.push('/')}>Return Home</Button>
-        </div>
-      </div>
-    );
-  }
+  // Final guard: Don't show anything if unauthorized
+  if (isAdmin === false) return null;
 
   return (
     <div className="min-h-screen pb-20 bg-background transition-colors duration-500">

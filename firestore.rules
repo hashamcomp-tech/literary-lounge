@@ -29,9 +29,7 @@ service cloud.firestore {
 
     // USER PROFILES
     match /users/{userId} {
-      // Allow public fetching of profiles by ID to support discovery
       allow get: if true;
-      // Allow signed-in users to list profiles for the Reader Directory
       allow list: if isSignedIn();
       
       allow create: if isSignedIn() && request.auth.uid == userId;
@@ -53,9 +51,9 @@ service cloud.firestore {
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
-    // SETTINGS & WHITELIST
+    // SETTINGS & WHITELIST - Strictly Admin Only
     match /settings/approvedEmails {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if isAdmin();
     }
 
@@ -107,12 +105,10 @@ service cloud.firestore {
 
     // CHATS (P2P and Book Lounges)
     match /chats/{chatId}/messages/{messageId} {
-      // Allow users to see messages in rooms they belong to
       allow read: if isSignedIn();
       allow create: if isSignedIn();
     }
     
-    // Catch-all for subcollections in books
     match /books/{bookId}/{document=**} {
       allow read: if true;
       allow write: if isApprovedUploader();

@@ -33,7 +33,7 @@ export default function Navbar() {
   const { user, isUserLoading } = useUser();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Guard the profile reference to ensure we only try to fetch it when auth is ready
+  // Guard the profile reference
   const profileRef = useMemoFirebase(() => {
     if (!db || !user || user.isAnonymous || isUserLoading) return null;
     return doc(db, 'users', user.uid);
@@ -41,26 +41,35 @@ export default function Navbar() {
 
   const { data: profile } = useDoc(profileRef);
 
+  // Robust Admin Verification for Navbar Link Visibility
   useEffect(() => {
-    const checkAdmin = async () => {
-      if (!db || !user || isUserLoading) {
+    const checkAdminStatus = async () => {
+      // Always hide admin tools in offline mode
+      if (isOfflineMode || !db || !user || isUserLoading) {
+        setIsAdmin(false);
+        return;
+      }
+
+      // 1. Never show to anonymous users
+      if (user.isAnonymous) {
         setIsAdmin(false);
         return;
       }
       
-      // Super admin check by email (including both known developer emails)
-      if (user.email === 'hashamcomp@gmail.com' || user.email === 'hashammazher@gmail.com') {
+      // 2. Super admin hardcoded override
+      const superAdmins = ['hashamcomp@gmail.com', 'hashammazher@gmail.com'];
+      if (user.email && superAdmins.includes(user.email)) {
         setIsAdmin(true);
         return;
       }
 
-      // Profile role check
+      // 3. Profile role check
       if (profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
       
-      // Whitelist check
+      // 4. Whitelist check
       if (user.email) {
         try {
           const settingsRef = doc(db, 'settings', 'approvedEmails');
@@ -68,14 +77,20 @@ export default function Navbar() {
           if (snap.exists()) {
             const emails = snap.data().emails || [];
             setIsAdmin(emails.includes(user.email));
+          } else {
+            setIsAdmin(false);
           }
         } catch (e) {
-          console.warn("Admin status check deferred.");
+          // Explicitly deny on any error (like Permission Denied)
+          setIsAdmin(false);
         }
+      } else {
+        setIsAdmin(false);
       }
     };
-    checkAdmin();
-  }, [user, profile, db, isUserLoading]);
+
+    checkAdminStatus();
+  }, [user, profile, db, isUserLoading, isOfflineMode]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,15 +146,6 @@ export default function Navbar() {
                     <Shield className="h-5 w-5" />
                   </Button>
                 </Link>
-              ) : isAdmin ? (
-                 <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="text-muted-foreground opacity-50 rounded-full cursor-not-allowed">
-                        <Shield className="h-5 w-5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Admin panel requires cloud connection</TooltipContent>
-                 </Tooltip>
               ) : null}
               
               <Link href="/messages">
