@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from 'next/link';
@@ -29,35 +30,53 @@ export default function Navbar() {
   const db = useFirestore();
   const { isOfflineMode } = useFirebase();
   const [searchQuery, setSearchQuery] = useState('');
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const profileRef = useMemoFirebase(() => (db && user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  // Guard the profile reference to ensure we only try to fetch it when auth is ready
+  const profileRef = useMemoFirebase(() => {
+    if (!db || !user || user.isAnonymous || isUserLoading) return null;
+    return doc(db, 'users', user.uid);
+  }, [db, user, isUserLoading]);
+
   const { data: profile } = useDoc(profileRef);
 
   useEffect(() => {
     const checkAdmin = async () => {
-      if (!db || !user || user.isAnonymous || !user.email) {
+      if (!db || !user || isUserLoading) {
         setIsAdmin(false);
         return;
       }
       
-      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
+      // Super admin check by email
+      if (user.email === 'hashamcomp@gmail.com') {
+        setIsAdmin(true);
+        return;
+      }
+
+      // Profile role check
+      if (profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
       
-      try {
-        const settingsRef = doc(db, 'settings', 'approvedEmails');
-        const snap = await getDoc(settingsRef);
-        if (snap.exists()) {
-          const emails = snap.data().emails || [];
-          setIsAdmin(emails.includes(user.email));
+      // Whitelist check
+      if (user.email) {
+        try {
+          const settingsRef = doc(db, 'settings', 'approvedEmails');
+          const snap = await getDoc(settingsRef);
+          if (snap.exists()) {
+            const emails = snap.data().emails || [];
+            setIsAdmin(emails.includes(user.email));
+          }
+        } catch (e) {
+          // Gracefully handle connection or permission issues during initialization
+          console.warn("Admin status check deferred.");
         }
-      } catch (e) {}
+      }
     };
     checkAdmin();
-  }, [user, profile, db]);
+  }, [user, profile, db, isUserLoading]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

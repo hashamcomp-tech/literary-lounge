@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -31,7 +32,12 @@ export default function AdminPage() {
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
 
-  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  // Guard the profile reference to ensure we only try to fetch it when auth is ready
+  const profileRef = useMemoFirebase(() => {
+    if (!db || !user || user.isAnonymous || isUserLoading) return null;
+    return doc(db, 'users', user.uid);
+  }, [db, user, isUserLoading]);
+  
   const { data: profile } = useDoc(profileRef);
 
   // Check if current user is approved/admin
@@ -41,17 +47,25 @@ export default function AdminPage() {
         setIsAdmin(false);
         return;
       }
-      if (isUserLoading) return;
-      if (!user || user.isAnonymous) {
-        setIsAdmin(false);
+      if (isUserLoading || !db) return;
+      if (!user) {
+        // Wait for potential anonymous sign-in or actual sign-in
         return;
       }
 
-      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
+      // If we have an email and it matches the super-admin
+      if (user.email === 'hashamcomp@gmail.com') {
         setIsAdmin(true);
         return;
       }
 
+      // If the Firestore profile confirms the admin role
+      if (profile?.role === 'admin') {
+        setIsAdmin(true);
+        return;
+      }
+
+      // Check the settings whitelist
       try {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
         const snap = await getDoc(settingsRef);
@@ -59,10 +73,12 @@ export default function AdminPage() {
           const emails = snap.data().emails || [];
           setIsAdmin(emails.includes(user.email));
         } else {
+          // If profile doesn't show admin and not in whitelist
           setIsAdmin(false);
         }
       } catch (e) {
-        setIsAdmin(false);
+        // Fallback for permission issues during initialization
+        console.warn("Admin check deferred due to connection state.");
       }
     };
     checkAdmin();
@@ -70,7 +86,7 @@ export default function AdminPage() {
 
   // Fetch Library Statistics
   useEffect(() => {
-    if (!isAdmin || isOfflineMode) return;
+    if (!isAdmin || isOfflineMode || !db) return;
 
     const fetchStats = async () => {
       setIsStatsLoading(true);
@@ -98,19 +114,20 @@ export default function AdminPage() {
   }, [db, isAdmin, isOfflineMode]);
 
   const requestsQuery = useMemoFirebase(() => {
-    if (!isAdmin || isOfflineMode) return null;
+    if (!isAdmin || isOfflineMode || !db) return null;
     return query(collection(db, 'publishRequests'), orderBy('requestedAt', 'desc'));
   }, [db, isAdmin, isOfflineMode]);
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
   const bookRequestsQuery = useMemoFirebase(() => {
-    if (!isAdmin || isOfflineMode) return null;
+    if (!isAdmin || isOfflineMode || !db) return null;
     return query(collection(db, 'cloudUploadRequests'));
   }, [db, isAdmin, isOfflineMode]);
   const { data: bookRequests } = useCollection(bookRequestsQuery);
 
   const handleApprove = async (requestId: string, email: string) => {
+    if (!db) return;
     setProcessingId(requestId);
     try {
       const approvedRef = doc(db, 'settings', 'approvedEmails');
@@ -126,6 +143,7 @@ export default function AdminPage() {
   };
 
   const handleReject = async (requestId: string) => {
+    if (!db) return;
     setProcessingId(requestId);
     try {
       await deleteDoc(doc(db, 'publishRequests', requestId));

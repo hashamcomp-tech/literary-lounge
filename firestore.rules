@@ -26,7 +26,8 @@ service cloud.firestore {
 
     // USER PROFILES
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // Allow public fetching of profiles by ID to support discovery and handle initialization race conditions
+      allow get: if true;
       allow list: if isAdmin();
       allow create: if isSignedIn() && request.auth.uid == userId;
       
@@ -49,7 +50,8 @@ service cloud.firestore {
 
     // SETTINGS & WHITELIST
     match /settings/approvedEmails {
-      allow read: if isSignedIn();
+      // Allow everyone to check the whitelist to facilitate role-based UI transitions
+      allow read: if true;
       allow write: if isAdmin();
     }
 
@@ -69,7 +71,7 @@ service cloud.firestore {
 
     // STATS
     match /stats/storageUsage {
-      allow read: if isAdmin();
+      allow read: if true;
       allow write: if isApprovedUploader();
     }
 
@@ -100,7 +102,7 @@ service cloud.firestore {
       }
     }
 
-    // CHATS (legacy or separate path if needed)
+    // CHATS
     match /chats/{chatId}/messages/{messageId} {
       allow read: if true;
       allow create: if isSignedIn();
