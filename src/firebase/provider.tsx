@@ -7,6 +7,7 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { firebaseConfig } from '@/firebase/config';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
+import { Loader2, ShieldAlert } from 'lucide-react';
 
 type FirebaseContextType = {
   app: FirebaseApp;
@@ -21,37 +22,47 @@ const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined
 
 export function FirebaseProvider({ children }: { children: ReactNode }) {
   const [firebaseContext, setFirebaseContext] = useState<FirebaseContextType | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [userState, setUserState] = useState<{ user: User | null; loading: boolean }>({
     user: null,
     loading: true,
   });
 
   useEffect(() => {
-    // 1. Initialize Firebase services
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-    const auth = getAuth(app);
-    const firestore = getFirestore(app);
-    const storage = getStorage(app);
+    try {
+      // 1. Initialize Firebase services
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      const auth = getAuth(app);
+      const firestore = getFirestore(app);
+      const storage = getStorage(app);
 
-    // 2. Setup Auth state listener
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        signInAnonymously(auth).catch(console.error);
-      } else {
-        setUserState({ user, loading: false });
-      }
-    });
+      // 2. Setup Auth state listener
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          // Attempt to provide a session for guests automatically
+          signInAnonymously(auth).catch((err) => {
+            console.error("Anonymous auth failed:", err);
+            setUserState({ user: null, loading: false });
+          });
+        } else {
+          setUserState({ user, loading: false });
+        }
+      });
 
-    setFirebaseContext({ 
-      app, 
-      auth, 
-      firestore, 
-      storage,
-      user: null, // Placeholder, updated via useEffect below
-      isUserLoading: true 
-    });
+      setFirebaseContext({ 
+        app, 
+        auth, 
+        firestore, 
+        storage,
+        user: null, // Placeholder, updated via userState
+        isUserLoading: true 
+      });
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (err: any) {
+      console.error("Firebase initialization failed:", err);
+      setError("Failed to connect to Lounge services. Please check your internet connection and Firebase configuration.");
+    }
   }, []);
 
   // Update context with live user state
@@ -61,7 +72,26 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
     isUserLoading: userState.loading
   } : null;
 
-  if (!contextValue) return null;
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-6 text-center">
+        <ShieldAlert className="h-16 w-16 text-destructive mb-4 opacity-20" />
+        <h1 className="text-3xl font-headline font-black mb-2">Connection Error</h1>
+        <p className="text-muted-foreground max-w-md">{error}</p>
+      </div>
+    );
+  }
+
+  if (!contextValue) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+        <p className="mt-4 text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">
+          Opening the Lounge...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <FirebaseContext.Provider value={contextValue}>
