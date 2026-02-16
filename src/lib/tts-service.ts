@@ -1,6 +1,6 @@
 
 /**
- * @fileOverview Utility for converting text to speech using ElevenLabs via an internal API route.
+ * @fileOverview Utility for converting text to speech using VoiceRSS via an internal API route.
  * This ensures API keys are kept secure on the server.
  */
 
@@ -12,14 +12,14 @@ export async function playTextToSpeech(text: string): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        // Truncate to a reasonable preview length if necessary
-        text: text.substring(0, 5000) 
+        // Truncate for optimal VoiceRSS performance
+        text: text.substring(0, 1000) 
       })
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error || "ElevenLabs TTS request failed.");
+      throw new Error(errorData.error || "VoiceRSS TTS request failed.");
     }
 
     const blob = await response.blob();
@@ -29,7 +29,7 @@ export async function playTextToSpeech(text: string): Promise<void> {
     // Play the generated audio
     await audio.play();
     
-    // Cleanup the URL after playback or if needed later
+    // Cleanup the URL after playback
     audio.onended = () => URL.revokeObjectURL(url);
   } catch (error: any) {
     console.error("TTS Service Error:", error);

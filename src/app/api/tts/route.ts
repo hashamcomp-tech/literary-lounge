@@ -1,46 +1,49 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ElevenLabsClient } from 'elevenlabs';
 
 /**
- * @fileOverview API Route for ElevenLabs Text-to-Speech conversion.
- * Handles server-side TTS processing to protect API keys and stream audio efficiently.
+ * @fileOverview API Route for VoiceRSS Text-to-Speech conversion.
+ * Proxies requests to VoiceRSS to keep the API key secure.
  */
 export async function POST(req: NextRequest) {
   try {
-    const { text, voiceId = 'JBFqnCBsd6RMkjVDRZzb' } = await req.json();
+    const { text } = await req.json();
 
     if (!text) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'ElevenLabs API key is missing. Please set ELEVENLABS_API_KEY in your environment.' },
-        { status: 500 }
-      );
-    }
+    const apiKey = 'f31ab5bc5aab4e578b3e2f57c800cb7d';
 
-    const elevenlabs = new ElevenLabsClient({ apiKey });
-
-    // Convert text to speech using ElevenLabs
-    // The SDK returns a readable stream in Node.js environments
-    const audioStream = await elevenlabs.textToSpeech.convert(voiceId, {
-      text,
-      modelId: 'eleven_multilingual_v2',
-      outputFormat: 'mp3_44100_128',
+    const params = new URLSearchParams({
+      key: apiKey,
+      hl: 'en-us',
+      src: text.substring(0, 1000), // VoiceRSS has character limits based on plan
+      c: 'MP3',
+      f: '44khz_16bit_stereo'
     });
 
-    // Return the audio stream directly to the client as a Response
-    return new Response(audioStream as any, {
+    const response = await fetch('https://api.voicerss.org/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error('VoiceRSS API request failed');
+    }
+
+    const audioBlob = await response.blob();
+
+    return new Response(audioBlob, {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Transfer-Encoding': 'chunked',
       },
     });
   } catch (error: any) {
-    console.error('ElevenLabs TTS Error:', error);
+    console.error('VoiceRSS TTS Error:', error);
     return NextResponse.json(
       { error: error.message || 'TTS conversion failed' },
       { status: 500 }
