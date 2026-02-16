@@ -6,9 +6,6 @@ import { MessageSquare, Hourglass, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 
-/**
- * @fileOverview Messaging Hub (Disabled State).
- */
 export default function MessagesPage() {
   const router = useRouter();
 

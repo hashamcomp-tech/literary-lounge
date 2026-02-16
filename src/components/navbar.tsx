@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { ModeToggle } from '@/components/mode-toggle';
 import {
   DropdownMenu,
@@ -33,7 +33,6 @@ export default function Navbar() {
   const { user, isUserLoading } = useUser();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Guard the profile reference
   const profileRef = useMemoFirebase(() => {
     if (!db || !user || user.isAnonymous || isUserLoading) return null;
     return doc(db, 'users', user.uid);
@@ -41,24 +40,18 @@ export default function Navbar() {
 
   const { data: profile } = useDoc(profileRef);
 
-  // Robust Admin Verification for Navbar Link Visibility
   useEffect(() => {
     const checkAdminStatus = async () => {
-      // Always hide admin tools in offline mode
       if (isOfflineMode || !db || !user || isUserLoading) {
         setIsAdmin(false);
         return;
       }
-
-      // 1. Only hashamcomp@gmail.com has admin control
       if (user.email === 'hashamcomp@gmail.com') {
         setIsAdmin(true);
         return;
       }
-
       setIsAdmin(false);
     };
-
     checkAdminStatus();
   }, [user, profile, db, isUserLoading, isOfflineMode]);
 

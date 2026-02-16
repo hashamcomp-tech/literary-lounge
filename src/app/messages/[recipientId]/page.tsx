@@ -6,9 +6,6 @@ import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, MessageSquareOff } from 'lucide-react';
 
-/**
- * @fileOverview Private 1:1 Chat Page (Disabled State).
- */
 export default function DirectChatPage() {
   const router = useRouter();
 
@@ -26,10 +23,10 @@ export default function DirectChatPage() {
           </p>
           <Button 
             variant="ghost" 
-            onClick={() => router.push('/messages')}
+            onClick={() => router.push('/')}
             className="rounded-xl font-bold text-muted-foreground hover:text-primary transition-colors"
           >
-            <ArrowLeft className="h-4 w-4 mr-2" /> Return to Directory
+            <ArrowLeft className="h-4 w-4 mr-2" /> Return to Library
           </Button>
         </div>
       </main>
