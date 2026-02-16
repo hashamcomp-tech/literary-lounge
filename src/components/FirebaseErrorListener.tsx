@@ -29,7 +29,6 @@ export function FirebaseErrorListener() {
 
   // Determine if the current user is an administrator
   const isAdmin = user?.email === 'hashamcomp@gmail.com' || 
-                  user?.email === 'hashammazher@gmail.com' || 
                   profile?.role === 'admin';
 
   useEffect(() => {

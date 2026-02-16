@@ -57,7 +57,7 @@ export default function AdminPage() {
       }
 
       // 2. Super admin hardcoded override
-      const superAdmins = ['hashamcomp@gmail.com', 'hashammazher@gmail.com'];
+      const superAdmins = ['hashamcomp@gmail.com'];
       if (user.email && superAdmins.includes(user.email)) {
         setIsAdmin(true);
         return;
