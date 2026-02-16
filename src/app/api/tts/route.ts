@@ -4,7 +4,7 @@ import { ElevenLabsClient } from 'elevenlabs';
 
 /**
  * @fileOverview API Route for ElevenLabs Text-to-Speech conversion.
- * Handles server-side TTS processing to protect API keys.
+ * Handles server-side TTS processing to protect API keys and stream audio efficiently.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -25,15 +25,15 @@ export async function POST(req: NextRequest) {
     const elevenlabs = new ElevenLabsClient({ apiKey });
 
     // Convert text to speech using ElevenLabs
-    const audio = await elevenlabs.textToSpeech.convert(voiceId, {
+    // The SDK returns a readable stream in Node.js environments
+    const audioStream = await elevenlabs.textToSpeech.convert(voiceId, {
       text,
       modelId: 'eleven_multilingual_v2',
       outputFormat: 'mp3_44100_128',
     });
 
-    // Return the audio stream directly to the client
-    // The SDK returns a readable stream that can be wrapped in a Response
-    return new Response(audio as any, {
+    // Return the audio stream directly to the client as a Response
+    return new Response(audioStream as any, {
       headers: {
         'Content-Type': 'audio/mpeg',
         'Transfer-Encoding': 'chunked',

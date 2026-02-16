@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -220,7 +221,7 @@ export function UploadNovelForm() {
           const chapterDoc = await book.load(item.href);
           // @ts-ignore
           const body = chapterDoc.querySelector('body');
-          if (body && body.innerText.length > 100) {
+          if (body && body.innerText.length > 50) {
             chapters.push({ 
               chapterNumber: idx++, 
               content: body.innerHTML, 
