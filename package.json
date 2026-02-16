@@ -8,7 +8,8 @@
     "build": "NODE_ENV=production next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sync": "git pull --no-rebase origin main"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.5",
