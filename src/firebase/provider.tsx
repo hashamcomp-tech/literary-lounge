@@ -7,41 +7,46 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { firebaseConfig } from '@/firebase/config';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
-import { Loader2, ShieldAlert } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 type FirebaseContextType = {
-  app: FirebaseApp;
-  auth: Auth;
-  firestore: Firestore;
-  storage: FirebaseStorage;
+  app: FirebaseApp | null;
+  auth: Auth | null;
+  firestore: Firestore | null;
+  storage: FirebaseStorage | null;
   user: User | null;
   isUserLoading: boolean;
+  isOfflineMode: boolean;
 };
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
 
 export function FirebaseProvider({ children }: { children: ReactNode }) {
   const [firebaseContext, setFirebaseContext] = useState<FirebaseContextType | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [userState, setUserState] = useState<{ user: User | null; loading: boolean }>({
     user: null,
     loading: true,
   });
 
   useEffect(() => {
-    try {
-      // 1. Initialize Firebase services
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-      const auth = getAuth(app);
-      const firestore = getFirestore(app);
-      const storage = getStorage(app);
+    let app: FirebaseApp | null = null;
+    let auth: Auth | null = null;
+    let firestore: Firestore | null = null;
+    let storage: FirebaseStorage | null = null;
+    let isOffline = false;
 
-      // 2. Setup Auth state listener
+    try {
+      // Attempt to initialize Firebase services
+      app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      auth = getAuth(app);
+      firestore = getFirestore(app);
+      storage = getStorage(app);
+
+      // Setup Auth state listener if auth is available
       const unsubscribe = onAuthStateChanged(auth, (user) => {
-        if (!user) {
-          // Attempt to provide a session for guests automatically
+        if (!user && auth) {
           signInAnonymously(auth).catch((err) => {
-            console.error("Anonymous auth failed:", err);
+            console.warn("Anonymous auth failed, proceeding in offline mode:", err);
             setUserState({ user: null, loading: false });
           });
         } else {
@@ -54,33 +59,33 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
         auth, 
         firestore, 
         storage,
-        user: null, // Placeholder, updated via userState
-        isUserLoading: true 
+        user: null, 
+        isUserLoading: true,
+        isOfflineMode: false
       });
 
       return () => unsubscribe();
-    } catch (err: any) {
-      console.error("Firebase initialization failed:", err);
-      setError("Failed to connect to Lounge services. Please check your internet connection and Firebase configuration.");
+    } catch (err) {
+      console.warn("Firebase not detected or configuration missing. Entering Independent Mode.");
+      isOffline = true;
+      setUserState({ user: null, loading: false });
+      setFirebaseContext({ 
+        app: null, 
+        auth: null, 
+        firestore: null, 
+        storage: null,
+        user: null, 
+        isUserLoading: false,
+        isOfflineMode: true 
+      });
     }
   }, []);
 
-  // Update context with live user state
   const contextValue = firebaseContext ? {
     ...firebaseContext,
     user: userState.user,
     isUserLoading: userState.loading
   } : null;
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-6 text-center">
-        <ShieldAlert className="h-16 w-16 text-destructive mb-4 opacity-20" />
-        <h1 className="text-3xl font-headline font-black mb-2">Connection Error</h1>
-        <p className="text-muted-foreground max-w-md">{error}</p>
-      </div>
-    );
-  }
 
   if (!contextValue) {
     return (
@@ -95,7 +100,7 @@ export function FirebaseProvider({ children }: { children: ReactNode }) {
 
   return (
     <FirebaseContext.Provider value={contextValue}>
-      <FirebaseErrorListener />
+      {contextValue.app && <FirebaseErrorListener />}
       {children}
     </FirebaseContext.Provider>
   );
@@ -107,7 +112,6 @@ export function useFirebase() {
   return context;
 }
 
-// Helper hooks for convenience
 export const useAuth = () => useFirebase().auth;
 export const useFirestore = () => useFirebase().firestore;
 export const useStorage = () => useFirebase().storage;
@@ -116,7 +120,6 @@ export const useUser = () => {
   return { user, isUserLoading };
 };
 
-// Re-export memoization helper
 export function useMemoFirebase<T>(factory: () => T, deps: React.DependencyList): T & {__memo?: boolean} {
   const memoized = React.useMemo(factory, deps);
   if (memoized && typeof memoized === 'object') {

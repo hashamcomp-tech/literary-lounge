@@ -4,7 +4,7 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, where } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, BookOpen, Eye, Star, Zap, Clock } from 'lucide-react';
+import { TrendingUp, Eye, Star, Zap, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
@@ -61,28 +61,29 @@ export default function RecommendationsSection({
     );
   }
 
-  if (!books || books.length === 0) return null;
+  // Gracefully handle missing firebase data
+  if (!db || !books || books.length === 0) return null;
 
   const sortedBooks = genre 
     ? [...books].sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0))
     : books;
 
   return (
-    <div className="py-8">
+    <div className="py-8 animate-in fade-in duration-700">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           {sortBy === 'createdAt' ? (
-            <Clock className="h-5 w-5 text-primary animate-pulse" />
+            <Clock className="h-5 w-5 text-primary" />
           ) : genre ? (
             <Star className="h-5 w-5 text-amber-500 fill-amber-500/20" />
           ) : (
-            <TrendingUp className="h-5 w-5 text-accent animate-pulse" />
+            <TrendingUp className="h-5 w-5 text-accent" />
           )}
           <h2 className="text-2xl font-headline font-bold">{title}</h2>
         </div>
         <div className="flex items-center gap-2">
            <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] uppercase font-black tracking-widest px-2 py-0.5">
-             {genre ? genre : sortBy === 'createdAt' ? 'New' : 'Trending'}
+             Cloud Collection
            </Badge>
         </div>
       </div>

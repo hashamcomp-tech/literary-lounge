@@ -1,13 +1,12 @@
-
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { ModeToggle } from '@/components/mode-toggle';
 import {
@@ -22,16 +21,17 @@ import {
 export default function Navbar() {
   const router = useRouter();
   const db = useFirestore();
+  const { isOfflineMode } = useFirebase();
   const [searchQuery, setSearchQuery] = useState('');
-  const { user, isUserLoading } = useUser();
+  const { user } = useUser();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  const profileRef = useMemoFirebase(() => (db && user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
   const { data: profile } = useDoc(profileRef);
 
   useEffect(() => {
     const checkAdmin = async () => {
-      if (!user || user.isAnonymous || !user.email) {
+      if (!db || !user || user.isAnonymous || !user.email) {
         setIsAdmin(false);
         return;
       }
@@ -85,13 +85,21 @@ export default function Navbar() {
         </form>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          {isAdmin && (
+          {isOfflineMode && (
+            <div className="px-3 py-1 bg-amber-500/10 text-amber-700 rounded-full flex items-center gap-2 border border-amber-500/20 mr-2 hidden md:flex">
+              <WifiOff className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-black uppercase tracking-widest">Independent Mode</span>
+            </div>
+          )}
+
+          {isAdmin && !isOfflineMode && (
             <Link href="/admin">
               <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full" title="Admin Dashboard">
                 <Shield className="h-5 w-5" />
               </Button>
             </Link>
           )}
+          
           <Link href="/upload">
             <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
               <Upload className="h-5 w-5" />
@@ -115,12 +123,14 @@ export default function Navbar() {
                   <span>Reading Preferences</span>
                 </DropdownMenuItem>
               </Link>
-              <Link href="/history">
-                <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
-                  <History className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span>Reading History</span>
-                </DropdownMenuItem>
-              </Link>
+              {!isOfflineMode && (
+                <Link href="/history">
+                  <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                    <History className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <span>Reading History</span>
+                  </DropdownMenuItem>
+                </Link>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
                 <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />
@@ -129,11 +139,13 @@ export default function Navbar() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Link href="/login">
-            <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
-              <User className="h-5 w-5" />
-            </Button>
-          </Link>
+          {!isOfflineMode && (
+            <Link href="/login">
+              <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
+                <User className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
     </nav>
