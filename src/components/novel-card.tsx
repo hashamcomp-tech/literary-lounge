@@ -9,13 +9,17 @@ interface NovelCardProps {
   novel: any;
 }
 
+/**
+ * @fileOverview Universal Novel Card.
+ * Intelligently routes between Mock, Cloud, and Local library collections.
+ */
 export default function NovelCard({ novel }: NovelCardProps) {
-  // Determine route based on metadata
-  const isLocal = novel.isLocalOnly || novel._isLocal;
-  // If it's not local, it's either from mock data (numeric IDs) or Firestore
-  const isCloud = !isLocal && isNaN(Number(novel.id));
+  // Explicitly determine route type
+  const isLocal = !!(novel.isLocalOnly || novel._isLocal);
+  const isCloud = !!(novel.isCloud && !isLocal);
   
-  let href = `/novel/${novel.id}`;
+  let href = `/novel/${novel.id}`; // Default to Mock
+  
   if (isLocal) {
     href = `/local-pages/${novel.id}/1`;
   } else if (isCloud) {
@@ -23,14 +27,12 @@ export default function NovelCard({ novel }: NovelCardProps) {
   }
 
   const authorName = novel.author || 'Unknown Author';
-  // Use coverURL primarily, fallback to picsum placeholder
   const displayImage = novel.coverURL || novel.coverImage || `https://picsum.photos/seed/${novel.id}/400/600`;
 
   return (
     <Link href={href}>
       <Card className="group overflow-hidden border-none shadow-none bg-transparent hover:bg-card/50 transition-colors duration-300">
         <CardContent className="p-0">
-          {/* Forced aspect ratio for consistency: 150px / 220px is ~0.68, aspect-[2/3] is close at 0.66 */}
           <div className="relative aspect-[150/220] w-full overflow-hidden rounded-lg mb-3 shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-all duration-500 border border-border/10">
             <Image
               src={displayImage}
