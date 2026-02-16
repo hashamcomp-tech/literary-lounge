@@ -12,7 +12,7 @@ export async function playTextToSpeech(text: string): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        // Truncate to a reasonable preview length if necessary, though ElevenLabs handles large text well
+        // Truncate to a reasonable preview length if necessary
         text: text.substring(0, 5000) 
       })
     });

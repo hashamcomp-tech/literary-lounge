@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2 } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -22,6 +23,10 @@ interface NovelReaderProps {
   novel: Novel;
 }
 
+/**
+ * @fileOverview Premium Reader for Mock Collection.
+ * Implements 700px optimized width, 18px Literata, and 1.6 line height.
+ */
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -97,7 +102,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background transition-colors duration-300">
-      <div className="flex-1 overflow-y-auto relative">
+      <div className="flex-1 overflow-y-auto relative" ref={scrollRef}>
         <main className="max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-foreground transition-colors duration-300">
           <header className="mb-10 text-center sm:text-left">
             <div className="flex items-center justify-between mb-8">
@@ -105,9 +110,9 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                 variant="ghost" 
                 size="sm" 
                 onClick={() => router.back()}
-                className="text-muted-foreground hover:text-primary"
+                className="text-muted-foreground hover:text-primary transition-colors group"
               >
-                <ArrowLeft className="h-4 w-4 mr-2" /> Back
+                <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
               </Button>
 
               <div className="flex gap-2">
@@ -117,9 +122,9 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
                   onClick={handleReadAloud}
                   disabled={isSpeaking}
-                  title="Read Aloud"
+                  title="Read Aloud with ElevenLabs"
                 >
-                  <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
+                  {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
                 <Link href={`/chat/${novel.id}`}>
                   <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5" title="Reader Lounge">
@@ -132,7 +137,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
                   className="rounded-full"
                 >
-                  {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  {theme === 'dark' ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
                 </Button>
                 <Sheet>
                   <SheetTrigger asChild>
@@ -140,20 +145,21 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                       <Menu className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="left">
+                  <SheetContent side="left" className="rounded-r-3xl border-none shadow-2xl">
                     <SheetHeader>
-                      <SheetTitle className="font-headline">{novel.title}</SheetTitle>
+                      <SheetTitle className="font-headline font-black text-2xl">{novel.title}</SheetTitle>
                     </SheetHeader>
-                    <ScrollArea className="h-[calc(100vh-120px)] mt-4">
+                    <ScrollArea className="h-[calc(100vh-120px)] mt-6">
                       <div className="space-y-1">
                         {novel.chapters.map((ch, idx) => (
                           <Button
                             key={ch.id}
                             variant={currentChapterIndex === idx ? "secondary" : "ghost"}
-                            className="w-full justify-start text-left"
+                            className={`w-full justify-start text-left rounded-xl ${currentChapterIndex === idx ? 'bg-primary/10 text-primary font-bold' : ''}`}
                             onClick={() => setCurrentChapterIndex(idx)}
                           >
-                            {idx + 1}. {ch.title}
+                            <span className="opacity-30 mr-3 font-mono text-xs">{idx + 1}</span>
+                            <span className="truncate">{ch.title}</span>
                           </Button>
                         ))}
                       </div>
@@ -164,52 +170,55 @@ export default function NovelReader({ novel }: NovelReaderProps) {
             </div>
 
             <div className="space-y-4">
-              <Badge variant="outline" className="uppercase tracking-widest text-[10px]">Mock Collection</Badge>
-              <h1 className="text-4xl sm:text-5xl font-headline font-black leading-tight tracking-tight">
+              <Badge variant="outline" className="uppercase tracking-widest text-[10px] font-black border-primary/20 text-primary bg-primary/5 px-3">Mock Collection</Badge>
+              <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight">
                 {novel.title}
               </h1>
-              <p className="text-lg text-muted-foreground italic">By {novel.author}</p>
+              <p className="text-xl text-muted-foreground italic font-medium opacity-80">By {novel.author}</p>
             </div>
           </header>
 
-          <article id={`chapter-${currentChapterIndex + 1}`} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-            <header className="mb-8 border-b pb-8">
-               <h2 className="text-3xl font-headline font-bold text-primary">
+          <article id={`chapter-${currentChapterIndex + 1}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <header className="mb-10 border-b border-border/50 pb-10">
+               <h2 className="text-4xl font-headline font-black text-primary leading-tight">
                  {currentChapter.title}
                </h2>
             </header>
 
-            <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6]">
+            <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
               {currentChapter.content.split('\n\n').map((para, i) => (
-                <p key={i} className="mb-6 first-letter:text-2xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2">
+                <p key={i} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1">
                   {para}
                 </p>
               ))}
             </div>
           </article>
 
-          <section className="mt-16 pt-10 border-t space-y-8">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
-              <nav className="chapter-nav flex items-center gap-4">
+          <section className="mt-20 pt-12 border-t border-border/50 space-y-8">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-8">
+              <nav className="chapter-nav flex items-center gap-6">
                 <Button 
                   variant="outline" 
+                  className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest shadow-sm"
                   disabled={currentChapterIndex === 0}
                   onClick={() => setCurrentChapterIndex(prev => prev - 1)}
                 >
-                  <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  <ChevronLeft className="h-4 w-4 mr-2" /> Prev
                 </Button>
                 
-                <span className="text-[10px] font-black uppercase text-muted-foreground/50">
-                  {currentChapterIndex + 1} / {novel.chapters.length}
-                </span>
+                <div className="text-center min-w-[80px]">
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
+                    {currentChapterIndex + 1} / {novel.chapters.length}
+                  </span>
+                </div>
 
                 <Button 
                   variant="default" 
-                  className="bg-primary hover:bg-primary/90"
+                  className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest"
                   disabled={currentChapterIndex === novel.chapters.length - 1}
                   onClick={() => setCurrentChapterIndex(prev => prev + 1)}
                 >
-                  Next <ChevronRight className="h-4 w-4 ml-1" />
+                  Next <ChevronRight className="h-4 w-4 ml-2" />
                 </Button>
               </nav>
             </div>
@@ -217,8 +226,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
         </main>
       </div>
 
-      <div className="h-1 bg-muted w-full fixed bottom-0 left-0">
-        <Progress value={progress} className="h-full rounded-none" />
+      <div className="h-1 bg-muted w-full fixed bottom-0 left-0 z-50">
+        <Progress value={progress} className="h-full rounded-none bg-primary/10" />
       </div>
     </div>
   );

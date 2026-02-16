@@ -32,10 +32,11 @@ export async function POST(req: NextRequest) {
     });
 
     // Return the audio stream directly to the client
-    // The official SDK returns a Readable stream in Node environment
+    // The SDK returns a readable stream that can be wrapped in a Response
     return new Response(audio as any, {
       headers: {
         'Content-Type': 'audio/mpeg',
+        'Transfer-Encoding': 'chunked',
       },
     });
   } catch (error: any) {
