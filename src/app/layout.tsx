@@ -4,6 +4,7 @@ import './globals.css';
 import { FirebaseClientProvider } from '@/firebase';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
+import { Analytics } from '@vercel/analytics/react';
 
 export const metadata: Metadata = {
   title: 'Literary Lounge | Your Personalized Library',
@@ -31,6 +32,7 @@ export default function RootLayout({
         >
           <FirebaseClientProvider>
             {children}
+            <Analytics />
             <Toaster />
           </FirebaseClientProvider>
         </ThemeProvider>
