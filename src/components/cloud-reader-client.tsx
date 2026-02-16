@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, PlayCircle } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -20,8 +20,9 @@ interface CloudReaderClientProps {
 }
 
 /**
- * @fileOverview Refined Cloud Reader Client.
- * Features 'Click to Read from Here' functionality.
+ * @fileOverview Cloud Reader Client.
+ * Implements a 700px optimized width reading experience.
+ * Features invisible 'Click to Read from Here' functionality.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -238,7 +239,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <h2 className="text-4xl font-headline font-black leading-tight text-primary">
             {currentChapter.title || `Chapter ${currentChapter.chapterNumber}`}
           </h2>
-          <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mt-4 opacity-50">Click any paragraph to read from that point.</p>
         </header>
 
         <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] font-body leading-[1.6] text-foreground/90">
@@ -246,11 +246,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <p 
               key={idx} 
               onClick={() => handleReadAloud(idx)}
-              className="mb-8 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -m-2 transition-colors relative group/para first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+              className="mb-8 cursor-pointer first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
             >
-              <span className="absolute -left-6 top-3 opacity-0 group-hover/para:opacity-100 transition-opacity">
-                <PlayCircle className="h-4 w-4 text-primary" />
-              </span>
               {cleanPara}
             </p>
           ))}

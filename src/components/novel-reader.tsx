@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Loader2, PlayCircle } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -24,9 +24,9 @@ interface NovelReaderProps {
 }
 
 /**
- * @fileOverview Premium Reader for Mock Collection.
- * Implements 700px optimized width, 18px Literata, and 1.6 line height.
- * Features 'Click to Read from Here' functionality.
+ * @fileOverview Reader for Mock Collection.
+ * Implements 700px optimized width reading experience.
+ * Features invisible 'Click to Read from Here' functionality.
  */
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
@@ -199,7 +199,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                <h2 className="text-4xl font-headline font-black text-primary leading-tight">
                  {currentChapter.title}
                </h2>
-               <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mt-4 opacity-50">Click any paragraph to read from that point.</p>
             </header>
 
             <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
@@ -207,11 +206,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                 <p 
                   key={i} 
                   onClick={() => handleReadAloud(i)}
-                  className="mb-8 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -m-2 transition-colors relative group/para first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+                  className="mb-8 cursor-pointer first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
                 >
-                  <span className="absolute -left-6 top-3 opacity-0 group-hover/para:opacity-100 transition-opacity">
-                    <PlayCircle className="h-4 w-4 text-primary" />
-                  </span>
                   {para}
                 </p>
               ))}
