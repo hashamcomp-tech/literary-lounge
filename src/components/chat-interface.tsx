@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -10,6 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, Send, MessageSquare, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 interface ChatInterfaceProps {
   chatId: string;
@@ -41,24 +42,28 @@ export default function ChatInterface({ chatId, title }: ChatInterfaceProps) {
     }
   }, [messages]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !user || !db) return;
 
     const text = inputText.trim();
     setInputText('');
 
-    try {
-      // Non-blocking mutation pattern
-      addDoc(collection(db, 'chats', chatId, 'messages'), {
-        senderId: user.uid,
-        senderName: user.displayName || user.email?.split('@')[0] || 'Reader',
-        text: text,
-        timestamp: serverTimestamp()
-      });
-    } catch (error) {
-      console.error("Chat error:", error);
-    }
+    const colRef = collection(db, 'chats', chatId, 'messages');
+    const messageData = {
+      senderId: user.uid,
+      senderName: user.displayName || user.email?.split('@')[0] || 'Reader',
+      text: text,
+      timestamp: serverTimestamp()
+    };
+
+    addDoc(colRef, messageData).catch(async (err) => {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({
+        path: colRef.path,
+        operation: 'create',
+        requestResourceData: messageData,
+      }));
+    });
   };
 
   return (

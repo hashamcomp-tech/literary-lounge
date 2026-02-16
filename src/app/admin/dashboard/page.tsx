@@ -10,6 +10,8 @@ import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, Ar
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 const MAX_STORAGE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB free tier
 
@@ -30,45 +32,81 @@ export default function AdminDashboard() {
 
     // 1. Real-time stats listener for storage usage
     const statsRef = doc(db, 'stats', 'storageUsage');
-    const unsubscribeStats = onSnapshot(statsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const used = docSnap.data().storageBytesUsed || 0;
-        setStorageUsed(used);
-        setRemainingStorage(MAX_STORAGE_BYTES - used);
+    const unsubscribeStats = onSnapshot(
+      statsRef, 
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const used = docSnap.data().storageBytesUsed || 0;
+          setStorageUsed(used);
+          setRemainingStorage(MAX_STORAGE_BYTES - used);
+        }
+      },
+      async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: statsRef.path,
+          operation: 'get',
+        }));
       }
-    });
+    );
 
     // 2. Real-time listener for the users collection
     const usersRef = collection(db, 'users');
-    const unsubscribeUsers = onSnapshot(usersRef, (snapshot) => {
-      setTotalUsers(snapshot.size); // Firestore snapshot size gives total docs
-    });
+    const unsubscribeUsers = onSnapshot(
+      usersRef, 
+      (snapshot) => {
+        setTotalUsers(snapshot.size); 
+      },
+      async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: usersRef.path,
+          operation: 'list',
+        }));
+      }
+    );
 
     // 3. Real-time listener for the books collection
     const booksRef = collection(db, 'books');
-    const unsubscribeBooks = onSnapshot(booksRef, async (snapshot) => {
-      setBookCount(snapshot.size);
+    const unsubscribeBooks = onSnapshot(
+      booksRef, 
+      async (snapshot) => {
+        setBookCount(snapshot.size);
 
-      // Recalculate total chapters across all books in real-time
-      try {
-        const chapterPromises = snapshot.docs.map(bookDoc => 
-          getDocs(collection(db, 'books', bookDoc.id, 'chapters'))
-        );
-        const chapterSnaps = await Promise.all(chapterPromises);
-        const total = chapterSnaps.reduce((sum, snap) => sum + snap.size, 0);
-        setChapterCount(total);
-      } catch (err) {
-        console.warn("Failed to aggregate chapters in real-time:", err);
+        // Recalculate total chapters across all books in real-time
+        try {
+          const chapterPromises = snapshot.docs.map(bookDoc => 
+            getDocs(collection(db, 'books', bookDoc.id, 'chapters'))
+          );
+          const chapterSnaps = await Promise.all(chapterPromises);
+          const total = chapterSnaps.reduce((sum, snap) => sum + snap.size, 0);
+          setChapterCount(total);
+        } catch (err) {
+          // Inner errors handled contextually if needed
+        }
+      },
+      async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: booksRef.path,
+          operation: 'list',
+        }));
       }
-    });
+    );
 
     // 4. Real-time listener for cloud upload requests (recent only)
     const requestsRef = collection(db, 'cloudUploadRequests');
     const requestsQuery = query(requestsRef, orderBy('requestedAt', 'desc'), limit(5));
-    const unsubscribeRequests = onSnapshot(requestsQuery, (snapshot) => {
-      setRecentRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-      setIsLoading(false);
-    });
+    const unsubscribeRequests = onSnapshot(
+      requestsQuery, 
+      (snapshot) => {
+        setRecentRequests(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        setIsLoading(false);
+      },
+      async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: requestsRef.path,
+          operation: 'list',
+        }));
+      }
+    );
 
     return () => {
       unsubscribeStats();

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -15,6 +14,8 @@ import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export default function AdminPage() {
   const db = useFirestore();
@@ -50,41 +51,36 @@ export default function AdminPage() {
       
       if (isUserLoading || !db) return;
 
-      // 1. Block anonymous users immediately
       if (!user || user.isAnonymous) {
         setIsAdmin(false);
         return;
       }
 
-      // 2. Super admin hardcoded override
       const superAdmins = ['hashamcomp@gmail.com'];
       if (user.email && superAdmins.includes(user.email)) {
         setIsAdmin(true);
         return;
       }
 
-      // 3. Profile role check
       if (profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
 
-      // 4. Whitelist check
       if (user.email) {
-        try {
-          const settingsRef = doc(db, 'settings', 'approvedEmails');
-          const snap = await getDoc(settingsRef);
-          if (snap.exists()) {
-            const emails = snap.data().emails || [];
-            setIsAdmin(emails.includes(user.email));
-          } else {
+        const settingsRef = doc(db, 'settings', 'approvedEmails');
+        getDoc(settingsRef)
+          .then((snap) => {
+            if (snap.exists()) {
+              const emails = snap.data().emails || [];
+              setIsAdmin(emails.includes(user.email!));
+            } else {
+              setIsAdmin(false);
+            }
+          })
+          .catch(() => {
             setIsAdmin(false);
-          }
-        } catch (e) {
-          // If the whitelist read is denied (which it is for non-admins), 
-          // we treat them as not an admin.
-          setIsAdmin(false);
-        }
+          });
       } else {
         setIsAdmin(false);
       }
@@ -125,7 +121,10 @@ export default function AdminPage() {
         
         setChapterCount(total);
       } catch (err) {
-        console.error("Failed to fetch admin stats:", err);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: 'books',
+          operation: 'list',
+        }));
       } finally {
         setIsStatsLoading(false);
       }
@@ -150,30 +149,41 @@ export default function AdminPage() {
   const handleApprove = async (requestId: string, email: string) => {
     if (!db) return;
     setProcessingId(requestId);
-    try {
-      const approvedRef = doc(db, 'settings', 'approvedEmails');
-      await updateDoc(approvedRef, { emails: arrayUnion(email) });
-      await deleteDoc(doc(db, 'publishRequests', requestId));
+    
+    const approvedRef = doc(db, 'settings', 'approvedEmails');
+    const deleteReqRef = doc(db, 'publishRequests', requestId);
 
-      toast({ title: "User Approved", description: `${email} has been added to the cloud contributors.` });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Approval Failed", description: "Could not update the whitelist." });
-    } finally {
-      setProcessingId(null);
-    }
+    updateDoc(approvedRef, { emails: arrayUnion(email) })
+      .then(() => deleteDoc(deleteReqRef))
+      .then(() => {
+        toast({ title: "User Approved", description: `${email} has been added to the cloud contributors.` });
+      })
+      .catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: approvedRef.path,
+          operation: 'update',
+          requestResourceData: { emails: arrayUnion(email) }
+        }));
+      })
+      .finally(() => setProcessingId(null));
   };
 
   const handleReject = async (requestId: string) => {
     if (!db) return;
     setProcessingId(requestId);
-    try {
-      await deleteDoc(doc(db, 'publishRequests', requestId));
-      toast({ title: "Request Rejected", description: "The request has been removed." });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Rejection Failed", description: "Could not remove the request." });
-    } finally {
-      setProcessingId(null);
-    }
+    const docRef = doc(db, 'publishRequests', requestId);
+    
+    deleteDoc(docRef)
+      .then(() => {
+        toast({ title: "Request Rejected", description: "The request has been removed." });
+      })
+      .catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'delete',
+        }));
+      })
+      .finally(() => setProcessingId(null));
   };
 
   if (isUserLoading || (isAdmin === null && !isOfflineMode)) {
@@ -209,7 +219,6 @@ export default function AdminPage() {
     );
   }
 
-  // Final guard: Don't show anything if unauthorized
   if (isAdmin === false) return null;
 
   return (
