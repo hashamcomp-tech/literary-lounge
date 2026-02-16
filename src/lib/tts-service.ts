@@ -1,7 +1,5 @@
-
 /**
  * @fileOverview Utility for converting text to speech using VoiceRSS via an internal API route.
- * This ensures API keys are kept secure on the server.
  */
 
 export interface TTSOptions {
@@ -9,6 +7,9 @@ export interface TTSOptions {
   rate?: string;
 }
 
+/**
+ * Sends text to the internal TTS API and plays the returned audio.
+ */
 export async function playTextToSpeech(text: string, options: TTSOptions = {}): Promise<void> {
   try {
     const response = await fetch('/api/tts', {

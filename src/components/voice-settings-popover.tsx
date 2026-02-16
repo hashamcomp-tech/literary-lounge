@@ -1,8 +1,7 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings2, Volume2, Globe, Gauge } from 'lucide-react';
+import { Settings2, Volume2, Globe, Gauge, Play, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -18,6 +17,8 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
+import { playTextToSpeech } from '@/lib/tts-service';
+import { useToast } from '@/hooks/use-toast';
 
 export interface VoiceSettings {
   lang: string;
@@ -34,6 +35,8 @@ const LANGUAGES = [
 ];
 
 export function VoiceSettingsPopover() {
+  const { toast } = useToast();
+  const [isTesting, setIsTesting] = useState(false);
   const [settings, setSettings] = useState<VoiceSettings>({
     lang: 'en-us',
     rate: '0',
@@ -42,7 +45,11 @@ export function VoiceSettingsPopover() {
   useEffect(() => {
     const saved = localStorage.getItem('lounge-voice-settings');
     if (saved) {
-      setSettings(JSON.parse(saved));
+      try {
+        setSettings(JSON.parse(saved));
+      } catch (e) {
+        console.warn("Could not parse saved voice settings");
+      }
     }
   }, []);
 
@@ -50,6 +57,21 @@ export function VoiceSettingsPopover() {
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
     localStorage.setItem('lounge-voice-settings', JSON.stringify(newSettings));
+  };
+
+  const handleTestVoice = async () => {
+    setIsTesting(true);
+    try {
+      await playTextToSpeech("Welcome to the Literary Lounge. This is your selected reading voice.", settings);
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Test Failed",
+        description: err.message || "Failed to generate test audio."
+      });
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   return (
@@ -121,6 +143,16 @@ export function VoiceSettingsPopover() {
                 <span>Fast</span>
               </div>
             </div>
+
+            <Button 
+              variant="secondary" 
+              className="w-full rounded-xl font-bold gap-2 mt-2" 
+              onClick={handleTestVoice}
+              disabled={isTesting}
+            >
+              {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Test Voice
+            </Button>
           </div>
         </div>
       </PopoverContent>

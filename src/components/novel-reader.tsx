@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -89,7 +88,14 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     try {
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
-      await playTextToSpeech(currentChapter.content, voiceOptions);
+      
+      // Clean HTML and extra whitespace for the TTS engine
+      const plainText = currentChapter.content
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>?/gm, '')
+        .trim();
+        
+      await playTextToSpeech(plainText, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
