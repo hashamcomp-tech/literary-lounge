@@ -4,7 +4,12 @@
  * This ensures API keys are kept secure on the server.
  */
 
-export async function playTextToSpeech(text: string): Promise<void> {
+export interface TTSOptions {
+  lang?: string;
+  rate?: string;
+}
+
+export async function playTextToSpeech(text: string, options: TTSOptions = {}): Promise<void> {
   try {
     const response = await fetch('/api/tts', {
       method: 'POST',
@@ -12,8 +17,9 @@ export async function playTextToSpeech(text: string): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        // Truncate for optimal VoiceRSS performance
-        text: text.substring(0, 1000) 
+        text: text.substring(0, 1000),
+        lang: options.lang || 'en-us',
+        rate: options.rate || '0'
       })
     });
 

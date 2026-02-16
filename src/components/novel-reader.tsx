@@ -18,6 +18,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
 import { playTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
+import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -86,7 +87,9 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (!currentChapter?.content) return;
     setIsSpeaking(true);
     try {
-      await playTextToSpeech(currentChapter.content);
+      const savedSettings = localStorage.getItem('lounge-voice-settings');
+      const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
+      await playTextToSpeech(currentChapter.content, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -122,10 +125,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
                   onClick={handleReadAloud}
                   disabled={isSpeaking}
-                  title="Read Aloud with ElevenLabs"
+                  title="Read Aloud"
                 >
                   {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
+                <VoiceSettingsPopover />
                 <Link href={`/chat/${novel.id}`}>
                   <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5" title="Reader Lounge">
                     <MessageSquare className="h-4 w-4" />

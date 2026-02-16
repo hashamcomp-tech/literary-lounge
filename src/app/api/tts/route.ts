@@ -4,10 +4,11 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * @fileOverview API Route for VoiceRSS Text-to-Speech conversion.
  * Proxies requests to VoiceRSS to keep the API key secure.
+ * Now supports dynamic language and rate parameters.
  */
 export async function POST(req: NextRequest) {
   try {
-    const { text } = await req.json();
+    const { text, lang, rate } = await req.json();
 
     if (!text) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
@@ -17,7 +18,8 @@ export async function POST(req: NextRequest) {
 
     const params = new URLSearchParams({
       key: apiKey,
-      hl: 'en-us',
+      hl: lang || 'en-us',
+      r: rate || '0', // Speech rate, from -10 to 10
       src: text.substring(0, 1000), // VoiceRSS has character limits based on plan
       c: 'MP3',
       f: '44khz_16bit_stereo'

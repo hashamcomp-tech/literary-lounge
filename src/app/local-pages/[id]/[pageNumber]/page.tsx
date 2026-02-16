@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -10,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
+import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 /**
  * @fileOverview Refined Local Reader Component.
@@ -69,12 +71,13 @@ export default function LocalReader() {
     
     setIsSpeaking(true);
     try {
-      // Robust plain text extraction for TTS
+      const savedSettings = localStorage.getItem('lounge-voice-settings');
+      const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
       const plainText = chapter.content
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<[^>]*>?/gm, '')
         .trim();
-      await playTextToSpeech(plainText);
+      await playTextToSpeech(plainText, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -153,6 +156,7 @@ export default function LocalReader() {
               >
                 <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
               </Button>
+              <VoiceSettingsPopover />
               <Button 
                 variant="outline" 
                 size="icon" 

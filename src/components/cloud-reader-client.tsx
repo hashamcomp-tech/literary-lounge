@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -12,6 +13,7 @@ import Link from 'next/link';
 import { playTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 interface CloudReaderClientProps {
   id: string;
@@ -108,8 +110,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     
     setIsSpeaking(true);
     try {
+      const savedSettings = localStorage.getItem('lounge-voice-settings');
+      const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
       const plainText = currentChapter.content.replace(/<[^>]*>?/gm, '');
-      await playTextToSpeech(plainText);
+      await playTextToSpeech(plainText, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -184,6 +188,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             >
               <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
             </Button>
+            <VoiceSettingsPopover />
             <Link href={`/chat/${id}`}>
               <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5 shadow-sm" title="Reader Lounge">
                 <MessageSquare className="h-4 w-4" />
