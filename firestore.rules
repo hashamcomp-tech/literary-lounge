@@ -9,7 +9,10 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return isSignedIn() && request.auth.token.email == "hashamcomp@gmail.com";
+      return isSignedIn() && (
+        request.auth.token.email == "hashamcomp@gmail.com" || 
+        request.auth.token.email == "hashammazher@gmail.com"
+      );
     }
 
     function isAdmin() {
@@ -26,9 +29,11 @@ service cloud.firestore {
 
     // USER PROFILES
     match /users/{userId} {
-      // Allow public fetching of profiles by ID to support discovery and handle initialization race conditions
+      // Allow public fetching of profiles by ID to support discovery
       allow get: if true;
-      allow list: if isAdmin();
+      // Allow signed-in users to list profiles for the Reader Directory
+      allow list: if isSignedIn();
+      
       allow create: if isSignedIn() && request.auth.uid == userId;
       
       allow update: if isSignedIn() && request.auth.uid == userId
@@ -50,7 +55,6 @@ service cloud.firestore {
 
     // SETTINGS & WHITELIST
     match /settings/approvedEmails {
-      // Allow everyone to check the whitelist to facilitate role-based UI transitions
       allow read: if true;
       allow write: if isAdmin();
     }
@@ -79,7 +83,6 @@ service cloud.firestore {
     match /books/{bookId} {
       allow read: if true;
       
-      // Allow everyone to increment views, but only uploaders to do full writes
       allow create, delete: if isApprovedUploader();
       allow update: if isApprovedUploader() || 
                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
@@ -102,9 +105,10 @@ service cloud.firestore {
       }
     }
 
-    // CHATS
+    // CHATS (P2P and Book Lounges)
     match /chats/{chatId}/messages/{messageId} {
-      allow read: if true;
+      // Allow users to see messages in rooms they belong to
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
     }
     

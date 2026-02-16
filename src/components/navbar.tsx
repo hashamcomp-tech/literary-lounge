@@ -48,8 +48,8 @@ export default function Navbar() {
         return;
       }
       
-      // Super admin check by email
-      if (user.email === 'hashamcomp@gmail.com') {
+      // Super admin check by email (including both known developer emails)
+      if (user.email === 'hashamcomp@gmail.com' || user.email === 'hashammazher@gmail.com') {
         setIsAdmin(true);
         return;
       }
@@ -70,7 +70,6 @@ export default function Navbar() {
             setIsAdmin(emails.includes(user.email));
           }
         } catch (e) {
-          // Gracefully handle connection or permission issues during initialization
           console.warn("Admin status check deferred.");
         }
       }

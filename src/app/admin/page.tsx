@@ -49,12 +49,11 @@ export default function AdminPage() {
       }
       if (isUserLoading || !db) return;
       if (!user) {
-        // Wait for potential anonymous sign-in or actual sign-in
         return;
       }
 
-      // If we have an email and it matches the super-admin
-      if (user.email === 'hashamcomp@gmail.com') {
+      // Updated to include both admin emails
+      if (user.email === 'hashamcomp@gmail.com' || user.email === 'hashammazher@gmail.com') {
         setIsAdmin(true);
         return;
       }
@@ -73,11 +72,9 @@ export default function AdminPage() {
           const emails = snap.data().emails || [];
           setIsAdmin(emails.includes(user.email));
         } else {
-          // If profile doesn't show admin and not in whitelist
           setIsAdmin(false);
         }
       } catch (e) {
-        // Fallback for permission issues during initialization
         console.warn("Admin check deferred due to connection state.");
       }
     };
