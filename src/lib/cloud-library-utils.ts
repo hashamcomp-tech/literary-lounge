@@ -1,4 +1,6 @@
 import { doc, deleteDoc, getDoc, updateDoc, increment, collection, getDocs, writeBatch, Firestore } from "firebase/firestore";
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 /**
  * Handles the complete removal of a cloud novel and its associated data.
@@ -35,15 +37,23 @@ export async function deleteCloudBook(db: Firestore, bookId: string) {
   batch.delete(bookRef);
   
   // 5. Commit the batch
-  await batch.commit();
+  return batch.commit().catch(async (serverError) => {
+    const permissionError = new FirestorePermissionError({
+      path: bookRef.path,
+      operation: 'delete',
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    throw serverError;
+  });
 
-  // 6. Update Global Storage Usage Stats (Decrement)
+  // 6. Update Global Storage Usage Stats (Decrement) - Handled after batch success
+  // Note: Since this is outside the batch, it's an optimistic update.
   if (coverSize > 0) {
     const statsRef = doc(db, 'stats', 'storageUsage');
     updateDoc(statsRef, { 
       storageBytesUsed: increment(-coverSize) 
-    }).catch((err) => {
-      console.warn("Failed to update storage stats during deletion:", err);
+    }).catch(async (err) => {
+      // Background update failure is logged but doesn't block deletion success
     });
   }
 }

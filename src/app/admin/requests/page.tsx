@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, BookOpen, Clock, Trash2, CheckCircle2, ArrowLeft, MessageSquareQuote, User, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 /**
  * @fileOverview Admin dashboard for managing cloud upload requests.
@@ -29,17 +31,25 @@ export default function AdminRequestsDashboard() {
 
   const { data: requests, isLoading } = useCollection(requestsQuery);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!db) return;
     setProcessingId(id);
-    try {
-      await deleteDoc(doc(db, 'cloudUploadRequests', id));
-      toast({ title: "Request Removed", description: "The request has been cleared from the dashboard." });
-    } catch (error) {
-      toast({ variant: "destructive", title: "Error", description: "Failed to remove request." });
-    } finally {
-      setProcessingId(null);
-    }
+    const docRef = doc(db, 'cloudUploadRequests', id);
+    
+    deleteDoc(docRef)
+      .then(() => {
+        toast({ title: "Request Removed", description: "The request has been cleared from the dashboard." });
+      })
+      .catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'delete',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      })
+      .finally(() => {
+        setProcessingId(null);
+      });
   };
 
   return (

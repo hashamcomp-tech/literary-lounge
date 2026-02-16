@@ -53,24 +53,23 @@ export default function NovelCard({ novel }: NovelCardProps) {
   const authorName = novel.author || 'Unknown Author';
   const displayImage = novel.coverURL || novel.coverImage || `https://picsum.photos/seed/${novel.id}/400/600`;
 
-  const handleDeleteCloudBook = async () => {
+  const handleDeleteCloudBook = () => {
     if (!db || !novel.id) return;
     setIsDeleting(true);
-    try {
-      await deleteCloudBook(db, novel.id);
-      toast({
-        title: "Manuscript Removed",
-        description: `"${novel.title}" has been deleted from the global Lounge.`
+    
+    deleteCloudBook(db, novel.id)
+      .then(() => {
+        toast({
+          title: "Manuscript Removed",
+          description: `"${novel.title}" has been deleted from the global Lounge.`
+        });
+      })
+      .catch((err: any) => {
+        // Specialized error handled by lib/cloud-library-utils and FirebaseErrorListener
+      })
+      .finally(() => {
+        setIsDeleting(false);
       });
-    } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Deletion Failed",
-        description: err.message || "Could not remove the manuscript."
-      });
-    } finally {
-      setIsDeleting(false);
-    }
   };
 
   return (

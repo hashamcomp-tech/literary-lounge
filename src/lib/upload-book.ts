@@ -1,6 +1,8 @@
 import { doc, setDoc, serverTimestamp, Firestore, increment, getDoc, updateDoc } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 interface Chapter {
   chapterNumber: number;
@@ -84,34 +86,64 @@ export async function uploadBookToCloud({
     }))
   };
 
-  // We use setDoc without await to keep the UI responsive, 
-  // but since this is a multi-step critical upload, we await the first key steps.
-  await setDoc(bookRef, rootPayload, { merge: true });
+  // Initiate root document write
+  await setDoc(bookRef, rootPayload, { merge: true }).catch(async (serverError) => {
+    const permissionError = new FirestorePermissionError({
+      path: bookRef.path,
+      operation: 'write',
+      requestResourceData: rootPayload,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+    throw serverError;
+  });
 
   // 4. Set Detailed Metadata
   const infoRef = doc(db, 'books', bookId, 'metadata', 'info');
-  await setDoc(infoRef, metadataInfo, { merge: true });
+  setDoc(infoRef, metadataInfo, { merge: true }).catch(async (serverError) => {
+    const permissionError = new FirestorePermissionError({
+      path: infoRef.path,
+      operation: 'write',
+      requestResourceData: metadataInfo,
+    });
+    errorEmitter.emit('permission-error', permissionError);
+  });
 
   // 5. Update Global Storage Usage Stats
   const statsRef = doc(db, 'stats', 'storageUsage');
-  const snap = await getDoc(statsRef);
-  if (!snap.exists()) {
-    await setDoc(statsRef, { storageBytesUsed: 0 });
-  }
-  await updateDoc(statsRef, { 
-    storageBytesUsed: increment(coverSize) 
+  getDoc(statsRef).then((snap) => {
+    if (!snap.exists()) {
+      setDoc(statsRef, { storageBytesUsed: 0 }).catch(() => {});
+    }
+    updateDoc(statsRef, { 
+      storageBytesUsed: increment(coverSize) 
+    }).catch(async (serverError) => {
+      const permissionError = new FirestorePermissionError({
+        path: statsRef.path,
+        operation: 'update',
+        requestResourceData: { storageBytesUsed: increment(coverSize) },
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    });
   });
 
   // 6. Set Chapters in subcollection (Maintains scalability for very large books)
   for (const ch of chapters) {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
-    setDoc(chRef, {
+    const chData = {
       ...ch,
       title: ch.title || `Chapter ${ch.chapterNumber}`,
       ownerId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    }, { merge: true });
+    };
+    setDoc(chRef, chData, { merge: true }).catch(async (serverError) => {
+      const permissionError = new FirestorePermissionError({
+        path: chRef.path,
+        operation: 'write',
+        requestResourceData: chData,
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    });
   }
 
   return { bookId, coverURL };
