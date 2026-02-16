@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -246,7 +247,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <p 
               key={idx} 
               onClick={() => handleReadAloud(idx)}
-              className="mb-8 cursor-pointer first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+              className="mb-8 cursor-pointer"
             >
               {cleanPara}
             </p>

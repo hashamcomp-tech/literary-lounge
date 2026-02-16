@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -206,7 +207,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                 <p 
                   key={i} 
                   onClick={() => handleReadAloud(i)}
-                  className="mb-8 cursor-pointer first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+                  className="mb-8 cursor-pointer"
                 >
                   {para}
                 </p>
