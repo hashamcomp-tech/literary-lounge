@@ -2,7 +2,7 @@
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff, CloudOff } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff, CloudOff, Mail } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -143,6 +143,12 @@ export default function Navbar() {
                  </Tooltip>
               ) : null}
               
+              <Link href="/messages">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Messages">
+                  <Mail className="h-5 w-5" />
+                </Button>
+              </Link>
+
               <Link href="/upload">
                 <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
                   <Upload className="h-5 w-5" />
