@@ -2,7 +2,7 @@
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff, CloudOff, Mail } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff, CloudOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -50,43 +50,13 @@ export default function Navbar() {
         return;
       }
 
-      // 1. Never show to anonymous users
-      if (user.isAnonymous) {
-        setIsAdmin(false);
-        return;
-      }
-      
-      // 2. Super admin hardcoded override
-      const superAdmins = ['hashamcomp@gmail.com'];
-      if (user.email && superAdmins.includes(user.email)) {
+      // 1. Only hashamcomp@gmail.com has admin control
+      if (user.email === 'hashamcomp@gmail.com') {
         setIsAdmin(true);
         return;
       }
 
-      // 3. Profile role check
-      if (profile?.role === 'admin') {
-        setIsAdmin(true);
-        return;
-      }
-      
-      // 4. Whitelist check
-      if (user.email) {
-        try {
-          const settingsRef = doc(db, 'settings', 'approvedEmails');
-          const snap = await getDoc(settingsRef);
-          if (snap.exists()) {
-            const emails = snap.data().emails || [];
-            setIsAdmin(emails.includes(user.email));
-          } else {
-            setIsAdmin(false);
-          }
-        } catch (e) {
-          // Explicitly deny on any error (like Permission Denied)
-          setIsAdmin(false);
-        }
-      } else {
-        setIsAdmin(false);
-      }
+      setIsAdmin(false);
     };
 
     checkAdminStatus();
@@ -148,12 +118,6 @@ export default function Navbar() {
                 </Link>
               ) : null}
               
-              <Link href="/messages">
-                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Messages">
-                  <Mail className="h-5 w-5" />
-                </Button>
-              </Link>
-
               <Link href="/upload">
                 <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
                   <Upload className="h-5 w-5" />

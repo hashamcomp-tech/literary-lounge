@@ -9,21 +9,7 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == "hashamcomp@gmail.com"
-      );
-    }
-
-    function isAdmin() {
-      return isSignedIn() && 
-        (isSuperAdmin() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin");
-    }
-
-    function isApprovedUploader() {
-      return request.auth != null &&
-        (isSuperAdmin() || 
-         (exists(/databases/$(database)/documents/settings/approvedEmails) && 
-          request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails));
+      return isSignedIn() && request.auth.token.email == "hashamcomp@gmail.com";
     }
 
     // USER PROFILES
@@ -52,48 +38,48 @@ service cloud.firestore {
 
     // SETTINGS & WHITELIST - Strictly Admin Only
     match /settings/approvedEmails {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
     }
 
     // PUBLISH REQUESTS
     match /publishRequests/{userId} {
       allow create: if isSignedIn() && request.auth.uid == userId;
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
-      allow delete: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow delete: if isSuperAdmin();
     }
 
     // CLOUD UPLOAD REQUESTS (CONTENT)
     match /cloudUploadRequests/{requestId} {
       allow create: if isSignedIn();
-      allow read, list, delete: if isAdmin();
+      allow read, list, delete: if isSuperAdmin();
     }
 
     // STATS
     match /stats/storageUsage {
       allow read: if true;
-      allow write: if isApprovedUploader();
+      allow write: if isSuperAdmin();
     }
 
     // BOOKS & CHAPTERS
     match /books/{bookId} {
       allow read: if true;
       
-      allow create, delete: if isApprovedUploader();
-      allow update: if isApprovedUploader() || 
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin() || 
                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
 
       match /metadata/info {
         allow read: if true;
-        allow update: if isApprovedUploader() || 
+        allow update: if isSuperAdmin() || 
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
-        allow create, delete: if isApprovedUploader();
+        allow create, delete: if isSuperAdmin();
       }
 
       match /chapters/{chapterNumber} {
         allow read: if true;
-        allow write: if isApprovedUploader();
+        allow write: if isSuperAdmin();
       }
       
       match /messages/{messageId} {
@@ -102,15 +88,15 @@ service cloud.firestore {
       }
     }
 
-    // CHATS (P2P and Book Lounges)
+    // CHATS (DISABLED FOR NOW)
     match /chats/{chatId}/messages/{messageId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow read: if false;
+      allow write: if false;
     }
     
     match /books/{bookId}/{document=**} {
       allow read: if true;
-      allow write: if isApprovedUploader();
+      allow write: if isSuperAdmin();
     }
   }
 }
