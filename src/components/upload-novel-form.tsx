@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
@@ -18,6 +18,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
 import { uploadCoverImage } from '@/lib/upload-cover';
+import { sendAccessRequestEmail } from '@/app/actions/notifications';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 import {
   Select,
   SelectContent,
@@ -137,6 +140,7 @@ export function UploadNovelForm() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
@@ -154,14 +158,14 @@ export function UploadNovelForm() {
 
     const checkApproval = async () => {
       try {
-        const pRef = doc(db, 'users', user.uid);
+        const pRef = doc(db!, 'users', user.uid);
         const snap = await getDoc(pRef);
         const pData = snap.data();
         
         if (user.email === 'hashamcomp@gmail.com' || pData?.role === 'admin') {
           setIsApprovedUser(true);
         } else {
-          const settingsRef = doc(db, 'settings', 'approvedEmails');
+          const settingsRef = doc(db!, 'settings', 'approvedEmails');
           const settingsSnap = await getDoc(settingsRef);
           if (settingsSnap.exists()) {
             const emails = settingsSnap.data().emails || [];
@@ -180,6 +184,38 @@ export function UploadNovelForm() {
 
   const slugify = (text: string) => {
     return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
+  };
+
+  const handleRequestAccess = async () => {
+    if (!user || !db || user.isAnonymous) return;
+    setIsRequestingAccess(true);
+    
+    const requestRef = doc(db, 'publishRequests', user.uid);
+    const requestData = {
+      uid: user.uid,
+      email: user.email,
+      requestedAt: serverTimestamp(),
+      status: 'pending'
+    };
+
+    setDoc(requestRef, requestData)
+      .then(async () => {
+        if (user.email) {
+          await sendAccessRequestEmail(user.email);
+        }
+        toast({ 
+          title: "Request Submitted", 
+          description: "Administrators have been notified of your application." 
+        });
+      })
+      .catch((err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: requestRef.path,
+          operation: 'create',
+          requestResourceData: requestData
+        }));
+      })
+      .finally(() => setIsRequestingAccess(false));
   };
 
   const handleFileChange = async (file: File) => {
@@ -206,7 +242,8 @@ export function UploadNovelForm() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
-    
+    if (!db || !storage) return;
+
     setLoading(true);
     setLoadingStatus(isApprovedUser && !isOfflineMode ? 'Syncing to Cloud...' : 'Saving to Private Library...');
 
@@ -312,10 +349,12 @@ export function UploadNovelForm() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => toast({ title: "Request Sent", description: "Administrators will review your profile." })}
+                  onClick={handleRequestAccess}
+                  disabled={isRequestingAccess}
                   className="bg-slate-600/10 border-slate-600/20 text-slate-800 hover:bg-slate-600/20 rounded-xl"
                 >
-                  <Globe className="h-3.5 w-3.5 mr-2" /> Request Cloud Contributor Access
+                  {isRequestingAccess ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Globe className="h-3.5 w-3.5 mr-2" />}
+                  Request Cloud Contributor Access
                 </Button>
               )}
             </AlertDescription>
