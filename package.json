@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "sync": "git pull --no-rebase origin main"
+    "sync": "git pull --no-rebase origin main",
+    "push": "git add . && git commit -m 'Updates from Lounge' && git push origin main"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.5",
