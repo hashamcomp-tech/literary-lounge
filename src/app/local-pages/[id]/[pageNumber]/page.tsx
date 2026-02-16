@@ -1,21 +1,21 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2 } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, PlayCircle } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
-import { playTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 /**
  * @fileOverview Refined Local Reader Component.
- * Optimized for 700px width, 18px Literata typography, and resilient HTML content rendering.
+ * Optimized for 700px width, 18px Literata typography.
+ * Features 'Click to Read from Here' functionality.
  */
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -32,6 +32,7 @@ export default function LocalReader() {
 
   useEffect(() => {
     setMounted(true);
+    return () => stopTextToSpeech();
   }, []);
 
   // Fetch book and all chapters once
@@ -62,10 +63,11 @@ export default function LocalReader() {
   useEffect(() => {
     if (currentChapterNum && id) {
       saveLocalProgress(id, currentChapterNum).catch(() => {});
+      stopTextToSpeech();
     }
   }, [id, currentChapterNum]);
 
-  const handleReadAloud = async () => {
+  const handleReadAloud = async (startIndex: number = 0) => {
     const chapter = allChapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
     if (!chapter?.content) return;
     
@@ -73,11 +75,16 @@ export default function LocalReader() {
     try {
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
-      const plainText = chapter.content
+      
+      const rawParagraphs = (chapter.content || '')
         .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]*>?/gm, '')
-        .trim();
-      await playTextToSpeech(plainText, voiceOptions);
+        .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
+        .map(p => p.replace(/<[^>]*>?/gm, '').trim())
+        .filter(p => p.length > 0);
+
+      const textToRead = rawParagraphs.slice(startIndex).join('\n\n');
+      
+      await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -122,7 +129,7 @@ export default function LocalReader() {
 
   if (!mounted) return null;
 
-  // Process HTML content into clean paragraphs for the premium reader look
+  // Process HTML content into clean paragraphs
   const paragraphs = (chapter.content || '')
     .replace(/<br\s*\/?>/gi, '\n')
     .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
@@ -150,7 +157,7 @@ export default function LocalReader() {
                 variant="outline" 
                 size="icon" 
                 className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-                onClick={handleReadAloud}
+                onClick={() => handleReadAloud(0)}
                 disabled={isSpeaking}
                 title="Read Aloud"
               >
@@ -190,11 +197,19 @@ export default function LocalReader() {
             <h2 className="text-4xl font-headline font-black text-primary leading-tight">
               {chapter.title || `Chapter ${currentChapterNum}`}
             </h2>
+            <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mt-4 opacity-50">Click any paragraph to read from that point.</p>
           </header>
 
           <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
             {paragraphs.map((cleanPara: string, idx: number) => (
-               <p key={idx} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1">
+               <p 
+                key={idx} 
+                onClick={() => handleReadAloud(idx)}
+                className="mb-8 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -m-2 transition-colors relative group/para first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+               >
+                 <span className="absolute -left-6 top-3 opacity-0 group-hover/para:opacity-100 transition-opacity">
+                   <PlayCircle className="h-4 w-4 text-primary" />
+                 </span>
                  {cleanPara}
                </p>
             ))}

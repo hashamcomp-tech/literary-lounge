@@ -1,16 +1,15 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, PlayCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
-import { playTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
@@ -20,6 +19,10 @@ interface CloudReaderClientProps {
   chapterNumber: string;
 }
 
+/**
+ * @fileOverview Refined Cloud Reader Client.
+ * Features 'Click to Read from Here' functionality.
+ */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
@@ -37,6 +40,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   useEffect(() => {
     setMounted(true);
+    return () => stopTextToSpeech();
   }, []);
 
   useEffect(() => {
@@ -102,9 +106,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
 
     fetchData();
+    stopTextToSpeech();
   }, [firestore, id, user, currentChapterNum, isOfflineMode]);
 
-  const handleReadAloud = async () => {
+  const handleReadAloud = async (startIndex: number = 0) => {
     const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum);
     if (!currentChapter?.content) return;
     
@@ -112,8 +117,14 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     try {
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
-      const plainText = currentChapter.content.replace(/<[^>]*>?/gm, '');
-      await playTextToSpeech(plainText, voiceOptions);
+      
+      const paragraphs = currentChapter.content.split(/<p>|\n\n/)
+        .map((p: string) => p.replace(/<\/p>|<[^>]*>?/gm, '').trim())
+        .filter((p: string) => p.length > 0);
+
+      const textToRead = paragraphs.slice(startIndex).join('\n\n');
+      
+      await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -170,6 +181,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   if (!mounted) return null;
 
+  const paragraphs = (currentChapter.content || '').split(/<p>|\n\n/)
+    .map((para: string) => para.replace(/<\/p>|<[^>]*>?/gm, '').trim())
+    .filter((para: string) => para.length > 0);
+
   return (
     <div className="max-w-[700px] mx-auto px-5 py-5 transition-all duration-500 selection:bg-primary/20 selection:text-primary">
       <header className="mb-12">
@@ -182,7 +197,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               variant="outline" 
               size="icon" 
               className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-              onClick={handleReadAloud}
+              onClick={() => handleReadAloud(0)}
               disabled={isSpeaking}
               title="Read Aloud"
             >
@@ -223,18 +238,22 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <h2 className="text-4xl font-headline font-black leading-tight text-primary">
             {currentChapter.title || `Chapter ${currentChapter.chapterNumber}`}
           </h2>
+          <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mt-4 opacity-50">Click any paragraph to read from that point.</p>
         </header>
 
         <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] font-body leading-[1.6] text-foreground/90">
-          {(currentChapter.content || '').split(/<p>|\n\n/).map((para: string, idx: number) => {
-            const cleanPara = para.replace(/<\/p>|<[^>]*>?/gm, '').trim();
-            if (!cleanPara) return null;
-            return (
-              <p key={idx} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1">
-                {cleanPara}
-              </p>
-            );
-          })}
+          {paragraphs.map((cleanPara: string, idx: number) => (
+            <p 
+              key={idx} 
+              onClick={() => handleReadAloud(idx)}
+              className="mb-8 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -m-2 transition-colors relative group/para first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+            >
+              <span className="absolute -left-6 top-3 opacity-0 group-hover/para:opacity-100 transition-opacity">
+                <PlayCircle className="h-4 w-4 text-primary" />
+              </span>
+              {cleanPara}
+            </p>
+          ))}
         </div>
       </article>
 

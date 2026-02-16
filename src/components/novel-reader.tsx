@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Loader2 } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Loader2, PlayCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -15,7 +15,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
-import { playTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
@@ -26,6 +26,7 @@ interface NovelReaderProps {
 /**
  * @fileOverview Premium Reader for Mock Collection.
  * Implements 700px optimized width, 18px Literata, and 1.6 line height.
+ * Features 'Click to Read from Here' functionality.
  */
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
@@ -40,6 +41,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
   useEffect(() => {
     setMounted(true);
+    return () => stopTextToSpeech();
   }, []);
 
   const currentChapter = novel.chapters[currentChapterIndex];
@@ -49,6 +51,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTo(0, 0);
     }
+    stopTextToSpeech();
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
 
     if (user && !user.isAnonymous && db) {
@@ -82,20 +85,21 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     }
   }, [novel.id]);
 
-  const handleReadAloud = async () => {
+  const handleReadAloud = async (startIndex: number = 0) => {
     if (!currentChapter?.content) return;
+    
     setIsSpeaking(true);
     try {
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
       
-      // Clean HTML and extra whitespace for the TTS engine
-      const plainText = currentChapter.content
+      const paragraphs = currentChapter.content.split('\n\n');
+      const textToRead = paragraphs.slice(startIndex).join('\n\n')
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<[^>]*>?/gm, '')
         .trim();
         
-      await playTextToSpeech(plainText, voiceOptions);
+      await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -108,6 +112,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   };
 
   if (!mounted) return null;
+
+  const paragraphs = currentChapter.content.split('\n\n');
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background transition-colors duration-300">
@@ -129,7 +135,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   variant="outline" 
                   size="icon" 
                   className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-                  onClick={handleReadAloud}
+                  onClick={() => handleReadAloud(0)}
                   disabled={isSpeaking}
                   title="Read Aloud"
                 >
@@ -193,11 +199,19 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                <h2 className="text-4xl font-headline font-black text-primary leading-tight">
                  {currentChapter.title}
                </h2>
+               <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mt-4 opacity-50">Click any paragraph to read from that point.</p>
             </header>
 
             <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
-              {currentChapter.content.split('\n\n').map((para, i) => (
-                <p key={i} className="mb-8 first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1">
+              {paragraphs.map((para, i) => (
+                <p 
+                  key={i} 
+                  onClick={() => handleReadAloud(i)}
+                  className="mb-8 cursor-pointer hover:bg-primary/5 rounded-lg p-2 -m-2 transition-colors relative group/para first-letter:text-3xl first-letter:font-black first-letter:text-primary first-letter:float-left first-letter:mr-2 first-letter:mt-1"
+                >
+                  <span className="absolute -left-6 top-3 opacity-0 group-hover/para:opacity-100 transition-opacity">
+                    <PlayCircle className="h-4 w-4 text-primary" />
+                  </span>
                   {para}
                 </p>
               ))}
