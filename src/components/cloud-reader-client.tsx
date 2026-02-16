@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2 } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -11,6 +11,7 @@ import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import { playTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface CloudReaderClientProps {
   id: string;
@@ -18,7 +19,7 @@ interface CloudReaderClientProps {
 }
 
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
-  const { firestore } = useFirebase();
+  const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
@@ -37,6 +38,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   }, []);
 
   useEffect(() => {
+    if (isOfflineMode) {
+      setIsLoading(false);
+      return;
+    }
     if (!firestore || !id) return;
 
     const fetchData = async () => {
@@ -95,7 +100,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
 
     fetchData();
-  }, [firestore, id, user, currentChapterNum]);
+  }, [firestore, id, user, currentChapterNum, isOfflineMode]);
 
   const handleReadAloud = async () => {
     const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum);
@@ -115,6 +120,26 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setIsSpeaking(false);
     }
   };
+
+  if (isOfflineMode) {
+    return (
+      <div className="max-w-[700px] mx-auto px-5 py-24 text-center">
+        <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 rounded-[2.5rem] p-10 shadow-xl border-none">
+          <CloudOff className="h-16 w-16 mb-6 mx-auto opacity-30" />
+          <AlertTitle className="text-4xl font-headline font-black mb-4">Independent Mode Active</AlertTitle>
+          <AlertDescription className="text-lg opacity-80 leading-relaxed max-w-lg mx-auto">
+            Cloud volumes require an active connection to the Lounge database. 
+            Reconnect to access this novel and sync your reading journey.
+          </AlertDescription>
+          <div className="mt-10">
+            <Button variant="outline" className="rounded-2xl h-14 px-10 font-bold border-amber-500/30 text-amber-900 bg-amber-500/5 hover:bg-amber-500/10" onClick={() => router.push('/')}>
+              Return to Library
+            </Button>
+          </div>
+        </Alert>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from 'next/link';
-import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff } from 'lucide-react';
+import { Search, User, BookOpen, Settings, Upload, Shield, History, HelpCircle, SlidersHorizontal, WifiOff, CloudOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export default function Navbar() {
   const router = useRouter();
@@ -85,67 +91,101 @@ export default function Navbar() {
         </form>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          {isOfflineMode && (
-            <div className="px-3 py-1 bg-amber-500/10 text-amber-700 rounded-full flex items-center gap-2 border border-amber-500/20 mr-2 hidden md:flex">
-              <WifiOff className="h-3.5 w-3.5" />
-              <span className="text-[10px] font-black uppercase tracking-widest">Independent Mode</span>
-            </div>
-          )}
+          <TooltipProvider>
+            {isOfflineMode && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="px-3 py-1 bg-amber-500/10 text-amber-700 rounded-full flex items-center gap-2 border border-amber-500/20 mr-2 hidden md:flex cursor-help">
+                    <WifiOff className="h-3.5 w-3.5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Independent Mode</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Cloud connection unavailable. Using local data only.</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
 
-          {isAdmin && !isOfflineMode && (
-            <Link href="/admin">
-              <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full" title="Admin Dashboard">
-                <Shield className="h-5 w-5" />
-              </Button>
-            </Link>
-          )}
-          
-          <Link href="/upload">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
-              <Upload className="h-5 w-5" />
-            </Button>
-          </Link>
-          
-          <ModeToggle />
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Settings">
-                <Settings className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 rounded-xl border shadow-xl">
-              <DropdownMenuLabel className="font-headline font-bold">Lounge Settings</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <Link href="/setup">
-                <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
-                  <SlidersHorizontal className="mr-2 h-4 w-4 text-primary" />
-                  <span>Reading Preferences</span>
-                </DropdownMenuItem>
-              </Link>
-              {!isOfflineMode && (
-                <Link href="/history">
-                  <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
-                    <History className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <span>Reading History</span>
-                  </DropdownMenuItem>
+            <div className="flex items-center gap-1">
+              {isAdmin && !isOfflineMode ? (
+                <Link href="/admin">
+                  <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full" title="Admin Dashboard">
+                    <Shield className="h-5 w-5" />
+                  </Button>
                 </Link>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
-                <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />
-                <span>Help & Support</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              ) : isAdmin ? (
+                 <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="text-muted-foreground opacity-50 rounded-full cursor-not-allowed">
+                        <Shield className="h-5 w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Admin panel requires cloud connection</TooltipContent>
+                 </Tooltip>
+              ) : null}
+              
+              <Link href="/upload">
+                <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Upload Novel">
+                  <Upload className="h-5 w-5" />
+                </Button>
+              </Link>
+              
+              <ModeToggle />
 
-          {!isOfflineMode && (
-            <Link href="/login">
-              <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
-                <User className="h-5 w-5" />
-              </Button>
-            </Link>
-          )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary rounded-full" title="Settings">
+                    <Settings className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 rounded-xl border shadow-xl">
+                  <DropdownMenuLabel className="font-headline font-bold">Lounge Settings</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <Link href="/setup">
+                    <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                      <SlidersHorizontal className="mr-2 h-4 w-4 text-primary" />
+                      <span>Reading Preferences</span>
+                    </DropdownMenuItem>
+                  </Link>
+                  
+                  <Link href="/history">
+                    <DropdownMenuItem 
+                      className={`rounded-lg cursor-pointer py-2.5 ${isOfflineMode ? 'opacity-50' : ''}`}
+                    >
+                      <History className="mr-2 h-4 w-4 text-muted-foreground" />
+                      <div className="flex flex-col">
+                        <span>Reading History</span>
+                        {isOfflineMode && <span className="text-[9px] font-black text-amber-600 uppercase">Cloud Sync Offline</span>}
+                      </div>
+                    </DropdownMenuItem>
+                  </Link>
+                  
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                    <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <span>Help & Support</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {!isOfflineMode ? (
+                <Link href="/login">
+                  <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
+                    <User className="h-5 w-5" />
+                  </Button>
+                </Link>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground opacity-50 rounded-full cursor-not-allowed">
+                      <CloudOff className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Sign-in unavailable in Independent Mode</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </TooltipProvider>
         </div>
       </div>
     </nav>

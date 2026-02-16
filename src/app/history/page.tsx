@@ -1,14 +1,14 @@
-
 'use client';
 
-import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase, useFirebase } from '@/firebase';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
-import { History, BookX, Loader2, Calendar, Clock } from 'lucide-react';
+import { History, BookX, Loader2, Calendar, Clock, CloudOff, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 /**
  * @fileOverview Reading History page.
@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
  */
 export default function ReadingHistoryPage() {
   const { user, isUserLoading } = useUser();
+  const { isOfflineMode } = useFirebase();
   const db = useFirestore();
   const router = useRouter();
 
@@ -36,24 +37,6 @@ export default function ReadingHistoryPage() {
         <Navbar />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!user || user.isAnonymous) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <History className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
-          <h1 className="text-3xl font-headline font-black mb-2">Sign in Required</h1>
-          <p className="text-muted-foreground max-w-md mb-8">
-            Please sign in to your account to view and sync your reading history across devices.
-          </p>
-          <Button variant="default" className="rounded-xl px-8" onClick={() => router.push('/login')}>
-            Sign In
-          </Button>
         </div>
       </div>
     );
@@ -80,7 +63,34 @@ export default function ReadingHistoryPage() {
             </p>
           </header>
 
-          {isLoading ? (
+          {isOfflineMode ? (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 rounded-3xl p-8">
+                <CloudOff className="h-8 w-8 mb-4" />
+                <AlertTitle className="text-2xl font-headline font-black">Cloud Sync Unavailable</AlertTitle>
+                <AlertDescription className="text-base mt-2 max-w-2xl">
+                  The Lounge is currently in <strong>Independent Mode</strong>. Your cloud reading history cannot be retrieved or synced until a connection is established. 
+                  Your <strong>Local Drafts</strong> progress is still saved within your browser.
+                </AlertDescription>
+              </Alert>
+              
+              <div className="text-center py-20 bg-muted/20 rounded-3xl border-2 border-dashed">
+                 <Info className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
+                 <p className="text-muted-foreground font-medium">Reconnect to see your global bookshelf.</p>
+              </div>
+            </div>
+          ) : !user || user.isAnonymous ? (
+            <div className="py-24 text-center border-2 border-dashed rounded-3xl bg-muted/20">
+              <History className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
+              <h1 className="text-3xl font-headline font-black mb-2">Sign in Required</h1>
+              <p className="text-muted-foreground max-w-md mb-8 mx-auto">
+                Please sign in to your account to view and sync your reading history across devices.
+              </p>
+              <Button variant="default" className="rounded-xl px-8" onClick={() => router.push('/login')}>
+                Sign In
+              </Button>
+            </div>
+          ) : isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center">
               <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
             </div>

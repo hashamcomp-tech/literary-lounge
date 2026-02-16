@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -8,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -36,9 +35,10 @@ interface AutocompleteInputProps {
   value: string;
   onChange: (val: string) => void;
   placeholder: string;
+  disabled?: boolean;
 }
 
-function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteInputProps) {
+function AutocompleteInput({ type, value, onChange, placeholder, disabled }: AutocompleteInputProps) {
   const { firestore: db } = useFirebase();
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [show, setShow] = useState(false);
@@ -98,6 +98,7 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
         onFocus={() => setShow(true)}
         placeholder={placeholder}
         className="bg-background/50 rounded-xl h-12"
+        disabled={disabled}
       />
       {show && suggestions.length > 0 && (
         <ul className="absolute z-50 w-full mt-2 bg-card border rounded-2xl shadow-2xl max-h-48 overflow-auto animate-in fade-in slide-in-from-top-2 duration-200">
@@ -124,7 +125,7 @@ function AutocompleteInput({ type, value, onChange, placeholder }: AutocompleteI
 
 export function UploadNovelForm() {
   const router = useRouter();
-  const { firestore: db, storage, user } = useFirebase();
+  const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
   const [title, setTitle] = useState('');
@@ -141,6 +142,10 @@ export function UploadNovelForm() {
   const [checkingApproval, setCheckingApproval] = useState(true);
 
   useEffect(() => {
+    if (isOfflineMode) {
+      setCheckingApproval(false);
+      return;
+    }
     if (!user || user.isAnonymous) {
       setCheckingApproval(false);
       return;
@@ -170,7 +175,7 @@ export function UploadNovelForm() {
     };
 
     checkApproval();
-  }, [user, db]);
+  }, [user, db, isOfflineMode]);
 
   const slugify = (text: string) => {
     return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
@@ -202,7 +207,7 @@ export function UploadNovelForm() {
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
     
     setLoading(true);
-    setLoadingStatus(isApprovedUser ? 'Syncing to Cloud...' : 'Saving to Private Library...');
+    setLoadingStatus(isApprovedUser && !isOfflineMode ? 'Syncing to Cloud...' : 'Saving to Private Library...');
 
     try {
       let finalTitle = title.trim();
@@ -240,7 +245,7 @@ export function UploadNovelForm() {
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
 
-      if (isApprovedUser && coverFile) {
+      if (isApprovedUser && !isOfflineMode && coverFile) {
         await uploadBookToCloud({
           db, storage, bookId: `${docId}_${Date.now()}`,
           title: finalTitle, author: finalAuthor, genre, chapters, coverFile, ownerId: user!.uid
@@ -248,7 +253,7 @@ export function UploadNovelForm() {
         toast({ title: "Cloud Published", description: "Your novel is now available in the Lounge." });
       } else {
         let coverURL = null;
-        if (coverFile) coverURL = await uploadCoverImage(storage, coverFile, docId);
+        if (coverFile && !isOfflineMode) coverURL = await uploadCoverImage(storage, coverFile, docId);
         
         const bookData = {
           id: docId, title: finalTitle, author: finalAuthor, genre, coverURL,
@@ -280,7 +285,15 @@ export function UploadNovelForm() {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col gap-4">
-        {isApprovedUser ? (
+        {isOfflineMode ? (
+          <Alert className="border-none shadow-xl bg-amber-500/10 text-amber-700 rounded-2xl p-6">
+            <CloudOff className="h-6 w-6" />
+            <AlertTitle className="font-headline font-black text-xl mb-1">Independent Mode Active</AlertTitle>
+            <AlertDescription className="text-sm font-medium opacity-80">
+              Cloud publishing and contributor verification are unavailable. Any uploads will be saved <strong>locally</strong> to your browser.
+            </AlertDescription>
+          </Alert>
+        ) : isApprovedUser ? (
           <Alert className="border-none shadow-xl bg-primary/10 text-primary rounded-2xl p-6">
             <CloudUpload className="h-6 w-6" />
             <AlertTitle className="font-headline font-black text-xl mb-1">Cloud Access Enabled</AlertTitle>
@@ -289,7 +302,7 @@ export function UploadNovelForm() {
             </AlertDescription>
           </Alert>
         ) : (
-          <Alert className="border-none shadow-xl bg-amber-500/10 text-amber-700 rounded-2xl p-6">
+          <Alert className="border-none shadow-xl bg-slate-500/10 text-slate-700 rounded-2xl p-6">
             <HardDrive className="h-6 w-6" />
             <AlertTitle className="font-headline font-black text-xl mb-1">Private Local Mode</AlertTitle>
             <AlertDescription className="text-sm font-medium opacity-80 space-y-4">
@@ -299,7 +312,7 @@ export function UploadNovelForm() {
                   variant="outline" 
                   size="sm" 
                   onClick={() => toast({ title: "Request Sent", description: "Administrators will review your profile." })}
-                  className="bg-amber-600/10 border-amber-600/20 text-amber-800 hover:bg-amber-600/20 rounded-xl"
+                  className="bg-slate-600/10 border-slate-600/20 text-slate-800 hover:bg-slate-600/20 rounded-xl"
                 >
                   <Globe className="h-3.5 w-3.5 mr-2" /> Request Cloud Contributor Access
                 </Button>
@@ -320,12 +333,12 @@ export function UploadNovelForm() {
             <div className="grid gap-6">
               <div className="grid gap-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Author</Label>
-                <AutocompleteInput type="author" value={author} onChange={setAuthor} placeholder="Author's Pen Name" />
+                <AutocompleteInput type="author" value={author} onChange={setAuthor} placeholder="Author's Pen Name" disabled={isOfflineMode && !author} />
               </div>
 
               <div className="grid gap-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Book Title</Label>
-                <AutocompleteInput type="book" value={title} onChange={setTitle} placeholder="Title of the Work" />
+                <AutocompleteInput type="book" value={title} onChange={setTitle} placeholder="Title of the Work" disabled={isOfflineMode && !title} />
               </div>
 
               <div className="grid grid-cols-2 gap-6">
@@ -353,7 +366,7 @@ export function UploadNovelForm() {
 
             <div className="space-y-4 pt-4 border-t border-border/50">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                <ImageIcon className="h-4 w-4" /> Cover Art (Required for Cloud)
+                <ImageIcon className="h-4 w-4" /> Cover Art {isApprovedUser && !isOfflineMode && '(Required for Cloud)'}
               </Label>
               <div className={`relative border-2 border-dashed rounded-[2rem] p-8 transition-all duration-500 ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
                 <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={(e) => e.target.files && setCoverFile(e.target.files[0])} />
@@ -419,7 +432,7 @@ export function UploadNovelForm() {
                     <Loader2 className="mr-3 h-6 w-6 animate-spin" />
                     {loadingStatus}
                   </>
-                ) : isApprovedUser ? (
+                ) : isApprovedUser && !isOfflineMode ? (
                   <>
                     <ShieldCheck className="mr-3 h-6 w-6" />
                     Publish Volume to Cloud

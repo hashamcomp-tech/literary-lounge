@@ -6,17 +6,19 @@ import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from '@/firebase';
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
 import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function AdminPage() {
   const db = useFirestore();
   const { user, isUserLoading } = useUser();
+  const { isOfflineMode } = useFirebase();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -35,6 +37,10 @@ export default function AdminPage() {
   // Check if current user is approved/admin
   useEffect(() => {
     const checkAdmin = async () => {
+      if (isOfflineMode) {
+        setIsAdmin(false);
+        return;
+      }
       if (isUserLoading) return;
       if (!user || user.isAnonymous) {
         setIsAdmin(false);
@@ -60,11 +66,11 @@ export default function AdminPage() {
       }
     };
     checkAdmin();
-  }, [user, isUserLoading, profile, db]);
+  }, [user, isUserLoading, profile, db, isOfflineMode]);
 
   // Fetch Library Statistics
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || isOfflineMode) return;
 
     const fetchStats = async () => {
       setIsStatsLoading(true);
@@ -89,19 +95,19 @@ export default function AdminPage() {
     };
 
     fetchStats();
-  }, [db, isAdmin]);
+  }, [db, isAdmin, isOfflineMode]);
 
   const requestsQuery = useMemoFirebase(() => {
-    if (!isAdmin) return null;
+    if (!isAdmin || isOfflineMode) return null;
     return query(collection(db, 'publishRequests'), orderBy('requestedAt', 'desc'));
-  }, [db, isAdmin]);
+  }, [db, isAdmin, isOfflineMode]);
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
   const bookRequestsQuery = useMemoFirebase(() => {
-    if (!isAdmin) return null;
+    if (!isAdmin || isOfflineMode) return null;
     return query(collection(db, 'cloudUploadRequests'));
-  }, [db, isAdmin]);
+  }, [db, isAdmin, isOfflineMode]);
   const { data: bookRequests } = useCollection(bookRequestsQuery);
 
   const handleApprove = async (requestId: string, email: string) => {
@@ -131,12 +137,34 @@ export default function AdminPage() {
     }
   };
 
-  if (isUserLoading || isAdmin === null) {
+  if (isUserLoading || (isAdmin === null && !isOfflineMode)) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
         <Navbar />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
+        </div>
+      </div>
+    );
+  }
+
+  if (isOfflineMode) {
+    return (
+      <div className="min-h-screen flex flex-col bg-background">
+        <Navbar />
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto">
+          <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 rounded-[2.5rem] p-10 shadow-xl border-none">
+            <CloudOff className="h-16 w-16 mb-6 mx-auto opacity-30" />
+            <AlertTitle className="text-4xl font-headline font-black mb-4">Lounge Control Offline</AlertTitle>
+            <AlertDescription className="text-lg opacity-80 leading-relaxed">
+              The Admin Panel requires an active connection to Firebase services to manage cloud manuscripts and contributor credentials.
+            </AlertDescription>
+            <div className="mt-10">
+              <Button variant="outline" className="rounded-2xl h-14 px-10 font-bold border-amber-500/30 text-amber-900 bg-amber-500/5 hover:bg-amber-500/10" onClick={() => router.push('/')}>
+                Back to Library
+              </Button>
+            </div>
+          </Alert>
         </div>
       </div>
     );
