@@ -3,6 +3,7 @@ import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
 import RecommendationsSection from '@/components/recommendations-section';
 import LocalLibrarySection from '@/components/local-library-section';
+import ContinueReadingSection from '@/components/continue-reading-section';
 import { MOCK_NOVELS } from '@/lib/mock-data';
 import { GENRES } from '@/lib/genres';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -46,6 +47,9 @@ export default function Home() {
             </div>
           </div>
         </section>
+
+        {/* User's personalized progress */}
+        <ContinueReadingSection />
 
         {/* Dynamic Cloud Recommendations - Recently Added */}
         <RecommendationsSection 
