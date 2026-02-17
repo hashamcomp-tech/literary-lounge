@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser, ListChecks, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -13,7 +13,7 @@ import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
-import { deleteCloudBook, deleteCloudChapter } from '@/lib/cloud-library-utils';
+import { deleteCloudBook, deleteCloudChaptersBulk } from '@/lib/cloud-library-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,17 +25,23 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface CloudReaderClientProps {
   id: string;
   chapterNumber: string;
 }
 
-/**
- * @fileOverview Cloud Reader Client.
- * Implements a 700px optimized width reading experience with admin controls.
- * Admins can delete the entire book or just the current chapter.
- */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
@@ -51,6 +57,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  
+  // Bulk Selection States
+  const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
+  const [selectedChapters, setSelectedChapters] = useState<number[]>([]);
 
   // Check admin status via profile
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous && firestore) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
@@ -142,23 +152,36 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleDeleteChapter = async () => {
-    if (!firestore || !id) return;
+  const handleBulkDelete = async () => {
+    if (!firestore || !id || selectedChapters.length === 0) return;
     setIsDeleting(true);
+    setIsManageDialogOpen(false);
     try {
-      await deleteCloudChapter(firestore, id, currentChapterNum);
-      toast({ title: "Chapter Removed", description: `Chapter ${currentChapterNum} has been deleted.` });
-      // Redirect to chapter 1 or back to library if no chapters left
-      if (chapters.length > 1) {
+      await deleteCloudChaptersBulk(firestore, id, selectedChapters);
+      toast({ 
+        title: "Chapters Removed", 
+        description: `${selectedChapters.length} chapter(s) have been deleted.` 
+      });
+      
+      // If the current chapter was deleted, redirect to start
+      if (selectedChapters.includes(currentChapterNum)) {
         router.push(`/pages/${id}/1`);
       } else {
-        router.push('/');
+        // Just refresh local state by re-fetching (implicitly handled by firestore listener if we used one, but here we re-run useEffect by navigating/triggering)
+        window.location.reload(); 
       }
     } catch (err) {
       // Handled by global listener
     } finally {
       setIsDeleting(false);
+      setSelectedChapters([]);
     }
+  };
+
+  const toggleChapterSelection = (num: number) => {
+    setSelectedChapters(prev => 
+      prev.includes(num) ? prev.filter(n => n !== num) : [...prev, num]
+    );
   };
 
   const handleReadAloud = async (startIndex: number = 0) => {
@@ -249,28 +272,59 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <div className="flex gap-2">
             {isAdmin && (
               <div className="flex gap-1">
-                {/* Delete Current Chapter */}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-full text-amber-600 hover:bg-amber-100/50" title="Delete Opened Chapter">
-                      <Eraser className="h-4 w-4" />
+                {/* Manage Chapters Dialog */}
+                <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-full text-primary hover:bg-primary/10" title="Manage Chapters">
+                      <ListChecks className="h-4 w-4" />
                     </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle className="text-2xl font-headline font-black">Delete Chapter {currentChapterNum}?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will remove <span className="font-bold text-foreground">"{currentChapter.title || `Chapter ${currentChapterNum}`}"</span> from this manuscript. Other chapters will remain intact.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDeleteChapter} className="bg-amber-600 hover:bg-amber-700 rounded-xl font-bold">
-                        Delete Chapter
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                  </DialogTrigger>
+                  <DialogContent className="rounded-[2rem] max-w-md border-none shadow-2xl">
+                    <DialogHeader>
+                      <DialogTitle className="text-2xl font-headline font-black">Manuscript Management</DialogTitle>
+                      <DialogDescription>
+                        Select one or more chapters to remove from the global cloud library.
+                      </DialogDescription>
+                    </DialogHeader>
+                    
+                    <ScrollArea className="h-64 mt-4 pr-4">
+                      <div className="space-y-2">
+                        {chapters.map((ch) => (
+                          <div 
+                            key={ch.chapterNumber} 
+                            className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${selectedChapters.includes(Number(ch.chapterNumber)) ? 'bg-primary/5 border-primary' : 'hover:bg-muted/50'}`}
+                            onClick={() => toggleChapterSelection(Number(ch.chapterNumber))}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Checkbox 
+                                checked={selectedChapters.includes(Number(ch.chapterNumber))} 
+                                onCheckedChange={() => toggleChapterSelection(Number(ch.chapterNumber))}
+                                className="rounded-md"
+                              />
+                              <div className="flex flex-col">
+                                <span className="text-sm font-bold">Chapter {ch.chapterNumber}</span>
+                                <span className="text-[10px] text-muted-foreground truncate max-w-[200px]">{ch.title || 'Untitled'}</span>
+                              </div>
+                            </div>
+                            {selectedChapters.includes(Number(ch.chapterNumber)) && <Check className="h-4 w-4 text-primary" />}
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+
+                    <DialogFooter className="mt-6">
+                      <Button variant="ghost" onClick={() => setSelectedChapters([])} className="rounded-xl">Clear Selection</Button>
+                      <Button 
+                        variant="destructive" 
+                        onClick={handleBulkDelete}
+                        disabled={selectedChapters.length === 0}
+                        className="rounded-xl font-bold px-6 shadow-lg shadow-destructive/20"
+                      >
+                        Delete Selected ({selectedChapters.length})
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Delete Entire Book */}
                 <AlertDialog>

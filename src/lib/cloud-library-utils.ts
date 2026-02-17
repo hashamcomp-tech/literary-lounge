@@ -59,13 +59,19 @@ export async function deleteCloudBook(db: Firestore, bookId: string) {
 
 /**
  * Deletes a specific chapter from a cloud book.
- * Updates both the chapters subcollection and the root document's cached chapters array.
  */
 export async function deleteCloudChapter(db: Firestore, bookId: string, chapterNumber: number) {
+  return deleteCloudChaptersBulk(db, bookId, [chapterNumber]);
+}
+
+/**
+ * Deletes multiple chapters from a cloud book in a single batch.
+ * Updates both the chapters subcollection and the root document's cached chapters array.
+ */
+export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, chapterNumbers: number[]) {
   const bookRef = doc(db, 'books', bookId);
-  const chapterRef = doc(db, 'books', bookId, 'chapters', chapterNumber.toString());
+  const infoRef = doc(db, 'books', bookId, 'metadata', 'info');
   
-  // Get current book data to update the cached array
   const bookSnap = await getDoc(bookRef);
   if (!bookSnap.exists()) {
     throw new Error("Parent manuscript not found.");
@@ -73,22 +79,26 @@ export async function deleteCloudChapter(db: Firestore, bookId: string, chapterN
 
   const data = bookSnap.data();
   const currentChapters = data.chapters || [];
-  const updatedChapters = currentChapters.filter((ch: any) => Number(ch.chapterNumber) !== chapterNumber);
+  const updatedChapters = currentChapters.filter((ch: any) => !chapterNumbers.includes(Number(ch.chapterNumber)));
   
   const batch = writeBatch(db);
   
-  // Remove from subcollection
-  batch.delete(chapterRef);
+  // Remove each chapter from the subcollection
+  chapterNumbers.forEach(num => {
+    const chapterRef = doc(db, 'books', bookId, 'chapters', num.toString());
+    batch.delete(chapterRef);
+  });
   
-  // Update root document cache and total count
-  batch.update(bookRef, { 
+  const updateData = {
     chapters: updatedChapters,
     'metadata.info.totalChapters': updatedChapters.length,
     lastUpdated: new Date().toISOString()
-  });
+  };
 
-  // Update metadata/info document as well for consistency
-  const infoRef = doc(db, 'books', bookId, 'metadata', 'info');
+  // Update root document cache
+  batch.update(bookRef, updateData);
+
+  // Update metadata/info document
   batch.update(infoRef, {
     totalChapters: updatedChapters.length,
     lastUpdated: new Date().toISOString()
@@ -96,7 +106,7 @@ export async function deleteCloudChapter(db: Firestore, bookId: string, chapterN
 
   return batch.commit().catch(async (serverError) => {
     const permissionError = new FirestorePermissionError({
-      path: chapterRef.path,
+      path: bookRef.path,
       operation: 'delete',
     });
     errorEmitter.emit('permission-error', permissionError);
