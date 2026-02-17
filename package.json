@@ -9,8 +9,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "sync": "git config pull.rebase false && git pull origin main",
-    "push": "git add . && git commit -m 'Updates from Literary Lounge' && git push origin main"
+    "sync": "git config pull.rebase false && git pull --no-rebase origin main",
+    "push": "git add . && git commit -m 'Updates from Literary Lounge' && git push origin main",
+    "status": "git status"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.0.5",
