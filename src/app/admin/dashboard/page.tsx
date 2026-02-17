@@ -1,23 +1,26 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, doc, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, query, orderBy, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight } from 'lucide-react';
+import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight, RefreshCcw, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { useToast } from '@/hooks/use-toast';
 
 const MAX_STORAGE_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB free tier
 
 export default function AdminDashboard() {
   const db = useFirestore();
   const router = useRouter();
+  const { toast } = useToast();
   
   const [bookCount, setBookCount] = useState(0);
   const [chapterCount, setChapterCount] = useState(0);
@@ -26,6 +29,7 @@ export default function AdminDashboard() {
   const [remainingStorage, setRemainingStorage] = useState(MAX_STORAGE_BYTES);
   const [recentRequests, setRecentRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     if (!db) return;
@@ -39,6 +43,10 @@ export default function AdminDashboard() {
           const used = docSnap.data().storageBytesUsed || 0;
           setStorageUsed(used);
           setRemainingStorage(MAX_STORAGE_BYTES - used);
+        } else {
+          // Explicitly set to 0 if doc doesn't exist
+          setStorageUsed(0);
+          setRemainingStorage(MAX_STORAGE_BYTES);
         }
       },
       async (err) => {
@@ -116,6 +124,43 @@ export default function AdminDashboard() {
     };
   }, [db]);
 
+  /**
+   * Deep sync tool to repair storage statistics.
+   * Scans all books and sums up coverSize.
+   */
+  const handleRecalculateStorage = async () => {
+    if (!db) return;
+    setIsSyncing(true);
+    try {
+      const booksSnap = await getDocs(collection(db, 'books'));
+      let totalSize = 0;
+      
+      booksSnap.forEach(doc => {
+        const data = doc.data();
+        totalSize += (data.coverSize || data.metadata?.info?.coverSize || 0);
+      });
+
+      const statsRef = doc(db, 'stats', 'storageUsage');
+      await setDoc(statsRef, { 
+        storageBytesUsed: totalSize,
+        lastSyncedAt: serverTimestamp() 
+      }, { merge: true });
+
+      toast({
+        title: "Stats Repaired",
+        description: `Library scanned. Total storage: ${(totalSize / (1024 * 1024)).toFixed(2)} MB.`
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Sync Failed",
+        description: "Could not access library metadata."
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
   const storagePercentage = (storageUsed / MAX_STORAGE_BYTES) * 100;
 
@@ -138,6 +183,15 @@ export default function AdminDashboard() {
               <h1 className="text-4xl font-headline font-black">Lounge Intelligence</h1>
               <p className="text-muted-foreground mt-2">Real-time metrics for your readers and resources.</p>
             </div>
+            <Button 
+              variant="outline" 
+              className="rounded-xl font-bold h-12 px-6 gap-2 border-primary/20"
+              onClick={handleRecalculateStorage}
+              disabled={isSyncing}
+            >
+              {isSyncing ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+              Repair Stats
+            </Button>
           </header>
 
           {isLoading ? (
@@ -190,10 +244,13 @@ export default function AdminDashboard() {
                 <Card className="border-none shadow-xl bg-card/80 backdrop-blur overflow-hidden flex flex-col">
                   <div className="h-2 bg-primary w-full" />
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-xl font-headline font-bold">
-                      <HardDrive className="h-5 w-5 text-primary" />
-                      Storage Allocation
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-xl font-headline font-bold">
+                        <HardDrive className="h-5 w-5 text-primary" />
+                        Storage Allocation
+                      </CardTitle>
+                      {storageUsed > 0 && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                    </div>
                     <CardDescription>Estimated usage of Firebase 5GB Free Tier</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-8 flex-1 flex flex-col justify-center">

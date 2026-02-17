@@ -72,6 +72,7 @@
         "genre": { "type": "string" },
         "views": { "type": "number" },
         "coverURL": { "type": "string" },
+        "coverSize": { "type": "number" },
         "lastUpdated": { "type": "string", "format": "date-time" }
       },
       "required": ["author", "bookTitle", "ownerId", "lastUpdated"]
@@ -92,6 +93,15 @@
         "genre": { "type": "string" }
       },
       "required": ["bookId", "lastReadChapter", "lastReadAt"]
+    },
+    "GlobalStats": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "GlobalStats",
+      "type": "object",
+      "description": "System-wide aggregated metrics.",
+      "properties": {
+        "storageBytesUsed": { "type": "number" }
+      }
     }
   },
   "auth": {
@@ -124,6 +134,14 @@
           "entityName": "NovelMetadata",
           "schema": { "$ref": "#/backend/entities/NovelMetadata" },
           "description": "Stores novel data and metadata."
+        }
+      },
+      {
+        "path": "/stats/storageUsage",
+        "definition": {
+          "entityName": "GlobalStats",
+          "schema": { "$ref": "#/backend/entities/GlobalStats" },
+          "description": "Aggregated storage metrics for the Firebase 5GB free tier."
         }
       },
       {
