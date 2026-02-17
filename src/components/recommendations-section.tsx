@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
@@ -93,6 +92,7 @@ export default function RecommendationsSection({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedBooks.map((book) => {
           const coverImg = book.coverURL || book.metadata?.info?.coverURL || book.coverImage || `https://picsum.photos/seed/${book.id}/400/600`;
+          const genres = (Array.isArray(book.genre) ? book.genre : [book.genre]).filter(Boolean);
           
           return (
             <Link key={book.id} href={`/pages/${book.id}/1`}>
@@ -133,8 +133,8 @@ export default function RecommendationsSection({
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex gap-1 overflow-hidden">
-                          {(Array.isArray(book.genre) ? book.genre : [book.genre]).slice(0, 1).map(g => (
-                            <Badge key={g} variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10 truncate max-w-[60px]">
+                          {genres.slice(0, 1).map((g, i) => (
+                            <Badge key={`${book.id}-genre-${i}`} variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10 truncate max-w-[60px]">
                               {g}
                             </Badge>
                           ))}

@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -58,8 +57,8 @@ export default function NovelCard({ novel }: NovelCardProps) {
 
   const authorName = novel.author || 'Unknown Author';
   
-  // Handle genres as array or string
-  const genres: string[] = Array.isArray(novel.genre) ? novel.genre : (novel.genre ? [novel.genre] : []);
+  // Handle genres as array or string, filtering out any empty/null values
+  const genres: string[] = (Array.isArray(novel.genre) ? novel.genre : (novel.genre ? [novel.genre] : [])).filter(Boolean);
   
   // Prioritize uploaded cover URL, then fallback to metadata info, then mock image, finally a stable seeded placeholder
   const displayImage = novel.coverURL || 
@@ -116,8 +115,8 @@ export default function NovelCard({ novel }: NovelCardProps) {
               </h3>
               <p className="text-sm text-muted-foreground mb-2 line-clamp-1">By {authorName}</p>
               <div className="flex gap-1.5 flex-wrap items-center">
-                {genres.slice(0, 2).map(g => (
-                  <Badge key={g} variant="outline" className="text-[9px] h-4.5 uppercase tracking-wider font-bold border-muted-foreground/20 text-muted-foreground">
+                {genres.slice(0, 2).map((g, i) => (
+                  <Badge key={`${novel.id}-genre-${i}`} variant="outline" className="text-[9px] h-4.5 uppercase tracking-wider font-bold border-muted-foreground/20 text-muted-foreground">
                     {g}
                   </Badge>
                 ))}
