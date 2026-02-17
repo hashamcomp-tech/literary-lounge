@@ -1,8 +1,7 @@
-
-import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL, FirebaseStorage } from "firebase/storage";
 
 /**
- * Uploads a cover image for a book to Firebase Storage and returns the download URL.
+ * Uploads a cover image for a book to Firebase Storage using resumable uploads.
  * Includes a safety timeout to prevent the UI from hanging on slow connections.
  * 
  * @param storage The Firebase Storage instance.
@@ -10,46 +9,48 @@ import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/stor
  * @param bookId The unique ID of the book.
  * @returns A promise that resolves to the download URL of the uploaded image, or null if no file.
  */
-const UPLOAD_TIMEOUT = 60000; // 60 seconds for covers
+const UPLOAD_TIMEOUT = 60000; // 60 seconds
 
-export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string) {
+export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string): Promise<string | null> {
   if (!file || !storage) return null;
 
-  let timeoutId: any;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error("Cover upload timed out.")), UPLOAD_TIMEOUT);
+  return new Promise((resolve, reject) => {
+    const storageRef = ref(storage, `bookCovers/${bookId}`);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    const timeoutId = setTimeout(() => {
+      uploadTask.cancel();
+      reject(new Error("Cover upload timed out."));
+    }, UPLOAD_TIMEOUT);
+
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        // Optional: track progress here if needed
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        console.log(`Upload is ${progress}% done`);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        console.error("Cover upload task failed:", error);
+        
+        if (error.code === 'storage/unauthorized') {
+          reject(new Error("Access denied. Ensure Storage is enabled and rules allow uploads."));
+        } else if (error.code === 'storage/canceled') {
+          reject(new Error("Upload was canceled due to timeout."));
+        } else {
+          reject(new Error(error.message || "Failed to upload cover art."));
+        }
+      },
+      async () => {
+        clearTimeout(timeoutId);
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          resolve(downloadURL);
+        } catch (e: any) {
+          reject(new Error("Failed to retrieve download URL."));
+        }
+      }
+    );
   });
-
-  try {
-    const coverRef = ref(storage, `bookCovers/${bookId}`);
-
-    // Perform the upload with a safety timeout
-    await Promise.race([
-      uploadBytes(coverRef, file),
-      timeoutPromise
-    ]);
-
-    // Success - clear the timeout
-    clearTimeout(timeoutId);
-
-    // Retrieve the public URL
-    const downloadURL = await getDownloadURL(coverRef);
-
-    return downloadURL;
-  } catch (error: any) {
-    // Ensure timeout is cleared on error
-    if (timeoutId) clearTimeout(timeoutId);
-    
-    console.warn("Firebase Storage Cover Upload Error:", error);
-    
-    if (error.code === 'storage/unauthorized') {
-      throw new Error("Access denied to Storage. Please ensure Storage is enabled and rules allow uploads in your Firebase Console.");
-    }
-    
-    if (error.message === "Cover upload timed out.") {
-      throw error;
-    }
-    
-    throw new Error(error.message || "Failed to upload cover art.");
-  }
 }

@@ -1,9 +1,8 @@
-
-import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL, FirebaseStorage } from "firebase/storage";
 
 /**
- * @fileOverview Utility for uploading user profile photos to Firebase Storage.
- * Improved with safety timeouts to prevent UI hangs.
+ * @fileOverview Utility for uploading user profile photos to Firebase Storage using resumable uploads.
+ * Improved with safety timeouts and better task management.
  */
 
 const UPLOAD_TIMEOUT = 60000; // 60 seconds
@@ -21,41 +20,43 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
     throw new Error("Missing required parameters for profile photo upload.");
   }
 
-  let timeoutId: any;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error("Upload timed out. Please check your internet connection and Firebase Storage rules."));
+  return new Promise((resolve, reject) => {
+    const storageRef = ref(storage, `profilePhotos/${userId}`);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    const timeoutId = setTimeout(() => {
+      uploadTask.cancel();
+      reject(new Error("Upload timed out. Please check your internet connection."));
     }, UPLOAD_TIMEOUT);
+
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        // Optional: Progress monitoring
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        console.log(`Avatar upload is ${progress}% done`);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        console.warn("Firebase Storage Profile Photo Upload Error:", error);
+        
+        if (error.code === 'storage/unauthorized') {
+          reject(new Error("Permission denied. Ensure Firebase Storage rules allow user uploads."));
+        } else if (error.code === 'storage/canceled') {
+          reject(new Error("Upload timed out or was canceled by user."));
+        } else {
+          reject(new Error(error.message || "Failed to upload profile photo."));
+        }
+      },
+      async () => {
+        clearTimeout(timeoutId);
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          resolve(downloadURL);
+        } catch (e: any) {
+          reject(new Error("Failed to finalize upload."));
+        }
+      }
+    );
   });
-
-  try {
-    const photoRef = ref(storage, `profilePhotos/${userId}`);
-
-    // Race the upload against our timeout
-    await Promise.race([
-      uploadBytes(photoRef, file),
-      timeoutPromise
-    ]);
-
-    // Success - clear the timeout
-    clearTimeout(timeoutId);
-
-    // Retrieve the public URL
-    const downloadURL = await getDownloadURL(photoRef);
-
-    return downloadURL;
-  } catch (error: any) {
-    // Ensure timeout is cleared on error
-    if (timeoutId) clearTimeout(timeoutId);
-    
-    console.warn("Firebase Storage Profile Photo Upload Error:", error);
-    
-    if (error.code === 'storage/unauthorized') {
-      throw new Error("Permission denied. Ensure Firebase Storage is enabled and rules allow user uploads.");
-    } else if (error.code === 'storage/retry-limit-exceeded') {
-      throw new Error("The upload failed due to excessive retries. This often happens with CORS or network issues.");
-    }
-    
-    throw new Error(error.message || "Failed to upload profile photo. Please try a smaller image or check your connection.");
-  }
 }
