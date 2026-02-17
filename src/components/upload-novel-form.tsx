@@ -471,7 +471,7 @@ export function UploadNovelForm() {
                       <div className="space-y-3 opacity-50">
                         <BookPlus className="h-10 w-10 mx-auto" />
                         <span className="font-black uppercase tracking-widest text-[10px] block">Upload EPUB for Auto-Parsing</span>
-                        <p className="text-[10px] max-w-[200px] mx-auto">We'll extract chapters and filter for quality (>100 words).</p>
+                        <p className="text-[10px] max-w-[200px] mx-auto">We'll extract chapters and filter for quality (&gt;100 words).</p>
                       </div>
                     )}
                   </div>
