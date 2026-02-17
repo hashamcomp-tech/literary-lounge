@@ -6,10 +6,10 @@ import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/stor
  * @param storage The Firebase Storage instance.
  * @param file The image file to upload.
  * @param bookId The unique ID of the book.
- * @returns A promise that resolves to the download URL of the uploaded image.
+ * @returns A promise that resolves to the download URL of the uploaded image, or null if no file.
  */
-export async function uploadCoverImage(storage: FirebaseStorage, file: File, bookId: string) {
-  if (!file) throw new Error("No file provided");
+export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string) {
+  if (!file) return null;
 
   const coverRef = ref(storage, `bookCovers/${bookId}`);
 

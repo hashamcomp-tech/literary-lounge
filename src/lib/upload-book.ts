@@ -12,7 +12,7 @@ interface Chapter {
 
 /**
  * Handles the multi-step process of publishing a novel to the cloud.
- * 1. Uploads cover image to Storage.
+ * 1. Uploads cover image to Storage (if provided).
  * 2. Sets searchable root document with full chapters array for fast reading.
  * 3. Sets detailed metadata.
  * 4. Updates global storage stats.
@@ -36,16 +36,20 @@ export async function uploadBookToCloud({
   author: string;
   genre: string;
   chapters: Chapter[];
-  coverFile: File;
+  coverFile?: File | null;
   ownerId: string;
 }) {
   if (!genre) throw new Error("Genre is required for cloud books.");
-  if (!coverFile) throw new Error("Cover image is required for cloud books.");
   if (!chapters || chapters.length === 0) throw new Error("Cannot publish a book with no chapters.");
 
-  // 1. Upload cover to Storage
-  const coverURL = await uploadCoverImage(storage, coverFile, bookId);
-  const coverSize = coverFile.size;
+  // 1. Upload cover to Storage (if provided)
+  let coverURL = null;
+  let coverSize = 0;
+  
+  if (coverFile) {
+    coverURL = await uploadCoverImage(storage, coverFile, bookId);
+    coverSize = coverFile.size;
+  }
 
   // 2. Prepare Metadata
   const metadataInfo = {
@@ -108,23 +112,25 @@ export async function uploadBookToCloud({
     errorEmitter.emit('permission-error', permissionError);
   });
 
-  // 5. Update Global Storage Usage Stats
-  const statsRef = doc(db, 'stats', 'storageUsage');
-  getDoc(statsRef).then((snap) => {
-    if (!snap.exists()) {
-      setDoc(statsRef, { storageBytesUsed: 0 }).catch(() => {});
-    }
-    updateDoc(statsRef, { 
-      storageBytesUsed: increment(coverSize) 
-    }).catch(async (serverError) => {
-      const permissionError = new FirestorePermissionError({
-        path: statsRef.path,
-        operation: 'update',
-        requestResourceData: { storageBytesUsed: increment(coverSize) },
+  // 5. Update Global Storage Usage Stats (only if we actually uploaded a cover)
+  if (coverSize > 0) {
+    const statsRef = doc(db, 'stats', 'storageUsage');
+    getDoc(statsRef).then((snap) => {
+      if (!snap.exists()) {
+        setDoc(statsRef, { storageBytesUsed: 0 }).catch(() => {});
+      }
+      updateDoc(statsRef, { 
+        storageBytesUsed: increment(coverSize) 
+      }).catch(async (serverError) => {
+        const permissionError = new FirestorePermissionError({
+          path: statsRef.path,
+          operation: 'update',
+          requestResourceData: { storageBytesUsed: increment(coverSize) },
+        });
+        errorEmitter.emit('permission-error', permissionError);
       });
-      errorEmitter.emit('permission-error', permissionError);
     });
-  });
+  }
 
   // 6. Set Chapters in subcollection (Maintains scalability for very large books)
   for (const ch of chapters) {

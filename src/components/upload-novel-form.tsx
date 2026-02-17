@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -242,15 +241,6 @@ export function UploadNovelForm() {
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
     if (!db || !storage) return;
 
-    // Explicitly check for Cloud Requirements for Approved Users
-    if (isApprovedUser && !isOfflineMode && !coverFile) {
-      return toast({ 
-        variant: 'destructive', 
-        title: 'Cover Required', 
-        description: 'Cloud publication requires a cover image. Please upload one below.' 
-      });
-    }
-
     setLoading(true);
     setLoadingStatus(isApprovedUser && !isOfflineMode ? 'Syncing to Cloud...' : 'Saving to Private Library...');
 
@@ -300,7 +290,7 @@ export function UploadNovelForm() {
           author: finalAuthor, 
           genre, 
           chapters, 
-          coverFile: coverFile!, 
+          coverFile: coverFile, 
           ownerId: user!.uid
         });
         toast({ title: "Cloud Published", description: "Your novel is now available in the Lounge." });
@@ -430,7 +420,7 @@ export function UploadNovelForm() {
             <div className="space-y-4 pt-4 border-t border-border/50">
               <div className="flex items-center justify-between">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                  <ImageIcon className="h-4 w-4" /> Cover Art {isApprovedUser && !isOfflineMode && <span className="text-destructive font-black">(REQUIRED)</span>}
+                  <ImageIcon className="h-4 w-4" /> Cover Art (Optional)
                 </Label>
               </div>
               <div className={`relative border-2 border-dashed rounded-[2rem] p-8 transition-all duration-500 ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
