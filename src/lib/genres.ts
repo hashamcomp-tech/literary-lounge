@@ -1,15 +1,37 @@
 /**
  * @fileOverview Predefined list of book genres for the Literary Lounge.
+ * Expanded to include all major literary and non-fiction categories.
  */
 
 export const GENRES = [
   "Fiction",
+  "Non-Fiction",
   "Fantasy",
-  "Science",
-  "Self Help",
+  "Science Fiction",
+  "Mystery",
+  "Thriller",
+  "Horror",
+  "Historical Fiction",
   "Romance",
-  "History",
+  "Contemporary",
+  "Adventure",
+  "Young Adult",
+  "Children's",
+  "Classic",
+  "Poetry",
+  "Memoir",
+  "Biography",
+  "Self Help",
   "Business",
   "Philosophy",
-  "Psychology"
+  "Psychology",
+  "History",
+  "Science",
+  "Spirituality",
+  "Humor",
+  "Crime",
+  "Dystopian",
+  "Graphic Novel",
+  "Drama",
+  "Satire"
 ];
