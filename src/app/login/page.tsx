@@ -11,7 +11,7 @@ import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/fireb
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -26,6 +26,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -384,68 +385,83 @@ export default function LoginPage() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4 pt-4 border-t">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Account Settings</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Account & Activity</Label>
                   
-                  {!isChangingUsername ? (
-                    <div className="space-y-3">
+                  <div className="space-y-3">
+                    <Link href="/history">
                       <Button 
                         variant="outline" 
                         className="w-full justify-between h-12 rounded-xl border-muted"
-                        onClick={() => {
-                          setIsChangingUsername(true);
-                          setNewUsername(profile?.username || '');
-                        }}
                       >
                         <div className="flex items-center gap-3">
-                          <UserIcon className="h-4 w-4 text-primary" />
-                          <span>Change Username</span>
+                          <History className="h-4 w-4 text-primary" />
+                          <span>Reading History</span>
                         </div>
-                        <Pencil className="h-3.5 w-3.5 opacity-50" />
+                        <ChevronRight className="h-3.5 w-3.5 opacity-50" />
                       </Button>
-                      
-                      {isAdmin ? (
-                        <p className="text-[10px] text-primary flex items-center gap-1.5 px-1 font-bold">
-                          <Shield className="h-3 w-3" /> Administrator: Instant username changes enabled.
-                        </p>
-                      ) : (
-                        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 px-1">
-                          <Clock className="h-3 w-3" /> Usernames can be changed once every 30 days.
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <form onSubmit={handleUpdateUsername} className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <div className="space-y-1">
-                        <Label htmlFor="new-username" className="text-xs">New Username</Label>
-                        <Input 
-                          id="new-username"
-                          value={newUsername}
-                          onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
-                          placeholder="Enter unique username"
-                          className="rounded-xl h-11"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="flex gap-2">
+                    </Link>
+
+                    {!isChangingUsername ? (
+                      <div className="space-y-3">
                         <Button 
-                          type="button" 
-                          variant="ghost" 
-                          className="flex-1 rounded-xl"
-                          onClick={() => setIsChangingUsername(false)}
-                          disabled={loading}
+                          variant="outline" 
+                          className="w-full justify-between h-12 rounded-xl border-muted"
+                          onClick={() => {
+                            setIsChangingUsername(true);
+                            setNewUsername(profile?.username || '');
+                          }}
                         >
-                          Cancel
+                          <div className="flex items-center gap-3">
+                            <UserIcon className="h-4 w-4 text-primary" />
+                            <span>Change Username</span>
+                          </div>
+                          <Pencil className="h-3.5 w-3.5 opacity-50" />
                         </Button>
-                        <Button 
-                          type="submit" 
-                          className="flex-1 rounded-xl"
-                          disabled={loading || !newUsername.trim() || newUsername.trim() === profile?.username}
-                        >
-                          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
-                        </Button>
+                        
+                        {isAdmin ? (
+                          <p className="text-[10px] text-primary flex items-center gap-1.5 px-1 font-bold">
+                            <Shield className="h-3 w-3" /> Administrator: Instant username changes enabled.
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 px-1">
+                            <Clock className="h-3 w-3" /> Usernames can be changed once every 30 days.
+                          </p>
+                        )}
                       </div>
-                    </form>
-                  )}
+                    ) : (
+                      <form onSubmit={handleUpdateUsername} className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="space-y-1">
+                          <Label htmlFor="new-username" className="text-xs">New Username</Label>
+                          <Input 
+                            id="new-username"
+                            value={newUsername}
+                            onChange={(e) => setNewUsername(e.target.value.toLowerCase())}
+                            placeholder="Enter unique username"
+                            className="rounded-xl h-11"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            type="button" 
+                            variant="ghost" 
+                            className="flex-1 rounded-xl"
+                            onClick={() => setIsChangingUsername(false)}
+                            disabled={loading}
+                          >
+                            Cancel
+                          </Button>
+                          <Button 
+                            type="submit" 
+                            className="flex-1 rounded-xl"
+                            disabled={loading || !newUsername.trim() || newUsername.trim() === profile?.username}
+                          >
+                            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
                 </div>
 
                 <Separator />
