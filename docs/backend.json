@@ -69,7 +69,11 @@
         "author": { "type": "string" },
         "bookTitle": { "type": "string" },
         "ownerId": { "type": "string" },
-        "genre": { "type": "string" },
+        "genre": { 
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The list of genres associated with this book."
+        },
         "views": { "type": "number" },
         "coverURL": { "type": "string" },
         "coverSize": { "type": "number" },
@@ -90,7 +94,10 @@
         "lastReadChapter": { "type": "number" },
         "lastReadAt": { "type": "string", "format": "date-time" },
         "isCloud": { "type": "boolean" },
-        "genre": { "type": "string" }
+        "genre": { 
+          "type": "array",
+          "items": { "type": "string" }
+        }
       },
       "required": ["bookId", "lastReadChapter", "lastReadAt"]
     },

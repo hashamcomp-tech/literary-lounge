@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview AI flow for generating book covers using Imagen 4.
@@ -9,7 +10,7 @@ import { z } from 'genkit';
 const GenerateCoverInputSchema = z.object({
   title: z.string(),
   author: z.string(),
-  genre: z.string(),
+  genres: z.array(z.string()),
   description: z.string().optional(),
 });
 
@@ -30,8 +31,9 @@ const generateCoverFlow = ai.defineFlow(
     outputSchema: z.string(),
   },
   async (input) => {
-    // We instruct the model to use its knowledge of the book's history if applicable
-    const prompt = `Create a professional and authentic book cover for the ${input.genre} novel titled "${input.title}" by ${input.author}.
+    const genreStr = input.genres.join(', ');
+    
+    const prompt = `Create a professional and authentic book cover for the ${genreStr} novel titled "${input.title}" by ${input.author}.
     
     Context: ${input.description || 'A unique work of literature.'}
     
@@ -41,7 +43,7 @@ const generateCoverFlow = ai.defineFlow(
     3. Style: Cinematic, high-quality, illustrative, with minimalist and elegant typography for the title and author name only.
     4. Avoid: Gibberish text, cluttered layouts, or unrelated imagery.
     
-    Mood: ${input.genre === 'Fantasy' ? 'Magical and epic' : input.genre === 'Mystery' ? 'Dark and moody' : input.genre === 'History' ? 'Sophisticated and classic' : 'Evocative and clean'}.`;
+    Mood: ${input.genres.includes('Fantasy') ? 'Magical and epic' : input.genres.includes('Mystery') ? 'Dark and moody' : input.genres.includes('History') ? 'Sophisticated and classic' : 'Evocative and clean'}.`;
 
     const { media } = await ai.generate({
       model: 'googleai/imagen-4.0-fast-generate-001',

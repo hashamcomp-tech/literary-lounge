@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useParams, useRouter } from 'next/navigation';
@@ -17,12 +18,12 @@ export default function GenrePage() {
   // Decode the genre from the URL (e.g., "Self%20Help" -> "Self Help")
   const decodedGenre = decodeURIComponent(genre);
 
-  // Fetch books matching this genre from Firestore
+  // Fetch books matching this genre using array-contains
   const genreQuery = useMemoFirebase(() => {
     if (!db || !decodedGenre) return null;
     return query(
       collection(db, 'books'),
-      where('genre', '==', decodedGenre),
+      where('genre', 'array-contains', decodedGenre),
       orderBy('views', 'desc')
     );
   }, [db, decodedGenre]);

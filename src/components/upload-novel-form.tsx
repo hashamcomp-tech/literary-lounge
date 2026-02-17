@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -8,9 +9,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, BrainCircuit, X } from 'lucide-react';
+import { Upload, BookPlus, Loader2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, X, ChevronDown, Check } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
@@ -21,13 +22,13 @@ import { uploadCoverImage } from '@/lib/upload-cover';
 import { optimizeCoverImage } from '@/lib/image-utils';
 import { identifyBookFromFilename } from '@/ai/flows/identify-book';
 import { generateBookCover } from '@/ai/flows/generate-cover';
+import { Badge } from '@/components/ui/badge';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export function UploadNovelForm() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export function UploadNovelForm() {
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
   const [content, setContent] = useState('');
-  const [genre, setGenre] = useState('');
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -97,10 +98,14 @@ export function UploadNovelForm() {
       const result = await identifyBookFromFilename(selectedFile.name);
       if (result.title) setTitle(result.title);
       if (result.author) setAuthor(result.author);
-      if (result.genre && GENRES.includes(result.genre)) setGenre(result.genre);
+      if (result.genres && result.genres.length > 0) {
+        // Filter suggested genres against our known list
+        const validGenres = result.genres.filter(g => GENRES.includes(g));
+        setSelectedGenres(validGenres);
+      }
       if (result.summary) setIdentifiedSummary(result.summary);
       
-      toast({ title: "AI Identification Complete", description: `Matched: ${result.title} by ${result.author}` });
+      toast({ title: "AI Identification Complete", description: `Matched: ${result.title} with multiple genres.` });
     } catch (err: any) {
       toast({ variant: "destructive", title: "AI Search Failed", description: err.message });
     } finally {
@@ -109,11 +114,11 @@ export function UploadNovelForm() {
   };
 
   const handleManualGenerateCover = async () => {
-    if (!title || !genre) {
+    if (!title || selectedGenres.length === 0) {
       toast({ 
         variant: 'destructive', 
         title: 'Information Required', 
-        description: 'Please provide at least a title and genre for the AI to design an authentic cover.' 
+        description: 'Please provide a title and select genres for the AI to design a cover.' 
       });
       return;
     }
@@ -123,8 +128,8 @@ export function UploadNovelForm() {
       const coverDataUri = await generateBookCover({ 
         title, 
         author: author || 'Anonymous', 
-        genre,
-        description: identifiedSummary || `A unique ${genre} novel.`
+        genres: selectedGenres,
+        description: identifiedSummary || `A unique ${selectedGenres.join(', ')} novel.`
       });
       const resp = await fetch(coverDataUri);
       const blob = await resp.blob();
@@ -153,8 +158,6 @@ export function UploadNovelForm() {
         if (metadata.title) setTitle(metadata.title);
         if (metadata.creator) setAuthor(metadata.creator);
         
-        // Default: No automatic cover extraction to follow user preference
-        
         toast({ title: "Manuscript Loaded", description: `"${metadata.title}" processed.` });
       } catch (e) {
         toast({ variant: 'destructive', title: "Parsing Error", description: "Failed to read EPUB metadata." });
@@ -173,9 +176,15 @@ export function UploadNovelForm() {
     }
   };
 
+  const toggleGenre = (genre: string) => {
+    setSelectedGenres(prev => 
+      prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
+    );
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre.' });
+    if (selectedGenres.length === 0) return toast({ variant: 'destructive', title: 'Missing Genres', description: 'Please select at least one genre.' });
     if (!db) return;
 
     const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
@@ -184,7 +193,6 @@ export function UploadNovelForm() {
     try {
       let finalTitle = title.trim();
       let finalAuthor = author.trim() || 'Anonymous Author';
-      let finalGenre = genre;
       let chapters: any[] = [];
 
       setLoadingStatus('Optimizing Assets...');
@@ -234,7 +242,7 @@ export function UploadNovelForm() {
           bookId: `${docId}_${Date.now()}`,
           title: finalTitle, 
           author: finalAuthor, 
-          genre: finalGenre, 
+          genres: selectedGenres, 
           chapters, 
           coverFile: optimizedCover, 
           ownerId: user!.uid
@@ -255,7 +263,7 @@ export function UploadNovelForm() {
           id: docId, 
           title: finalTitle, 
           author: finalAuthor, 
-          genre: finalGenre, 
+          genre: selectedGenres, 
           coverURL,
           lastUpdated: new Date().toISOString(), 
           isLocalOnly: true
@@ -361,20 +369,46 @@ export function UploadNovelForm() {
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title of the Work" />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div className="grid gap-1.5">
-                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Genre</Label>
-                  <Select value={genre} onValueChange={setGenre}>
-                    <SelectTrigger className="bg-background/50 h-10 rounded-lg border-none shadow-inner text-xs">
-                      <SelectValue placeholder="Genre" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl shadow-2xl">
-                      {GENRES.map((g) => (
-                        <SelectItem key={g} value={g} className="rounded-lg text-xs font-bold">{g}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Genres (Multiple)</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between h-auto py-2.5 px-3 min-h-[40px] rounded-lg border-none shadow-inner bg-background/50 text-xs">
+                        <div className="flex flex-wrap gap-1 max-w-[90%]">
+                          {selectedGenres.length > 0 ? (
+                            selectedGenres.map(g => (
+                              <Badge key={g} variant="secondary" className="h-5 text-[9px] font-bold bg-primary/10 text-primary border-none">
+                                {g}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground">Select Genres</span>
+                          )}
+                        </div>
+                        <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[300px] p-0 rounded-xl shadow-2xl border-none" align="start">
+                      <ScrollArea className="h-[350px]">
+                        <div className="p-2 space-y-1">
+                          {GENRES.map((g) => (
+                            <button
+                              key={g}
+                              type="button"
+                              onClick={() => toggleGenre(g)}
+                              className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-lg transition-colors ${selectedGenres.includes(g) ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
+                            >
+                              <span>{g}</span>
+                              {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
+                            </button>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </PopoverContent>
+                  </Popover>
                 </div>
+                
                 {!selectedFile && (
                   <div className="grid gap-1.5">
                     <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Chapter</Label>
@@ -384,7 +418,7 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            {/* Visual Identity Section - Controlled manually */}
+            {/* Visual Identity Section */}
             <div className="pt-4 border-t border-border/50">
               <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5 mb-3">
                 <ImageIcon className="h-3 w-3" /> Visual Identity (Optional)
@@ -435,7 +469,7 @@ export function UploadNovelForm() {
                       size="sm" 
                       className="rounded-lg h-8 px-3 gap-2 border-primary/20 text-primary bg-primary/5 hover:bg-primary/10"
                       onClick={handleManualGenerateCover}
-                      disabled={loading || isGeneratingCover || !title}
+                      disabled={loading || isGeneratingCover || !title || selectedGenres.length === 0}
                     >
                       <Sparkles className="h-3 w-3" />
                       <span className="text-[9px] font-black uppercase tracking-widest">AI Design</span>

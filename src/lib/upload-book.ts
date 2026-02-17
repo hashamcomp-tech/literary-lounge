@@ -21,7 +21,7 @@ export async function uploadBookToCloud({
   bookId,
   title,
   author,
-  genre,
+  genres,
   chapters,
   coverFile,
   ownerId
@@ -31,12 +31,12 @@ export async function uploadBookToCloud({
   bookId: string;
   title: string;
   author: string;
-  genre: string;
+  genres: string[];
   chapters: Chapter[];
   coverFile?: File | null;
   ownerId: string;
 }) {
-  if (!genre) throw new Error("Genre is required for cloud books.");
+  if (!genres || genres.length === 0) throw new Error("At least one genre is required for cloud books.");
   if (!chapters || chapters.length === 0) throw new Error("Cannot publish a book with no chapters.");
 
   // 1. Resilient cover upload
@@ -45,11 +45,9 @@ export async function uploadBookToCloud({
   
   if (coverFile && storage) {
     try {
-      // We use a timeout within uploadCoverImage to ensure this doesn't hang forever
       coverURL = await uploadCoverImage(storage, coverFile, bookId);
       coverSize = coverFile.size;
     } catch (e) {
-      // CRITICAL: We warn but don't stop the process. The book text is more important.
       console.warn("Cover art failed to upload, continuing with manuscript publishing:", e);
     }
   }
@@ -63,7 +61,7 @@ export async function uploadBookToCloud({
     lastUpdated: serverTimestamp(),
     ownerId,
     totalChapters: chapters.length,
-    genre,
+    genre: genres, // Saved as array
     views: 0,
     coverURL,
     coverSize,
@@ -76,7 +74,7 @@ export async function uploadBookToCloud({
     titleLower: title.toLowerCase(),
     author,
     authorLower: author.toLowerCase(),
-    genre,
+    genre: genres, // Saved as array for array-contains queries
     views: 0,
     isCloud: true,
     ownerId,

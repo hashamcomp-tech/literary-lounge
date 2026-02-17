@@ -31,9 +31,10 @@ export default function RecommendationsSection({
     const booksCol = collection(db, 'books');
     
     if (genre) {
+      // Updated to use array-contains for multi-genre support
       return query(
         booksCol,
-        where('genre', '==', genre),
+        where('genre', 'array-contains', genre),
         limit(limitCount)
       );
     }
@@ -131,9 +132,13 @@ export default function RecommendationsSection({
                         )}
                       </div>
                       <div className="flex items-center justify-between">
-                        <Badge variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10">
-                          {book.genre || book.metadata?.info?.genre || 'Novel'}
-                        </Badge>
+                        <div className="flex gap-1 overflow-hidden">
+                          {(Array.isArray(book.genre) ? book.genre : [book.genre]).slice(0, 1).map(g => (
+                            <Badge key={g} variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10 truncate max-w-[60px]">
+                              {g}
+                            </Badge>
+                          ))}
+                        </div>
                         <span className="text-[10px] font-black text-primary group-hover:translate-x-1 transition-transform">
                           Read Now →
                         </span>

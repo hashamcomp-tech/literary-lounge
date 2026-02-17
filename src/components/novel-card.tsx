@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
-import { Trash2, Loader2, Globe, Book } from 'lucide-react';
+import { Trash2, Loader2, Book } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { deleteCloudBook } from '@/lib/cloud-library-utils';
@@ -57,6 +57,9 @@ export default function NovelCard({ novel }: NovelCardProps) {
   }
 
   const authorName = novel.author || 'Unknown Author';
+  
+  // Handle genres as array or string
+  const genres: string[] = Array.isArray(novel.genre) ? novel.genre : (novel.genre ? [novel.genre] : []);
   
   // Prioritize uploaded cover URL, then fallback to metadata info, then mock image, finally a stable seeded placeholder
   const displayImage = novel.coverURL || 
@@ -112,18 +115,23 @@ export default function NovelCard({ novel }: NovelCardProps) {
                 {novel.title}
               </h3>
               <p className="text-sm text-muted-foreground mb-2 line-clamp-1">By {authorName}</p>
-              <div className="flex gap-2 flex-wrap items-center">
-                <Badge variant="outline" className="text-[10px] h-5 uppercase tracking-wider font-bold border-muted-foreground/20 text-muted-foreground">
-                  {novel.genre || 'Novel'}
-                </Badge>
+              <div className="flex gap-1.5 flex-wrap items-center">
+                {genres.slice(0, 2).map(g => (
+                  <Badge key={g} variant="outline" className="text-[9px] h-4.5 uppercase tracking-wider font-bold border-muted-foreground/20 text-muted-foreground">
+                    {g}
+                  </Badge>
+                ))}
+                {genres.length > 2 && (
+                  <span className="text-[8px] font-black opacity-40">+{genres.length - 2}</span>
+                )}
                 {isCloud && (
-                  <Badge variant="secondary" className="text-[10px] h-5 uppercase tracking-wider font-bold bg-primary/10 text-primary border-none">
+                  <Badge variant="secondary" className="text-[9px] h-4.5 uppercase tracking-wider font-bold bg-primary/10 text-primary border-none">
                     Cloud
                   </Badge>
                 )}
                 {isLocal && (
-                  <Badge variant="secondary" className="text-[10px] h-5 uppercase tracking-wider font-bold bg-amber-100 text-amber-700 border-none">
-                    Local Draft
+                  <Badge variant="secondary" className="text-[9px] h-4.5 uppercase tracking-wider font-bold bg-amber-100 text-amber-700 border-none">
+                    Local
                   </Badge>
                 )}
               </div>

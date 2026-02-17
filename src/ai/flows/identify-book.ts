@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview AI flow for identifying book details from filenames.
@@ -9,7 +10,7 @@ import { z } from 'genkit';
 const IdentifyBookOutputSchema = z.object({
   title: z.string().nullable().describe('The identified book title.'),
   author: z.string().nullable().describe('The identified author name.'),
-  genre: z.string().nullable().describe('The likely genre based on known data.'),
+  genres: z.array(z.string()).describe('The likely list of genres based on known data.'),
   summary: z.string().nullable().describe('A brief summary if known.'),
 });
 
@@ -26,7 +27,7 @@ export async function identifyBookFromFilename(filename: string): Promise<Identi
     
     Filename: "${filename}"
     
-    If you recognize this book from your internal knowledge (simulating an online search), please also provide the likely genre and a 1-sentence summary.
+    If you recognize this book from your internal knowledge (simulating an online search), please also provide the likely genres (multiple if applicable) and a 1-sentence summary.
     If the filename contains underscores, hyphens, or file extensions, clean them up to find the true title.
     
     Format the response as a JSON object.`,

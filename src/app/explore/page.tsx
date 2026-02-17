@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -6,11 +7,10 @@ import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
-import { Loader2, BookOpen, Filter, X, Search, Sparkles } from 'lucide-react';
+import { Loader2, BookOpen, Filter, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { GENRES } from '@/lib/genres';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { GENRES } from '@/lib/genres';
 
 function ExploreContent() {
   const searchParams = useSearchParams();
@@ -31,9 +31,10 @@ function ExploreContent() {
     const booksCol = collection(db, 'books');
     
     if (selectedGenre !== 'All') {
+      // Updated to use array-contains for multi-genre support
       return query(
         booksCol,
-        where('genre', '==', selectedGenre),
+        where('genre', 'array-contains', selectedGenre),
         orderBy('createdAt', 'desc'),
         limit(48)
       );
