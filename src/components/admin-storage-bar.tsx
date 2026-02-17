@@ -25,12 +25,8 @@ export default function AdminStorageBar() {
   const rawPercentage = (usage / freeLimit) * 100;
   const percentage = usage > 0 ? Math.max(rawPercentage, 0.5) : 0;
   
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const formatMB = (bytes: number) => {
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
   };
 
   const remaining = Math.max(freeLimit - usage, 0);
@@ -70,10 +66,10 @@ export default function AdminStorageBar() {
       <div className="space-y-3">
         <div className="flex justify-between items-end">
           <span className="text-2xl font-headline font-black text-primary">
-            {isLoading ? "---" : formatBytes(usage)}
+            {isLoading ? "---" : formatMB(usage)}
           </span>
           <span className="text-xs font-bold text-muted-foreground">
-            {formatBytes(remaining)} remaining
+            {formatMB(remaining)} remaining
           </span>
         </div>
         
@@ -85,8 +81,8 @@ export default function AdminStorageBar() {
         </div>
         
         <div className="flex justify-between text-[10px] font-black uppercase tracking-tighter text-muted-foreground opacity-50">
-          <span>0 GB</span>
-          <span>5 GB Limit</span>
+          <span>0 MB</span>
+          <span>5120 MB Limit</span>
         </div>
       </div>
     </div>

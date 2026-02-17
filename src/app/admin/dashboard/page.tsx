@@ -268,9 +268,9 @@ export default function AdminDashboard() {
                     <div className="space-y-3">
                       <Progress value={storagePercentage} className="h-4 bg-primary/10" />
                       <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">
-                        <span>0 GB</span>
+                        <span>0 MB</span>
                         <span>{Math.round(storagePercentage)}% Consumed</span>
-                        <span>5 GB</span>
+                        <span>5120 MB</span>
                       </div>
                     </div>
                   </CardContent>
