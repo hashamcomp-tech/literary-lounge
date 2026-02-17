@@ -262,8 +262,8 @@ export default function LoginPage() {
     if (!storage) {
       toast({
         variant: "destructive",
-        title: "Service Unavailable",
-        description: "Cloud storage is currently disconnected. Please try again later."
+        title: "Cloud Disconnected",
+        description: "Firebase Storage is not initialized. If you're the owner, please enable Storage in your Firebase Console."
       });
       return;
     }
@@ -284,16 +284,15 @@ export default function LoginPage() {
         await updateProfile(auth.currentUser, { photoURL: downloadURL });
       }
 
-      toast({ title: "Profile Photo Updated", description: "Your new avatar has been saved." });
+      toast({ title: "Avatar Updated", description: "Your profile photo is now visible across the Lounge." });
     } catch (error: any) {
       console.error("Photo upload error:", error);
       toast({ 
         variant: "destructive", 
-        title: "Upload Failed", 
-        description: error.message || "Could not complete the photo upload. Check your connection." 
+        title: "Upload Blocked", 
+        description: error.message || "Failed to reach the storage bucket. Check your internet or Firebase console settings." 
       });
     } finally {
-      // ALWAYS reset loading state
       setIsUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -438,7 +437,7 @@ export default function LoginPage() {
                 
                 {isUploadingPhoto && (
                   <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-primary animate-pulse mb-4 uppercase tracking-widest">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Updating Avatar...
+                    <Loader2 className="h-3 w-3 animate-spin" /> Securing Image...
                   </div>
                 )}
                 

@@ -3,8 +3,10 @@ import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/stor
 
 /**
  * @fileOverview Utility for uploading user profile photos to Firebase Storage.
- * Improved with better error handling to prevent hangs.
+ * Improved with safety timeouts to prevent UI hangs.
  */
+
+const UPLOAD_TIMEOUT = 30000; // 30 seconds
 
 /**
  * Uploads a profile photo for a user to Firebase Storage and returns the download URL.
@@ -19,13 +21,19 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
     throw new Error("Missing required parameters for profile photo upload.");
   }
 
+  // Create a timeout promise
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Upload timed out. Please check your internet connection and Firebase Storage setup.")), UPLOAD_TIMEOUT)
+  );
+
   try {
-    // Generate a unique path for the profile photo
     const photoRef = ref(storage, `profilePhotos/${userId}`);
 
-    // Perform the upload
-    // uploadBytes can hang if bucket is not active or CORS is restricted
-    await uploadBytes(photoRef, file);
+    // Race the upload against our timeout
+    await Promise.race([
+      uploadBytes(photoRef, file),
+      timeoutPromise
+    ]);
 
     // Retrieve the public URL
     const downloadURL = await getDownloadURL(photoRef);
@@ -34,13 +42,12 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
   } catch (error: any) {
     console.error("Firebase Storage Profile Photo Upload Error:", error);
     
-    // Provide a more descriptive error for common workstation/permission issues
     if (error.code === 'storage/unauthorized') {
-      throw new Error("Permission denied. Storage rules may be restricting this upload.");
+      throw new Error("Permission denied. Ensure Firebase Storage is enabled and rules allow user uploads.");
     } else if (error.code === 'storage/retry-limit-exceeded') {
-      throw new Error("Upload timed out. Please check your internet connection.");
+      throw new Error("The upload failed due to excessive retries. This often happens with CORS or network issues.");
     }
     
-    throw new Error(error.message || "Failed to upload profile photo. Please ensure cloud storage is active.");
+    throw new Error(error.message || "Failed to upload profile photo. Please try a smaller image or check your connection.");
   }
 }

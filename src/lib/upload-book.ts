@@ -13,8 +13,7 @@ interface Chapter {
 
 /**
  * @fileOverview Refined multi-step process for publishing novels.
- * Prevents Firestore size limit errors by storing chapter content only in subcollections.
- * Now includes robust error handling for Storage failures to prevent hangs.
+ * Prevents Firestore size limit errors and implements resilient image uploading.
  */
 export async function uploadBookToCloud({
   db,
@@ -40,18 +39,18 @@ export async function uploadBookToCloud({
   if (!genre) throw new Error("Genre is required for cloud books.");
   if (!chapters || chapters.length === 0) throw new Error("Cannot publish a book with no chapters.");
 
-  // 1. Upload cover to Storage (if provided)
+  // 1. Resilient cover upload
   let coverURL = null;
   let coverSize = 0;
   
   if (coverFile && storage) {
     try {
-      // Use a slightly shorter timeout for the cover art to prevent blocking the whole process
+      // We use a timeout within uploadCoverImage to ensure this doesn't hang forever
       coverURL = await uploadCoverImage(storage, coverFile, bookId);
       coverSize = coverFile.size;
     } catch (e) {
-      console.warn("Cover image upload failed or timed out, proceeding with manuscript only:", e);
-      // We don't re-throw here because the book content itself is the priority
+      // CRITICAL: We warn but don't stop the process. The book text is more important.
+      console.warn("Cover art failed to upload, continuing with manuscript publishing:", e);
     }
   }
 
@@ -70,7 +69,7 @@ export async function uploadBookToCloud({
     coverSize,
   };
 
-  // 3. Set Root Document (Metadata and Table of Contents only)
+  // 3. Set Root Document
   const bookRef = doc(db, 'books', bookId);
   const rootPayload = {
     title,
@@ -92,7 +91,6 @@ export async function uploadBookToCloud({
     }))
   };
 
-  // Atomic write for the main book record
   await setDoc(bookRef, rootPayload, { merge: true }).catch(async (serverError) => {
     const permissionError = new FirestorePermissionError({
       path: bookRef.path,
@@ -103,16 +101,15 @@ export async function uploadBookToCloud({
     throw serverError;
   });
 
-  // 4. Update Global Storage Usage Stats
-  if (coverSize > 0) {
+  // 4. Global Stats Update (only if cover actually uploaded)
+  if (coverSize > 0 && coverURL) {
     const statsRef = doc(db, 'stats', 'storageUsage');
     setDoc(statsRef, { 
       storageBytesUsed: increment(coverSize) 
     }, { merge: true }).catch(() => {});
   }
 
-  // 5. Set Chapters in subcollection
-  // Parallel non-blocking updates for chapters
+  // 5. Parallel Chapter Uploads
   const chapterPromises = chapters.map(async (ch) => {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
     const chData = {
