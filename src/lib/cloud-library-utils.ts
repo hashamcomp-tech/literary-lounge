@@ -1,4 +1,4 @@
-import { doc, deleteDoc, getDoc, updateDoc, increment, collection, getDocs, writeBatch, Firestore } from "firebase/firestore";
+import { doc, deleteDoc, getDoc, updateDoc, increment, collection, getDocs, writeBatch, Firestore, serverTimestamp } from "firebase/firestore";
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
@@ -92,7 +92,7 @@ export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, cha
   const updateData = {
     chapters: updatedChapters,
     'metadata.info.totalChapters': updatedChapters.length,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: serverTimestamp()
   };
 
   // Update root document cache
@@ -101,11 +101,10 @@ export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, cha
   // Update metadata/info document
   batch.update(infoRef, {
     totalChapters: updatedChapters.length,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: serverTimestamp()
   });
 
   return batch.commit().catch(async (serverError) => {
-    // Corrected operation to 'update' to accurately reflect the batch failure context
     const permissionError = new FirestorePermissionError({
       path: bookRef.path,
       operation: 'update',

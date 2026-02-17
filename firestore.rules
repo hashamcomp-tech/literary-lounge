@@ -9,12 +9,12 @@ service cloud.firestore {
 
     /**
      * Verifies if the user is the primary system administrator.
-     * Checks both the email and the unique UID to ensure access even if email claims are restricted.
+     * Uses both UID and Email for robust multi-layer verification.
      */
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == "hashamcomp@gmail.com" ||
-        request.auth.uid == "KFRoNNMCn9XBK34tYwLhMHNZSD33"
+        request.auth.uid == "KFRoNNMCn9XBK34tYwLhMHNZSD33" ||
+        request.auth.token.email == "hashamcomp@gmail.com"
       );
     }
 
@@ -71,11 +71,12 @@ service cloud.firestore {
     match /books/{bookId} {
       allow read: if true;
       
-      // Admins have full control over the manuscript root
-      allow write: if isSuperAdmin();
+      // Explicitly allow admins to perform any operation
+      allow create, delete: if isSuperAdmin();
       
-      // Allow readers to increment views (only field they can touch)
-      allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
+      // Update is allowed if admin OR if only 'views' is being modified by a reader
+      allow update: if isSuperAdmin() || 
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
 
       // Sub-collections (chapters, metadata, messages)
       match /{allChildren=**} {
