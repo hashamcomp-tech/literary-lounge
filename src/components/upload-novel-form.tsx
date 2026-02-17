@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -7,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertCircle } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -29,8 +30,8 @@ import {
 } from "@/components/ui/select";
 
 /**
- * @fileOverview Refined upload form with robust EPUB parsing.
- * Extracts metadata and chapters automatically for a premium contributor experience.
+ * @fileOverview Refined upload form with robust EPUB parsing and deterministic routing.
+ * Ensures approved users only publish to cloud, preventing accidental local drafts.
  */
 
 interface AutocompleteInputProps {
@@ -157,9 +158,11 @@ export function UploadNovelForm() {
         const snap = await getDoc(pRef);
         const pData = snap.data();
         
+        // Super admin or explicit admin role
         if (user.email === 'hashamcomp@gmail.com' || pData?.role === 'admin') {
           setIsApprovedUser(true);
         } else {
+          // Check approved email list for contributors
           const settingsRef = doc(db, 'settings', 'approvedEmails');
           const settingsSnap = await getDoc(settingsRef);
           if (settingsSnap.exists()) {
@@ -239,6 +242,15 @@ export function UploadNovelForm() {
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
     if (!db || !storage) return;
 
+    // Explicitly check for Cloud Requirements for Approved Users
+    if (isApprovedUser && !isOfflineMode && !coverFile) {
+      return toast({ 
+        variant: 'destructive', 
+        title: 'Cover Required', 
+        description: 'Cloud publication requires a cover image. Please upload one below.' 
+      });
+    }
+
     setLoading(true);
     setLoadingStatus(isApprovedUser && !isOfflineMode ? 'Syncing to Cloud...' : 'Saving to Private Library...');
 
@@ -278,26 +290,42 @@ export function UploadNovelForm() {
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
 
-      if (isApprovedUser && !isOfflineMode && coverFile) {
+      // DETERMINISTIC ROUTING: Approved + Online = Cloud ONLY.
+      if (isApprovedUser && !isOfflineMode) {
         await uploadBookToCloud({
-          db, storage, bookId: `${docId}_${Date.now()}`,
-          title: finalTitle, author: finalAuthor, genre, chapters, coverFile, ownerId: user!.uid
+          db, 
+          storage, 
+          bookId: `${docId}_${Date.now()}`,
+          title: finalTitle, 
+          author: finalAuthor, 
+          genre, 
+          chapters, 
+          coverFile: coverFile!, 
+          ownerId: user!.uid
         });
         toast({ title: "Cloud Published", description: "Your novel is now available in the Lounge." });
       } else {
+        // Local Only path
         let coverURL = null;
         if (coverFile && !isOfflineMode) coverURL = await uploadCoverImage(storage, coverFile, docId);
         
         const bookData = {
-          id: docId, title: finalTitle, author: finalAuthor, genre, coverURL,
-          lastUpdated: new Date().toISOString(), isLocalOnly: true
+          id: docId, 
+          title: finalTitle, 
+          author: finalAuthor, 
+          genre, 
+          coverURL,
+          lastUpdated: new Date().toISOString(), 
+          isLocalOnly: true
         };
+        
         await saveLocalBook(bookData);
         for (const ch of chapters) {
           await saveLocalChapter({ ...ch, bookId: docId });
         }
         toast({ title: "Local Draft Saved", description: "Novel added to your private collection." });
       }
+      
       router.push('/');
     } catch (error: any) {
       toast({ variant: "destructive", title: "Upload Failed", description: error.message });
@@ -331,7 +359,7 @@ export function UploadNovelForm() {
             <CloudUpload className="h-6 w-6" />
             <AlertTitle className="font-headline font-black text-xl mb-1">Cloud Access Enabled</AlertTitle>
             <AlertDescription className="text-sm font-medium opacity-80">
-              You are an authorized contributor. Your novels will be published directly to the global Lounge.
+              You are an authorized contributor. Your novels will be published directly to the global Lounge library.
             </AlertDescription>
           </Alert>
         ) : (
@@ -400,9 +428,11 @@ export function UploadNovelForm() {
             </div>
 
             <div className="space-y-4 pt-4 border-t border-border/50">
-              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                <ImageIcon className="h-4 w-4" /> Cover Art {isApprovedUser && !isOfflineMode && '(Required for Cloud)'}
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
+                  <ImageIcon className="h-4 w-4" /> Cover Art {isApprovedUser && !isOfflineMode && <span className="text-destructive font-black">(REQUIRED)</span>}
+                </Label>
+              </div>
               <div className={`relative border-2 border-dashed rounded-[2rem] p-8 transition-all duration-500 ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
                 <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={(e) => e.target.files && setCoverFile(e.target.files[0])} />
                 <div className="flex flex-col items-center justify-center text-center">
