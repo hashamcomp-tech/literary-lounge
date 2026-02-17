@@ -31,7 +31,7 @@ import {
 /**
  * @fileOverview Refined upload form with robust EPUB parsing and deterministic routing.
  * Ensures approved users only publish to cloud, preventing accidental local drafts.
- * Implements content quality filter (100 word minimum per page).
+ * Updated to preserve all pages without word count filtering.
  */
 
 interface AutocompleteInputProps {
@@ -263,31 +263,21 @@ export function UploadNovelForm() {
           // @ts-ignore
           const body = chapterDoc.querySelector('body');
           if (body) {
-            const text = body.innerText || "";
-            // Content Quality Filter: Ensure "page" has at least 100 words
-            const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
-            if (wordCount >= 100) {
-              chapters.push({ 
-                chapterNumber: idx++, 
-                content: body.innerHTML, 
-                title: item.idref || `Chapter ${idx - 1}` 
-              });
-            }
+            // Keep all pages, no word count filter
+            chapters.push({ 
+              chapterNumber: idx++, 
+              content: body.innerHTML, 
+              title: item.idref || `Chapter ${idx - 1}` 
+            });
           }
         }
       } else {
         const html = (content || "").split('\n\n').map(p => `<p>${p}</p>`).join('');
-        const wordCount = (content || "").trim().split(/\s+/).filter(w => w.length > 0).length;
-        
-        if (wordCount < 100) {
-          throw new Error("Manual submissions must contain at least 100 words.");
-        }
-
         chapters = [{ chapterNumber: parseInt(chapterNumber) || 1, content: html, title: `Chapter ${chapterNumber}` }];
       }
 
       if (chapters.length === 0) {
-        throw new Error("No readable chapters with at least 100 words were found in the manuscript.");
+        throw new Error("No readable content was found in the manuscript.");
       }
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
@@ -391,7 +381,7 @@ export function UploadNovelForm() {
         <div className="h-2 bg-primary w-full" />
         <CardHeader className="pt-10 pb-6 px-10">
           <CardTitle className="text-3xl font-headline font-black">Manuscript Details</CardTitle>
-          <CardDescription className="text-base">Manuscripts are filtered for quality. Each page must contain at least 100 words.</CardDescription>
+          <CardDescription className="text-base">Upload your manuscript or paste content to add it to the library. Every page will be preserved.</CardDescription>
         </CardHeader>
         <CardContent className="px-10 pb-10 space-y-8">
           <form onSubmit={handleUpload} className="space-y-8">
@@ -471,7 +461,7 @@ export function UploadNovelForm() {
                       <div className="space-y-3 opacity-50">
                         <BookPlus className="h-10 w-10 mx-auto" />
                         <span className="font-black uppercase tracking-widest text-[10px] block">Upload EPUB for Auto-Parsing</span>
-                        <p className="text-[10px] max-w-[200px] mx-auto">We'll extract chapters and filter for quality (&gt;100 words).</p>
+                        <p className="text-[10px] max-w-[200px] mx-auto">We'll extract all chapters from your EPUB file.</p>
                       </div>
                     )}
                   </div>
@@ -479,7 +469,7 @@ export function UploadNovelForm() {
 
                 {!selectedFile && (
                   <Textarea
-                    placeholder="Alternatively, paste your chapter content here (min 100 words)..."
+                    placeholder="Alternatively, paste your chapter content here..."
                     className="min-h-[300px] text-lg leading-relaxed p-6 rounded-[2rem] bg-background/50 border-none shadow-inner focus:bg-background transition-all"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
