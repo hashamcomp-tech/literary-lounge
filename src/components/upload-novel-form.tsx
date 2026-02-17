@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertTriangle } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -269,15 +269,25 @@ export function UploadNovelForm() {
           // @ts-ignore
           const body = chapterDoc.querySelector('body');
           if (body) {
+            const chContent = body.innerHTML;
+            // Firestore limit check: 1MB per document
+            // We use a safe margin of 900KB
+            if (new TextEncoder().encode(chContent).length > 900000) {
+              throw new Error(`Chapter ${idx} exceeds the 1MB Firestore limit. Please split it.`);
+            }
+            
             chapters.push({ 
               chapterNumber: idx++, 
-              content: body.innerHTML, 
+              content: chContent, 
               title: item.idref || `Chapter ${idx - 1}` 
             });
           }
         }
       } else {
         const html = (content || "").split('\n\n').map(p => `<p>${p}</p>`).join('');
+        if (new TextEncoder().encode(html).length > 900000) {
+          throw new Error("Content exceeds the 1MB Firestore limit. Please split into multiple chapters.");
+        }
         chapters = [{ chapterNumber: parseInt(chapterNumber) || 1, content: html, title: `Chapter ${chapterNumber}` }];
       }
 
@@ -466,6 +476,14 @@ export function UploadNovelForm() {
                   )}
                 </div>
               </div>
+            </div>
+
+            <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-amber-800 leading-tight">
+                <strong>Limit:</strong> Firestore restricts documents to 1MB. Each chapter has its own 1MB limit. 
+                Large embedded images in EPUBs may exceed this.
+              </p>
             </div>
 
             {!selectedFile && (
