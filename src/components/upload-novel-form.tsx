@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertCircle } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -29,9 +30,8 @@ import {
 } from "@/components/ui/select";
 
 /**
- * @fileOverview Refined upload form with robust EPUB parsing and deterministic routing.
- * Ensures approved users only publish to cloud, preventing accidental local drafts.
- * Updated to preserve all pages without word count filtering.
+ * @fileOverview Refined upload form with robust EPUB parsing and choice of destination for admins.
+ * Allows approved users to choose between Cloud and Local archives.
  */
 
 interface AutocompleteInputProps {
@@ -145,6 +145,7 @@ export function UploadNovelForm() {
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
   const [checkingApproval, setCheckingApproval] = useState(true);
+  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
 
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
@@ -158,11 +159,9 @@ export function UploadNovelForm() {
         const snap = await getDoc(pRef);
         const pData = snap.data();
         
-        // Super admin or explicit admin role
         if (user.email === 'hashamcomp@gmail.com' || pData?.role === 'admin') {
           setIsApprovedUser(true);
         } else {
-          // Check approved email list for contributors
           const settingsRef = doc(db, 'settings', 'approvedEmails');
           const settingsSnap = await getDoc(settingsRef);
           if (settingsSnap.exists()) {
@@ -242,8 +241,10 @@ export function UploadNovelForm() {
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
     if (!db || !storage) return;
 
+    const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
+
     setLoading(true);
-    setLoadingStatus(isApprovedUser && !isOfflineMode ? 'Syncing to Cloud...' : 'Saving to Private Library...');
+    setLoadingStatus(isCloudTarget ? 'Syncing to Cloud...' : 'Saving to Private Library...');
 
     try {
       let finalTitle = title.trim();
@@ -263,7 +264,6 @@ export function UploadNovelForm() {
           // @ts-ignore
           const body = chapterDoc.querySelector('body');
           if (body) {
-            // Keep all pages, no word count filter
             chapters.push({ 
               chapterNumber: idx++, 
               content: body.innerHTML, 
@@ -282,8 +282,7 @@ export function UploadNovelForm() {
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
 
-      // DETERMINISTIC ROUTING: Approved + Online = Cloud ONLY.
-      if (isApprovedUser && !isOfflineMode) {
+      if (isCloudTarget) {
         await uploadBookToCloud({
           db, 
           storage, 
@@ -297,9 +296,14 @@ export function UploadNovelForm() {
         });
         toast({ title: "Cloud Published", description: "Your novel is now available in the Lounge." });
       } else {
-        // Local Only path
         let coverURL = null;
-        if (coverFile && !isOfflineMode) coverURL = await uploadCoverImage(storage, coverFile, docId);
+        if (coverFile && !isOfflineMode) {
+          try {
+            coverURL = await uploadCoverImage(storage, coverFile, docId);
+          } catch (e) {
+            console.warn("Cover upload failed for local draft");
+          }
+        }
         
         const bookData = {
           id: docId, 
@@ -351,7 +355,7 @@ export function UploadNovelForm() {
             <CloudUpload className="h-6 w-6" />
             <AlertTitle className="font-headline font-black text-xl mb-1">Cloud Access Enabled</AlertTitle>
             <AlertDescription className="text-sm font-medium opacity-80">
-              You are an authorized contributor. Your novels will be published directly to the global Lounge library.
+              You are an authorized contributor. You can publish directly to the cloud or save locally.
             </AlertDescription>
           </Alert>
         ) : (
@@ -385,6 +389,32 @@ export function UploadNovelForm() {
         </CardHeader>
         <CardContent className="px-10 pb-10 space-y-8">
           <form onSubmit={handleUpload} className="space-y-8">
+            
+            {isApprovedUser && !isOfflineMode && (
+              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-lg">
+                    {uploadMode === 'cloud' ? <Globe className="h-5 w-5 text-primary" /> : <HardDrive className="h-5 w-5 text-primary" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">Target Destination</p>
+                    <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground">
+                      {uploadMode === 'cloud' ? 'Global Cloud Library' : 'Private Local Archive'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="upload-mode" className={`text-[10px] font-black uppercase ${uploadMode === 'local' ? 'text-primary' : 'text-muted-foreground'}`}>Local</Label>
+                  <Switch 
+                    id="upload-mode" 
+                    checked={uploadMode === 'cloud'} 
+                    onCheckedChange={(checked) => setUploadMode(checked ? 'cloud' : 'local')}
+                  />
+                  <Label htmlFor="upload-mode" className={`text-[10px] font-black uppercase ${uploadMode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`}>Cloud</Label>
+                </div>
+              </div>
+            )}
+
             <div className="grid gap-6">
               <div className="grid gap-2">
                 <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Author</Label>
@@ -489,7 +519,7 @@ export function UploadNovelForm() {
                     <Loader2 className="mr-3 h-6 w-6 animate-spin" />
                     {loadingStatus}
                   </>
-                ) : isApprovedUser && !isOfflineMode ? (
+                ) : (isApprovedUser && !isOfflineMode && uploadMode === 'cloud') ? (
                   <>
                     <ShieldCheck className="mr-3 h-6 w-6" />
                     Publish Volume to Cloud
