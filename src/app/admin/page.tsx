@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -10,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, query, orderBy, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -330,8 +329,7 @@ export default function AdminPage() {
 
           <AdminStorageBar />
 
-          {/* Library Management Section - Compressed and Retractable */}
-          <Accordion type="single" collapsible className="mb-12">
+          <Accordion type="single" collapsible className="mb-6">
             <AccordionItem value="manuscripts" className="border-none">
               <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
                 <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
@@ -441,68 +439,82 @@ export default function AdminPage() {
             </AccordionItem>
           </Accordion>
 
-          <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
-            <CardHeader className="bg-muted/30 p-10">
-              <CardTitle className="text-2xl font-headline font-black">Contributor Applications</CardTitle>
-              <CardDescription className="text-base">Vet users requesting global publishing privileges.</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              {isRequestsLoading ? (
-                <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>
-              ) : requests && requests.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/10 border-none">
-                      <TableHead className="pl-10 font-black uppercase tracking-widest text-[10px]">Candidate Email</TableHead>
-                      <TableHead className="font-black uppercase tracking-widest text-[10px]">Applied On</TableHead>
-                      <TableHead className="text-right pr-10 font-black uppercase tracking-widest text-[10px]">Decision</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {requests.map((req) => (
-                      <TableRow key={req.id} className="border-border/50 hover:bg-primary/5 transition-colors h-24">
-                        <TableCell className="pl-10 font-bold text-lg">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-primary/10 rounded-xl"><Mail className="h-5 w-5 text-primary" /></div>
-                            {req.email}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground font-medium">
-                          {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Pending Sync'}
-                        </TableCell>
-                        <TableCell className="text-right pr-10">
-                          <div className="flex items-center justify-end gap-3">
-                            <Button 
-                              variant="ghost" 
-                              className="text-destructive hover:bg-destructive/10 rounded-xl font-bold"
-                              onClick={() => handleReject(req.id)}
-                              disabled={!!processingId}
-                            >
-                              <UserX className="h-4 w-4 mr-2" /> Discard
-                            </Button>
-                            <Button 
-                              className="bg-primary hover:bg-primary/90 shadow-lg rounded-xl font-bold px-6"
-                              onClick={() => handleApprove(req.id, req.email)}
-                              disabled={!!processingId}
-                            >
-                              {processingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4 mr-2" />}
-                              Approve
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="p-24 text-center opacity-50 flex flex-col items-center">
-                  <Star className="h-16 w-16 mb-4 text-primary animate-pulse" />
-                  <p className="text-xl font-headline font-bold">No Pending Applications</p>
-                  <p className="text-sm mt-1">The Lounge is currently well-staffed.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <Accordion type="single" collapsible className="mb-12">
+            <AccordionItem value="applications" className="border-none">
+              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
+                <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
+                  <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 w-full text-left cursor-pointer group">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <CardTitle className="text-xl font-headline font-black">Contributor Applications</CardTitle>
+                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                      </div>
+                      <CardDescription className="text-xs">Vet users requesting global publishing privileges.</CardDescription>
+                    </div>
+                  </CardHeader>
+                </AccordionTrigger>
+                <AccordionContent className="p-0 border-t border-border/50">
+                  <div className="p-0">
+                    {isRequestsLoading ? (
+                      <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" /></div>
+                    ) : requests && requests.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/10 border-none">
+                            <TableHead className="pl-6 font-black uppercase tracking-widest text-[9px]">Candidate Email</TableHead>
+                            <TableHead className="font-black uppercase tracking-widest text-[9px]">Applied On</TableHead>
+                            <TableHead className="text-right pr-6 font-black uppercase tracking-widest text-[9px]">Decision</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {requests.map((req) => (
+                            <TableRow key={req.id} className="border-border/50 hover:bg-primary/5 transition-colors h-14">
+                              <TableCell className="pl-6">
+                                <div className="flex items-center gap-2">
+                                  <Mail className="h-3.5 w-3.5 text-primary opacity-60" />
+                                  <span className="font-bold text-sm">{req.email}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground text-[10px] font-medium">
+                                {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Pending Sync'}
+                              </TableCell>
+                              <TableCell className="text-right pr-6">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="h-8 text-destructive hover:bg-destructive/10 rounded-lg font-bold text-[10px] px-3"
+                                    onClick={() => handleReject(req.id)}
+                                    disabled={!!processingId}
+                                  >
+                                    <UserX className="h-3 w-3 mr-1.5" /> Discard
+                                  </Button>
+                                  <Button 
+                                    size="sm"
+                                    className="h-8 bg-primary hover:bg-primary/90 shadow-md rounded-lg font-bold text-[10px] px-4"
+                                    onClick={() => handleApprove(req.id, req.email)}
+                                    disabled={!!processingId}
+                                  >
+                                    {processingId === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3 mr-1.5" />}
+                                    Approve
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <div className="p-16 text-center opacity-50 flex flex-col items-center">
+                        <Star className="h-10 w-10 mb-2 text-primary animate-pulse" />
+                        <p className="text-sm font-headline font-bold">No Pending Applications</p>
+                      </div>
+                    )}
+                  </div>
+                </AccordionContent>
+              </Card>
+            </AccordionItem>
+          </Accordion>
         </div>
       </main>
     </div>
