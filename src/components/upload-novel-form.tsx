@@ -153,19 +153,8 @@ export function UploadNovelForm() {
         if (metadata.title) setTitle(metadata.title);
         if (metadata.creator) setAuthor(metadata.creator);
         
-        try {
-          const coverUrl = await book.coverUrl();
-          if (coverUrl) {
-            const resp = await fetch(coverUrl);
-            const blob = await resp.blob();
-            const extractedCoverFile = new File([blob], 'cover.jpg', { type: 'image/jpeg' });
-            setCoverFile(extractedCoverFile);
-            setCoverPreview(URL.createObjectURL(blob));
-          }
-        } catch (coverErr) {
-          console.warn("Could not extract cover from EPUB");
-        }
-
+        // Default: No automatic cover extraction to follow user preference
+        
         toast({ title: "Manuscript Loaded", description: `"${metadata.title}" processed.` });
       } catch (e) {
         toast({ variant: 'destructive', title: "Parsing Error", description: "Failed to read EPUB metadata." });
@@ -395,10 +384,10 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            {/* Visual Identity / Cover Preview Bar */}
+            {/* Visual Identity Section - Controlled manually */}
             <div className="pt-4 border-t border-border/50">
               <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5 mb-3">
-                <ImageIcon className="h-3 w-3" /> Visual Identity
+                <ImageIcon className="h-3 w-3" /> Visual Identity (Optional)
               </Label>
               <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start bg-muted/10 p-4 rounded-2xl border border-border/50">
                 <div className="relative aspect-[2/3] w-28 bg-muted/20 rounded-lg overflow-hidden border shadow-inner flex items-center justify-center shrink-0">
@@ -418,7 +407,7 @@ export function UploadNovelForm() {
                   <div>
                     <h4 className="text-[11px] font-bold mb-1">Cover Art</h4>
                     <p className="text-[9px] text-muted-foreground leading-relaxed uppercase tracking-widest font-medium">
-                      Select an image, extract from EPUB, or let AI design an authentic cover for you.
+                      By default, no cover is added. Use the tools below to manually attach artwork or an AI design.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
