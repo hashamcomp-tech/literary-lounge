@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,9 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertTriangle } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, BrainCircuit } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
@@ -19,6 +19,8 @@ import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
 import { uploadCoverImage } from '@/lib/upload-cover';
 import { optimizeCoverImage } from '@/lib/image-utils';
+import { identifyBookFromFilename } from '@/ai/flows/identify-book';
+import { generateBookCover } from '@/ai/flows/generate-cover';
 import {
   Select,
   SelectContent,
@@ -43,10 +45,13 @@ export function UploadNovelForm() {
   
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
+  const [isIdentifying, setIsIdentifying] = useState(false);
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
   const [checkingApproval, setCheckingApproval] = useState(true);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
+
+  const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
@@ -60,14 +65,14 @@ export function UploadNovelForm() {
         const snap = await getDoc(pRef);
         const pData = snap.data();
         
-        if (user.email === 'hashamcomp@gmail.com' || pData?.role === 'admin') {
+        if (isSuperAdmin || pData?.role === 'admin') {
           setIsApprovedUser(true);
         } else {
           const settingsRef = doc(db, 'settings', 'approvedEmails');
           const settingsSnap = await getDoc(settingsRef);
           if (settingsSnap.exists()) {
             const emails = settingsSnap.data().emails || [];
-            setIsApprovedUser(emails.includes(user.email));
+            setIsApprovedUser(emails.includes(user.email!));
           }
         }
       } catch (e) {
@@ -78,10 +83,22 @@ export function UploadNovelForm() {
     };
 
     checkApproval();
-  }, [user, db, isOfflineMode]);
+  }, [user, db, isOfflineMode, isSuperAdmin]);
 
-  const slugify = (text: string) => {
-    return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
+  const handleAiAutoFill = async () => {
+    if (!selectedFile || !isSuperAdmin) return;
+    setIsIdentifying(true);
+    try {
+      const result = await identifyBookFromFilename(selectedFile.name);
+      if (result.title) setTitle(result.title);
+      if (result.author) setAuthor(result.author);
+      if (result.genre && GENRES.includes(result.genre)) setGenre(result.genre);
+      toast({ title: "AI Identification Complete", description: `Matched: ${result.title} by ${result.author}` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "AI Search Failed", description: err.message });
+    } finally {
+      setIsIdentifying(false);
+    }
   };
 
   const handleFileChange = async (file: File) => {
@@ -120,18 +137,12 @@ export function UploadNovelForm() {
     }
   };
 
-  const handleCoverChange = (file: File) => {
-    setCoverFile(file);
-    setCoverPreview(URL.createObjectURL(file));
-  };
-
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre.' });
     if (!db) return;
 
     const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
-
     setLoading(true);
     
     try {
@@ -139,12 +150,26 @@ export function UploadNovelForm() {
       let finalAuthor = author.trim() || 'Anonymous Author';
       let chapters: any[] = [];
 
-      setLoadingStatus('Optimizing Assets...');
+      // AI Cover Generation if missing
+      let finalCoverFile = coverFile;
+      if (!finalCoverFile && isCloudTarget) {
+        setLoadingStatus('AI Generating Cover...');
+        try {
+          const coverDataUri = await generateBookCover({ title: finalTitle, author: finalAuthor, genre });
+          const resp = await fetch(coverDataUri);
+          const blob = await resp.blob();
+          finalCoverFile = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
+          setCoverPreview(coverDataUri);
+        } catch (aiErr) {
+          console.warn("AI Cover generation failed, proceeding without art.");
+        }
+      }
 
+      setLoadingStatus('Optimizing Assets...');
       let optimizedCover: File | null = null;
-      if (coverFile) {
-        const optimizedBlob = await optimizeCoverImage(coverFile);
-        optimizedCover = new File([optimizedBlob], coverFile.name, { type: 'image/jpeg' });
+      if (finalCoverFile) {
+        const optimizedBlob = await optimizeCoverImage(finalCoverFile);
+        optimizedCover = new File([optimizedBlob], finalCoverFile.name, { type: 'image/jpeg' });
       }
 
       if (selectedFile?.name.endsWith('.epub')) {
@@ -176,6 +201,7 @@ export function UploadNovelForm() {
 
       if (chapters.length === 0) throw new Error("No readable content found.");
 
+      const slugify = (t: string) => t.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
 
       if (isCloudTarget) {
@@ -256,8 +282,24 @@ export function UploadNovelForm() {
       <Card className="border-none shadow-xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[1.5rem]">
         <div className="h-1.5 bg-primary w-full" />
         <CardHeader className="pt-6 pb-4 px-6">
-          <CardTitle className="text-xl font-headline font-black">Manuscript Details</CardTitle>
-          <CardDescription className="text-xs">Add your work to the library collection.</CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-xl font-headline font-black">Manuscript Details</CardTitle>
+              <CardDescription className="text-xs">Add your work to the library collection.</CardDescription>
+            </div>
+            {isSuperAdmin && selectedFile && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="rounded-lg h-8 px-3 gap-2 bg-primary/5 border-primary/20 text-primary animate-in fade-in zoom-in"
+                onClick={handleAiAutoFill}
+                disabled={isIdentifying}
+              >
+                {isIdentifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                <span className="text-[10px] font-black uppercase tracking-widest">AI Auto-fill</span>
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="px-6 pb-6 space-y-6">
           <form onSubmit={handleUpload} className="space-y-6">
@@ -322,14 +364,16 @@ export function UploadNovelForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/50">
               <div className="space-y-2">
                 <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                  <ImageIcon className="h-3 w-3" /> Cover Image
+                  <ImageIcon className="h-3 w-3" /> Book Cover
                 </Label>
                 <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center overflow-hidden ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'bg-muted/20'}`}>
-                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={(e) => e.target.files && handleCoverChange(e.target.files[0])} />
                   {coverPreview ? (
                     <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
                   ) : (
-                    <Upload className="h-5 w-5 opacity-20" />
+                    <div className="text-center flex flex-col items-center opacity-30">
+                      <BrainCircuit className="h-5 w-5 mb-1" />
+                      <span className="text-[8px] font-black uppercase tracking-widest">AI Generated</span>
+                    </div>
                   )}
                   {coverFile && (
                     <div className="flex flex-col items-center gap-1 relative z-10 bg-background/80 p-1 rounded-md backdrop-blur-sm">
