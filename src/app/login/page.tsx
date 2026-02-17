@@ -78,10 +78,35 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth || !db) return;
     setLoading(true);
     try {
-      // Create user securely in Firebase Auth
-      await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      let emailToUse = loginEmail.trim();
+      
+      // Simple check to see if input is an email or a username
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailToUse);
+      
+      if (!isEmail) {
+        // Assume it's a username, find the email associated with it
+        const usernameRef = doc(db, 'usernames', emailToUse.toLowerCase());
+        const usernameSnap = await getDoc(usernameRef);
+        
+        if (!usernameSnap.exists()) {
+          throw new Error("Username not found. Please use your registered email or correct username.");
+        }
+        
+        const { uid } = usernameSnap.data();
+        const userDocRef = doc(db, 'users', uid);
+        const userDocSnap = await getDoc(userDocRef);
+        
+        if (!userDocSnap.exists() || !userDocSnap.data()?.email) {
+          throw new Error("Could not find account details for this username.");
+        }
+        
+        emailToUse = userDocSnap.data()!.email;
+      }
+
+      await signInWithEmailAndPassword(auth, emailToUse, loginPassword);
       toast({ title: "Welcome back!", description: "Successfully logged in." });
       router.push('/');
     } catch (error: any) {
@@ -130,6 +155,7 @@ export default function LoginPage() {
         email: newUser.email,
         role: 'reader', // Assign requested 'reader' role
         createdAt: serverTimestamp(),
+        lastUsernameChange: serverTimestamp() // Set initial change timestamp
       };
 
       setDoc(userRef, profileData).catch(async (err) => {
@@ -159,20 +185,21 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const oneDay = 24 * 60 * 60 * 1000;
+      // 30 day limit calculation
+      const thirtyDays = 30 * 24 * 60 * 60 * 1000;
       const lastChange = profile?.lastUsernameChange;
       
       if (lastChange) {
         const lastChangeMillis = lastChange.toMillis ? lastChange.toMillis() : new Date(lastChange).getTime();
         const now = Date.now();
-        if (now - lastChangeMillis < oneDay) {
-          const timeLeft = oneDay - (now - lastChangeMillis);
-          const hoursLeft = Math.ceil(timeLeft / (1000 * 60 * 60));
+        if (now - lastChangeMillis < thirtyDays) {
+          const timeLeft = thirtyDays - (now - lastChangeMillis);
+          const daysLeft = Math.ceil(timeLeft / (1000 * 60 * 60 * 24));
           
           toast({ 
             variant: "destructive", 
-            title: "Wait a bit", 
-            description: `You can change your username again in about ${hoursLeft} hour(s).` 
+            title: "Policy Restriction", 
+            description: `You can change your username again in about ${daysLeft} day(s).` 
           });
           setLoading(false);
           return;
@@ -282,7 +309,7 @@ export default function LoginPage() {
                   </TabsList>
                   <TabsContent value="login">
                     <form onSubmit={handleLogin} className="space-y-4">
-                      <Input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
+                      <Input placeholder="Email or Username" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
                       <Input type="password" placeholder="Password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
                       
                       <div className="flex justify-end">
@@ -374,7 +401,7 @@ export default function LoginPage() {
                       </Button>
                       
                       <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 px-1">
-                        <Clock className="h-3 w-3" /> Usernames can be changed once every 24 hours.
+                        <Clock className="h-3 w-3" /> Usernames can be changed once every 30 days.
                       </p>
                     </div>
                   ) : (
