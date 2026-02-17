@@ -54,6 +54,9 @@ export default function LoginPage() {
   const [newUsername, setNewUsername] = useState('');
   const [isChangingUsername, setIsChangingUsername] = useState(false);
 
+  // Administrative Check
+  const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
+
   useEffect(() => {
     const checkUsername = async () => {
       const clean = registerUsername.trim().toLowerCase();
@@ -185,11 +188,11 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // 30 day limit calculation
+      // 30 day limit calculation - Bypassed for Admins
       const thirtyDays = 30 * 24 * 60 * 60 * 1000;
       const lastChange = profile?.lastUsernameChange;
       
-      if (lastChange) {
+      if (!isAdmin && lastChange) {
         const lastChangeMillis = lastChange.toMillis ? lastChange.toMillis() : new Date(lastChange).getTime();
         const now = Date.now();
         if (now - lastChangeMillis < thirtyDays) {
@@ -362,7 +365,7 @@ export default function LoginPage() {
               <CardHeader className="text-center">
                 <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 relative">
                   <UserIcon className="h-10 w-10 text-primary" />
-                  {profile?.role === 'admin' && (
+                  {isAdmin && (
                     <div className="absolute -bottom-1 -right-1 bg-primary text-white p-1 rounded-full border-2 border-background">
                       <Shield className="h-3 w-3" />
                     </div>
@@ -400,9 +403,15 @@ export default function LoginPage() {
                         <Pencil className="h-3.5 w-3.5 opacity-50" />
                       </Button>
                       
-                      <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 px-1">
-                        <Clock className="h-3 w-3" /> Usernames can be changed once every 30 days.
-                      </p>
+                      {isAdmin ? (
+                        <p className="text-[10px] text-primary flex items-center gap-1.5 px-1 font-bold">
+                          <Shield className="h-3 w-3" /> Administrator: Instant username changes enabled.
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 px-1">
+                          <Clock className="h-3 w-3" /> Usernames can be changed once every 30 days.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <form onSubmit={handleUpdateUsername} className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
