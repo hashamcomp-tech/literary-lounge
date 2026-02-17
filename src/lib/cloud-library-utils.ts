@@ -105,9 +105,11 @@ export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, cha
   });
 
   return batch.commit().catch(async (serverError) => {
+    // Corrected operation to 'update' to accurately reflect the batch failure context
     const permissionError = new FirestorePermissionError({
       path: bookRef.path,
-      operation: 'delete',
+      operation: 'update',
+      requestResourceData: updateData
     });
     errorEmitter.emit('permission-error', permissionError);
     throw serverError;
