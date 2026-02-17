@@ -29,11 +29,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-/**
- * @fileOverview Refined upload form with robust EPUB parsing and choice of destination for admins.
- * Allows approved users to choose between Cloud and Local archives.
- */
-
 interface AutocompleteInputProps {
   type: 'author' | 'book';
   value: string;
@@ -73,7 +68,7 @@ function AutocompleteInput({ type, value, onChange, placeholder, disabled }: Aut
         });
         setSuggestions([...new Set(items)]);
       } catch (e) {
-        // Handled silently for suggestions
+        // Handled silently
       }
     };
 
@@ -101,22 +96,22 @@ function AutocompleteInput({ type, value, onChange, placeholder, disabled }: Aut
         }}
         onFocus={() => setShow(true)}
         placeholder={placeholder}
-        className="bg-background/50 rounded-xl h-12"
+        className="bg-background/50 rounded-lg h-10"
         disabled={disabled}
       />
       {show && suggestions.length > 0 && (
-        <ul className="absolute z-50 w-full mt-2 bg-card border rounded-2xl shadow-2xl max-h-48 overflow-auto animate-in fade-in slide-in-from-top-2 duration-200">
+        <ul className="absolute z-50 w-full mt-1 bg-card border rounded-xl shadow-2xl max-h-48 overflow-auto animate-in fade-in slide-in-from-top-1 duration-200">
           {suggestions.map((s, i) => (
             <li
               key={i}
-              className="px-4 py-3 hover:bg-muted cursor-pointer text-sm flex items-center gap-2 group transition-colors"
+              className="px-3 py-2 hover:bg-muted cursor-pointer text-sm flex items-center gap-2 group transition-colors"
               onClick={() => {
                 onChange(s);
                 setShow(false);
               }}
             >
-              <div className="p-1.5 bg-muted group-hover:bg-primary/10 rounded-lg transition-colors">
-                {type === 'author' ? <User className="h-3.5 w-3.5 text-primary" /> : <Book className="h-3.5 w-3.5 text-primary" />}
+              <div className="p-1 bg-muted group-hover:bg-primary/10 rounded transition-colors">
+                {type === 'author' ? <User className="h-3 w-3 text-primary" /> : <Book className="h-3 w-3 text-primary" />}
               </div>
               <span className="font-bold">{s}</span>
             </li>
@@ -219,7 +214,7 @@ export function UploadNovelForm() {
     setSelectedFile(file);
     if (file.name.endsWith('.epub')) {
       setLoading(true);
-      setLoadingStatus('Parsing EPUB Manuscript...');
+      setLoadingStatus('Parsing EPUB...');
       try {
         const arrayBuffer = await file.arrayBuffer();
         const book = ePub(arrayBuffer);
@@ -238,13 +233,13 @@ export function UploadNovelForm() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre for your novel.' });
+    if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre.' });
     if (!db || !storage) return;
 
     const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
 
     setLoading(true);
-    setLoadingStatus(isCloudTarget ? 'Syncing to Cloud...' : 'Saving to Private Library...');
+    setLoadingStatus(isCloudTarget ? 'Publishing...' : 'Saving Locally...');
 
     try {
       let finalTitle = title.trim();
@@ -277,7 +272,7 @@ export function UploadNovelForm() {
       }
 
       if (chapters.length === 0) {
-        throw new Error("No readable content was found in the manuscript.");
+        throw new Error("No readable content found.");
       }
 
       const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
@@ -294,7 +289,7 @@ export function UploadNovelForm() {
           coverFile: coverFile, 
           ownerId: user!.uid
         });
-        toast({ title: "Cloud Published", description: "Your novel is now available in the Lounge." });
+        toast({ title: "Cloud Published", description: "Novel published to the Lounge." });
       } else {
         let coverURL = null;
         if (coverFile && !isOfflineMode) {
@@ -319,7 +314,7 @@ export function UploadNovelForm() {
         for (const ch of chapters) {
           await saveLocalChapter({ ...ch, bookId: docId });
         }
-        toast({ title: "Local Draft Saved", description: "Novel added to your private collection." });
+        toast({ title: "Local Draft Saved", description: "Saved to your browser library." });
       }
       
       router.push('/');
@@ -332,202 +327,163 @@ export function UploadNovelForm() {
 
   if (checkingApproval) {
     return (
-      <div className="py-24 flex flex-col items-center justify-center space-y-4">
-        <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Verifying Credentials...</p>
+      <div className="py-12 flex flex-col items-center justify-center space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
+        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Verifying...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col gap-4">
-        {isOfflineMode ? (
-          <Alert className="border-none shadow-xl bg-amber-500/10 text-amber-700 rounded-2xl p-6">
-            <CloudOff className="h-6 w-6" />
-            <AlertTitle className="font-headline font-black text-xl mb-1">Independent Mode Active</AlertTitle>
-            <AlertDescription className="text-sm font-medium opacity-80">
-              Cloud publishing and contributor verification are unavailable. Any uploads will be saved <strong>locally</strong> to your browser.
-            </AlertDescription>
-          </Alert>
-        ) : isApprovedUser ? (
-          <Alert className="border-none shadow-xl bg-primary/10 text-primary rounded-2xl p-6">
-            <CloudUpload className="h-6 w-6" />
-            <AlertTitle className="font-headline font-black text-xl mb-1">Cloud Access Enabled</AlertTitle>
-            <AlertDescription className="text-sm font-medium opacity-80">
-              You are an authorized contributor. You can publish directly to the cloud or save locally.
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <Alert className="border-none shadow-xl bg-slate-500/10 text-slate-700 rounded-2xl p-6">
-            <HardDrive className="h-6 w-6" />
-            <AlertTitle className="font-headline font-black text-xl mb-1">Private Local Mode</AlertTitle>
-            <AlertDescription className="text-sm font-medium opacity-80 space-y-4">
-              <p>Content is currently saved to your browser's private database. Perfect for personal archives.</p>
-              {user && !user.isAnonymous && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleRequestAccess}
-                  disabled={isRequestingAccess}
-                  className="bg-slate-600/10 border-slate-600/20 text-slate-800 hover:bg-slate-600/20 rounded-xl"
-                >
-                  {isRequestingAccess ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Globe className="h-3.5 w-3.5 mr-2" />}
-                  Request Cloud Contributor Access
-                </Button>
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
-      </div>
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-xl mx-auto">
+      {isOfflineMode ? (
+        <Alert className="border-none shadow-md bg-amber-500/10 text-amber-700 rounded-xl p-4">
+          <CloudOff className="h-4 w-4" />
+          <AlertTitle className="font-headline font-black text-sm mb-0.5">Independent Mode</AlertTitle>
+          <AlertDescription className="text-[11px] opacity-80">Saving locally to browser.</AlertDescription>
+        </Alert>
+      ) : isApprovedUser ? (
+        <Alert className="border-none shadow-md bg-primary/10 text-primary rounded-xl p-4">
+          <CloudUpload className="h-4 w-4" />
+          <AlertTitle className="font-headline font-black text-sm mb-0.5">Contributor Mode</AlertTitle>
+          <AlertDescription className="text-[11px] opacity-80">Direct cloud publishing enabled.</AlertDescription>
+        </Alert>
+      ) : null}
 
-      <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
-        <div className="h-2 bg-primary w-full" />
-        <CardHeader className="pt-10 pb-6 px-10">
-          <CardTitle className="text-3xl font-headline font-black">Manuscript Details</CardTitle>
-          <CardDescription className="text-base">Upload your manuscript or paste content to add it to the library. Every page will be preserved.</CardDescription>
+      <Card className="border-none shadow-xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[1.5rem]">
+        <div className="h-1.5 bg-primary w-full" />
+        <CardHeader className="pt-6 pb-4 px-6">
+          <CardTitle className="text-xl font-headline font-black">Manuscript Details</CardTitle>
+          <CardDescription className="text-xs">Add your work to the library collection.</CardDescription>
         </CardHeader>
-        <CardContent className="px-10 pb-10 space-y-8">
-          <form onSubmit={handleUpload} className="space-y-8">
+        <CardContent className="px-6 pb-6 space-y-6">
+          <form onSubmit={handleUpload} className="space-y-6">
             
             {isApprovedUser && !isOfflineMode && (
-              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
-                <div className="flex items-center gap-3">
-                  <div className="bg-primary/10 p-2 rounded-lg">
-                    {uploadMode === 'cloud' ? <Globe className="h-5 w-5 text-primary" /> : <HardDrive className="h-5 w-5 text-primary" />}
+              <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
+                <div className="flex items-center gap-2">
+                  <div className="bg-primary/10 p-1.5 rounded-md">
+                    {uploadMode === 'cloud' ? <Globe className="h-4 w-4 text-primary" /> : <HardDrive className="h-4 w-4 text-primary" />}
                   </div>
                   <div>
-                    <p className="text-sm font-bold">Target Destination</p>
-                    <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground">
-                      {uploadMode === 'cloud' ? 'Global Cloud Library' : 'Private Local Archive'}
+                    <p className="text-[11px] font-bold">Target</p>
+                    <p className="text-[9px] uppercase font-black tracking-widest text-muted-foreground">
+                      {uploadMode === 'cloud' ? 'Global Cloud' : 'Private Archive'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="upload-mode" className={`text-[10px] font-black uppercase ${uploadMode === 'local' ? 'text-primary' : 'text-muted-foreground'}`}>Local</Label>
+                <div className="flex items-center gap-2 scale-90">
                   <Switch 
                     id="upload-mode" 
                     checked={uploadMode === 'cloud'} 
                     onCheckedChange={(checked) => setUploadMode(checked ? 'cloud' : 'local')}
                   />
-                  <Label htmlFor="upload-mode" className={`text-[10px] font-black uppercase ${uploadMode === 'cloud' ? 'text-primary' : 'text-muted-foreground'}`}>Cloud</Label>
                 </div>
               </div>
             )}
 
-            <div className="grid gap-6">
-              <div className="grid gap-2">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Author</Label>
-                <AutocompleteInput type="author" value={author} onChange={setAuthor} placeholder="Author's Pen Name" disabled={isOfflineMode && !author} />
+            <div className="grid gap-4">
+              <div className="grid gap-1.5">
+                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Author</Label>
+                <AutocompleteInput type="author" value={author} onChange={setAuthor} placeholder="Pen Name" disabled={isOfflineMode && !author} />
               </div>
 
-              <div className="grid gap-2">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Book Title</Label>
+              <div className="grid gap-1.5">
+                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Book Title</Label>
                 <AutocompleteInput type="book" value={title} onChange={setTitle} placeholder="Title of the Work" disabled={isOfflineMode && !title} />
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="grid gap-2">
-                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Genre</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-1.5">
+                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Genre</Label>
                   <Select value={genre} onValueChange={setGenre}>
-                    <SelectTrigger className="bg-background/50 h-12 rounded-xl border-none shadow-inner">
-                      <SelectValue placeholder="Select Genre" />
+                    <SelectTrigger className="bg-background/50 h-10 rounded-lg border-none shadow-inner text-xs">
+                      <SelectValue placeholder="Genre" />
                     </SelectTrigger>
-                    <SelectContent className="rounded-2xl shadow-2xl">
+                    <SelectContent className="rounded-xl shadow-2xl">
                       {GENRES.map((g) => (
-                        <SelectItem key={g} value={g} className="rounded-xl font-bold">{g}</SelectItem>
+                        <SelectItem key={g} value={g} className="rounded-lg text-xs font-bold">{g}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 {!selectedFile && (
-                  <div className="grid gap-2">
-                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Chapter Number</Label>
-                    <Input type="number" min={1} value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)} className="bg-background/50 rounded-xl h-12" />
+                  <div className="grid gap-1.5">
+                    <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Chapter</Label>
+                    <Input type="number" min={1} value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)} className="bg-background/50 rounded-lg h-10 text-xs" />
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="space-y-4 pt-4 border-t border-border/50">
-              <div className="flex items-center justify-between">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground flex items-center gap-2">
-                  <ImageIcon className="h-4 w-4" /> Cover Art (Optional)
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/50">
+              <div className="space-y-2">
+                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
+                  <ImageIcon className="h-3 w-3" /> Cover Art
                 </Label>
-              </div>
-              <div className={`relative border-2 border-dashed rounded-[2rem] p-8 transition-all duration-500 ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
-                <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={(e) => e.target.files && setCoverFile(e.target.files[0])} />
-                <div className="flex flex-col items-center justify-center text-center">
+                <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
+                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={(e) => e.target.files && setCoverFile(e.target.files[0])} />
                   {coverFile ? (
-                    <div className="flex items-center gap-3">
-                       <div className="bg-primary p-2 rounded-full"><CheckCircle2 className="h-5 w-5 text-white" /></div>
-                       <span className="text-sm font-bold truncate max-w-[200px]">{coverFile.name}</span>
+                    <div className="flex flex-col items-center gap-1">
+                       <CheckCircle2 className="h-4 w-4 text-primary" />
+                       <span className="text-[9px] font-bold truncate max-w-[120px]">{coverFile.name}</span>
                     </div>
                   ) : (
-                    <div className="space-y-2 opacity-50">
-                       <Upload className="h-8 w-8 mx-auto mb-2" />
-                       <span className="text-xs font-black uppercase tracking-widest">Drop cover image here</span>
+                    <Upload className="h-5 w-5 opacity-20" />
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
+                  <FileType className="h-3 w-3" /> EPUB File
+                </Label>
+                <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center ${selectedFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
+                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
+                  {selectedFile ? (
+                    <div className="flex flex-col items-center gap-1 text-center">
+                      <FileType className="h-4 w-4 text-primary" />
+                      <span className="text-[9px] font-bold truncate max-w-[120px]">{selectedFile.name}</span>
+                      <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }} className="text-[8px] text-destructive font-black uppercase">Clear</button>
                     </div>
+                  ) : (
+                    <BookPlus className="h-5 w-5 opacity-20" />
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="space-y-4 pt-4 border-t border-border/50">
-              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Manuscript File</Label>
-              <div className="grid gap-6">
-                <div className={`relative border-2 border-dashed rounded-[2rem] p-10 transition-all duration-500 ${selectedFile ? 'bg-primary/5 border-primary' : 'hover:border-primary/50 bg-muted/20'}`}>
-                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
-                  <div className="flex flex-col items-center justify-center text-center">
-                    {selectedFile ? (
-                      <div className="space-y-2">
-                        <div className="bg-primary p-3 rounded-full mx-auto w-fit">
-                          {selectedFile.name.endsWith('.epub') ? <FileType className="h-6 w-6 text-white" /> : <Book className="h-6 w-6 text-white" />}
-                        </div>
-                        <span className="font-black uppercase tracking-widest text-[10px] block">{selectedFile.name}</span>
-                        <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }} className="text-xs text-destructive hover:bg-destructive/10">Remove File</Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 opacity-50">
-                        <BookPlus className="h-10 w-10 mx-auto" />
-                        <span className="font-black uppercase tracking-widest text-[10px] block">Upload EPUB for Auto-Parsing</span>
-                        <p className="text-[10px] max-w-[200px] mx-auto">We'll extract all chapters from your EPUB file.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {!selectedFile && (
-                  <Textarea
-                    placeholder="Alternatively, paste your chapter content here..."
-                    className="min-h-[300px] text-lg leading-relaxed p-6 rounded-[2rem] bg-background/50 border-none shadow-inner focus:bg-background transition-all"
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                  />
-                )}
+            {!selectedFile && (
+              <div className="pt-2 border-t border-border/50">
+                <Textarea
+                  placeholder="Paste chapter content here..."
+                  className="min-h-[150px] text-sm leading-relaxed p-4 rounded-xl bg-background/50 border-none shadow-inner"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                />
               </div>
-            </div>
+            )}
 
-            <div className="pt-6">
+            <div className="pt-2">
               <Button 
                 type="submit" 
-                className="w-full py-10 text-xl font-headline font-black rounded-[2rem] shadow-2xl transition-all active:scale-[0.98] hover:shadow-primary/20"
+                className="w-full py-6 text-sm font-headline font-black rounded-xl shadow-lg transition-all active:scale-[0.98]"
                 disabled={loading || (!title.trim() && !selectedFile)}
               >
                 {loading ? (
                   <>
-                    <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {loadingStatus}
                   </>
-                ) : (isApprovedUser && !isOfflineMode && uploadMode === 'cloud') ? (
+                ) : (uploadMode === 'cloud') ? (
                   <>
-                    <ShieldCheck className="mr-3 h-6 w-6" />
-                    Publish Volume to Cloud
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    Publish to Cloud
                   </>
                 ) : (
                   <>
-                    <HardDrive className="mr-3 h-6 w-6" />
-                    Archive in Local Library
+                    <HardDrive className="mr-2 h-4 w-4" />
+                    Save Locally
                   </>
                 )}
               </Button>
