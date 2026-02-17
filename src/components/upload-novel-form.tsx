@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -9,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertTriangle } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertTriangle, Sparkles } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -22,6 +21,7 @@ import { uploadCoverImage } from '@/lib/upload-cover';
 import { sendAccessRequestEmail } from '@/app/actions/notifications';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { identifyBookFromFilename } from '@/ai/flows/identify-book';
 import {
   Select,
   SelectContent,
@@ -136,12 +136,15 @@ export function UploadNovelForm() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isIdentifying, setIsIdentifying] = useState(false);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
   const [checkingApproval, setCheckingApproval] = useState(true);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
+
+  const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
@@ -175,40 +178,29 @@ export function UploadNovelForm() {
     checkApproval();
   }, [user, db, isOfflineMode]);
 
-  const slugify = (text: string) => {
-    return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
+  const handleAIAutoFill = async () => {
+    if (!selectedFile) return;
+    setIsIdentifying(true);
+    setLoadingStatus('AI identifying...');
+    try {
+      const result = await identifyBookFromFilename(selectedFile.name);
+      if (result.title) setTitle(result.title);
+      if (result.author) setAuthor(result.author);
+      if (result.genre) {
+        // Try to match with existing genres
+        const matchedGenre = GENRES.find(g => g.toLowerCase() === result.genre?.toLowerCase());
+        if (matchedGenre) setGenre(matchedGenre);
+      }
+      toast({ title: "AI Match Found", description: `Suggested: ${result.title} by ${result.author}` });
+    } catch (error) {
+      toast({ variant: 'destructive', title: "AI Error", description: "Failed to identify work automatically." });
+    } finally {
+      setIsIdentifying(false);
+    }
   };
 
-  const handleRequestAccess = async () => {
-    if (!user || !db || user.isAnonymous) return;
-    setIsRequestingAccess(true);
-    
-    const requestRef = doc(db, 'publishRequests', user.uid);
-    const requestData = {
-      uid: user.uid,
-      email: user.email,
-      requestedAt: serverTimestamp(),
-      status: 'pending'
-    };
-
-    setDoc(requestRef, requestData)
-      .then(async () => {
-        if (user.email) {
-          await sendAccessRequestEmail(user.email);
-        }
-        toast({ 
-          title: "Request Submitted", 
-          description: "Administrators have been notified of your application." 
-        });
-      })
-      .catch((err) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: requestRef.path,
-          operation: 'create',
-          requestResourceData: requestData
-        }));
-      })
-      .finally(() => setIsRequestingAccess(false));
+  const slugify = (text: string) => {
+    return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
   };
 
   const handleFileChange = async (file: File) => {
@@ -270,8 +262,6 @@ export function UploadNovelForm() {
           const body = chapterDoc.querySelector('body');
           if (body) {
             const chContent = body.innerHTML;
-            // Firestore limit check: 1MB per document
-            // We use a safe margin of 900KB
             if (new TextEncoder().encode(chContent).length > 900000) {
               throw new Error(`Chapter ${idx} exceeds the 1MB Firestore limit. Please split it.`);
             }
@@ -460,9 +450,24 @@ export function UploadNovelForm() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                  <FileType className="h-3 w-3" /> EPUB File
-                </Label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
+                    <FileType className="h-3 w-3" /> EPUB File
+                  </Label>
+                  {isSuperAdmin && selectedFile && (
+                    <Button 
+                      type="button"
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-5 px-2 rounded-md text-[8px] font-black uppercase text-primary gap-1 hover:bg-primary/10"
+                      onClick={handleAIAutoFill}
+                      disabled={isIdentifying}
+                    >
+                      {isIdentifying ? <Loader2 className="h-2 w-2 animate-spin" /> : <Sparkles className="h-2 w-2" />}
+                      AI Auto-fill
+                    </Button>
+                  )}
+                </div>
                 <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center ${selectedFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
                   <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
                   {selectedFile ? (
@@ -501,9 +506,9 @@ export function UploadNovelForm() {
               <Button 
                 type="submit" 
                 className="w-full py-6 text-sm font-headline font-black rounded-xl shadow-lg transition-all active:scale-[0.98]"
-                disabled={loading || (!title.trim() && !selectedFile)}
+                disabled={loading || isIdentifying || (!title.trim() && !selectedFile)}
               >
-                {loading ? (
+                {loading || isIdentifying ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {loadingStatus}
