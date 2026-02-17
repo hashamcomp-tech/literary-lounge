@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser, ListChecks, Check } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser, ListChecks, Check, MoreVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -34,6 +34,13 @@ import {
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -58,8 +65,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   
-  // Bulk Selection States
+  // Administrative UI States
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
+  const [isBookDeleteDialogOpen, setIsBookDeleteDialogOpen] = useState(false);
   const [selectedChapters, setSelectedChapters] = useState<number[]>([]);
 
   // Check admin status via profile
@@ -141,10 +149,32 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const handleDeleteBook = async () => {
     if (!firestore || !id) return;
     setIsDeleting(true);
+    setIsBookDeleteDialogOpen(false);
     try {
       await deleteCloudBook(firestore, id);
       toast({ title: "Manuscript Removed", description: "Novel successfully deleted from global library." });
       router.push('/');
+    } catch (err) {
+      // Handled by global listener
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteCurrentChapter = async () => {
+    if (!firestore || !id) return;
+    setIsDeleting(true);
+    try {
+      await deleteCloudChaptersBulk(firestore, id, [currentChapterNum]);
+      toast({ title: "Chapter Erased", description: `Chapter ${currentChapterNum} has been removed.` });
+      
+      // Navigate to another chapter or home
+      if (chapters.length > 1) {
+        const nextChapter = chapters.find(ch => Number(ch.chapterNumber) !== currentChapterNum);
+        router.push(`/pages/${id}/${nextChapter?.chapterNumber || 1}`);
+      } else {
+        router.push('/');
+      }
     } catch (err) {
       // Handled by global listener
     } finally {
@@ -163,11 +193,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         description: `${selectedChapters.length} chapter(s) have been deleted.` 
       });
       
-      // If the current chapter was deleted, redirect to start
       if (selectedChapters.includes(currentChapterNum)) {
         router.push(`/pages/${id}/1`);
       } else {
-        // Just refresh local state by re-fetching (implicitly handled by firestore listener if we used one, but here we re-run useEffect by navigating/triggering)
         window.location.reload(); 
       }
     } catch (err) {
@@ -272,13 +300,40 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <div className="flex gap-2">
             {isAdmin && (
               <div className="flex gap-1">
-                {/* Manage Chapters Dialog */}
-                <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-full text-primary hover:bg-primary/10" title="Manage Chapters">
-                      <ListChecks className="h-4 w-4" />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10" title="Destructive Actions">
+                      <Trash2 className="h-4 w-4" />
                     </Button>
-                  </DialogTrigger>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="rounded-xl w-56 shadow-2xl border-none">
+                    <DropdownMenuItem 
+                      className="rounded-lg gap-2 text-destructive cursor-pointer py-2.5"
+                      onClick={handleDeleteCurrentChapter}
+                    >
+                      <Eraser className="h-4 w-4" />
+                      <span>Erase Current Chapter</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      className="rounded-lg gap-2 cursor-pointer py-2.5"
+                      onClick={() => setIsManageDialogOpen(true)}
+                    >
+                      <ListChecks className="h-4 w-4 text-primary" />
+                      <span>Manage & Bulk Delete</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      className="rounded-lg gap-2 text-destructive font-bold cursor-pointer py-2.5"
+                      onClick={() => setIsBookDeleteDialogOpen(true)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span>Delete Entire Manuscript</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Bulk Manage Dialog */}
+                <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
                   <DialogContent className="rounded-[2rem] max-w-md border-none shadow-2xl">
                     <DialogHeader>
                       <DialogTitle className="text-2xl font-headline font-black">Manuscript Management</DialogTitle>
@@ -286,7 +341,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                         Select one or more chapters to remove from the global cloud library.
                       </DialogDescription>
                     </DialogHeader>
-                    
                     <ScrollArea className="h-64 mt-4 pr-4">
                       <div className="space-y-2">
                         {chapters.map((ch) => (
@@ -311,7 +365,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                         ))}
                       </div>
                     </ScrollArea>
-
                     <DialogFooter className="mt-6">
                       <Button variant="ghost" onClick={() => setSelectedChapters([])} className="rounded-xl">Clear Selection</Button>
                       <Button 
@@ -326,13 +379,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                   </DialogContent>
                 </Dialog>
 
-                {/* Delete Entire Book */}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10" title="Delete Entire Manuscript">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </AlertDialogTrigger>
+                {/* Global Delete Alert */}
+                <AlertDialog open={isBookDeleteDialogOpen} onOpenChange={setIsBookDeleteDialogOpen}>
                   <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
                     <AlertDialogHeader>
                       <AlertDialogTitle className="text-2xl font-headline font-black">Confirm Global Deletion</AlertDialogTitle>
@@ -341,7 +389,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                      <AlertDialogCancel className="rounded-xl" onClick={() => setIsBookDeleteDialogOpen(false)}>Cancel</AlertDialogCancel>
                       <AlertDialogAction onClick={handleDeleteBook} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">
                         Delete Forever
                       </AlertDialogAction>
