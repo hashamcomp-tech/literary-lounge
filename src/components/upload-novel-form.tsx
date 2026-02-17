@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, BrainCircuit } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, BrainCircuit, X } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -47,10 +47,14 @@ export function UploadNovelForm() {
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [isIdentifying, setIsIdentifying] = useState(false);
+  const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
   const [checkingApproval, setCheckingApproval] = useState(true);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
@@ -104,6 +108,37 @@ export function UploadNovelForm() {
     }
   };
 
+  const handleManualGenerateCover = async () => {
+    if (!title || !genre) {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Information Required', 
+        description: 'Please provide at least a title and genre for the AI to design an authentic cover.' 
+      });
+      return;
+    }
+
+    setIsGeneratingCover(true);
+    try {
+      const coverDataUri = await generateBookCover({ 
+        title, 
+        author: author || 'Anonymous', 
+        genre,
+        description: identifiedSummary || `A unique ${genre} novel.`
+      });
+      const resp = await fetch(coverDataUri);
+      const blob = await resp.blob();
+      const generatedFile = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
+      setCoverFile(generatedFile);
+      setCoverPreview(coverDataUri);
+      toast({ title: "Cover Designed", description: "AI has created an authentic cover for your manuscript." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Generation Failed", description: err.message });
+    } finally {
+      setIsGeneratingCover(false);
+    }
+  };
+
   const handleFileChange = async (file: File) => {
     setSelectedFile(file);
     if (file.name.endsWith('.epub')) {
@@ -136,7 +171,16 @@ export function UploadNovelForm() {
         toast({ variant: 'destructive', title: "Parsing Error", description: "Failed to read EPUB metadata." });
       } finally {
         setLoading(false);
+        setLoadingStatus('');
       }
+    }
+  };
+
+  const handleCoverFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
     }
   };
 
@@ -152,48 +196,13 @@ export function UploadNovelForm() {
       let finalTitle = title.trim();
       let finalAuthor = author.trim() || 'Anonymous Author';
       let finalGenre = genre;
-      let finalSummary = identifiedSummary;
       let chapters: any[] = [];
-
-      // Background AI Identification if info is sparse
-      if ((!finalTitle || !finalSummary) && selectedFile) {
-        setLoadingStatus('Identifying Manuscript...');
-        try {
-          const idResult = await identifyBookFromFilename(selectedFile.name);
-          finalTitle = finalTitle || idResult.title || 'Untitled';
-          finalAuthor = finalAuthor || idResult.author || 'Unknown';
-          finalGenre = finalGenre || idResult.genre || genre;
-          finalSummary = finalSummary || idResult.summary || '';
-        } catch (e) {
-          console.warn("Background identification failed");
-        }
-      }
-
-      // AI Cover Generation if missing
-      let finalCoverFile = coverFile;
-      if (!finalCoverFile && isCloudTarget) {
-        setLoadingStatus('AI Designing Authentic Cover...');
-        try {
-          const coverDataUri = await generateBookCover({ 
-            title: finalTitle, 
-            author: finalAuthor, 
-            genre: finalGenre,
-            description: finalSummary
-          });
-          const resp = await fetch(coverDataUri);
-          const blob = await resp.blob();
-          finalCoverFile = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
-          setCoverPreview(coverDataUri);
-        } catch (aiErr) {
-          console.warn("AI Cover generation failed, proceeding without art.");
-        }
-      }
 
       setLoadingStatus('Optimizing Assets...');
       let optimizedCover: File | null = null;
-      if (finalCoverFile) {
-        const optimizedBlob = await optimizeCoverImage(finalCoverFile);
-        optimizedCover = new File([optimizedBlob], finalCoverFile.name, { type: 'image/jpeg' });
+      if (coverFile) {
+        const optimizedBlob = await optimizeCoverImage(coverFile);
+        optimizedCover = new File([optimizedBlob], coverFile.name, { type: 'image/jpeg' });
       }
 
       if (selectedFile?.name.endsWith('.epub')) {
@@ -275,6 +284,7 @@ export function UploadNovelForm() {
       toast({ variant: "destructive", title: "Upload Failed", description: error.message });
     } finally {
       setLoading(false);
+      setLoadingStatus('');
     }
   };
 
@@ -385,7 +395,79 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <div className="pt-2 border-t border-border/50">
+            {/* Visual Identity / Cover Preview Bar */}
+            <div className="pt-4 border-t border-border/50">
+              <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5 mb-3">
+                <ImageIcon className="h-3 w-3" /> Visual Identity
+              </Label>
+              <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start bg-muted/10 p-4 rounded-2xl border border-border/50">
+                <div className="relative aspect-[2/3] w-28 bg-muted/20 rounded-lg overflow-hidden border shadow-inner flex items-center justify-center shrink-0">
+                  {coverPreview ? (
+                    <img src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover animate-in fade-in duration-500" />
+                  ) : (
+                    <Book className="h-8 w-8 text-muted-foreground/20" />
+                  )}
+                  {isGeneratingCover && (
+                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center text-white p-2 text-center">
+                      <Loader2 className="h-5 w-5 animate-spin mb-2" />
+                      <span className="text-[8px] font-black uppercase tracking-tighter">AI Designing...</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-3 text-center sm:text-left pt-1">
+                  <div>
+                    <h4 className="text-[11px] font-bold mb-1">Cover Art</h4>
+                    <p className="text-[9px] text-muted-foreground leading-relaxed uppercase tracking-widest font-medium">
+                      Select an image, extract from EPUB, or let AI design an authentic cover for you.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <input 
+                      type="file" 
+                      ref={coverInputRef} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={handleCoverFileChange} 
+                    />
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      className="rounded-lg h-8 px-3 gap-2 border-border bg-background hover:bg-muted"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={loading || isGeneratingCover}
+                    >
+                      <Upload className="h-3 w-3" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Upload File</span>
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      className="rounded-lg h-8 px-3 gap-2 border-primary/20 text-primary bg-primary/5 hover:bg-primary/10"
+                      onClick={handleManualGenerateCover}
+                      disabled={loading || isGeneratingCover || !title}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">AI Design</span>
+                    </Button>
+                    {coverPreview && (
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10"
+                        onClick={() => { setCoverFile(null); setCoverPreview(null); }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-border/50">
               <div className="space-y-2">
                 <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
                   <FileType className="h-3 w-3" /> Manuscript File
