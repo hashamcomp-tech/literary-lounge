@@ -1,17 +1,17 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase, useStorage } from '@/firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight, Camera } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,11 +27,14 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { uploadProfilePhoto } from '@/lib/upload-profile-photo';
 
 export default function LoginPage() {
   const router = useRouter();
   const auth = useAuth();
   const db = useFirestore();
+  const storage = useStorage();
   const { user, isUserLoading } = useUser();
   const { toast } = useToast();
   
@@ -50,10 +53,13 @@ export default function LoginPage() {
   
   const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
   const [loading, setLoading] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Username change states
   const [newUsername, setNewUsername] = useState('');
   const [isChangingUsername, setIsChangingUsername] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Administrative Check
   const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
@@ -68,7 +74,7 @@ export default function LoginPage() {
 
       setUsernameStatus('checking');
       try {
-        const usernameRef = doc(db, 'usernames', clean);
+        const usernameRef = doc(db!, 'usernames', clean);
         const snapshot = await getDoc(usernameRef);
         setUsernameStatus(snapshot.exists() ? 'taken' : 'available');
       } catch (err) {
@@ -87,11 +93,9 @@ export default function LoginPage() {
     try {
       let emailToUse = loginEmail.trim();
       
-      // Simple check to see if input is an email or a username
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailToUse);
       
       if (!isEmail) {
-        // Assume it's a username, find the email associated with it
         const usernameRef = doc(db, 'usernames', emailToUse.toLowerCase());
         const usernameSnap = await getDoc(usernameRef);
         
@@ -126,8 +130,7 @@ export default function LoginPage() {
     
     setLoading(true);
     try {
-      // 1. Check uniqueness (Read operation)
-      const usernameRef = doc(db, 'usernames', cleanUsername);
+      const usernameRef = doc(db!, 'usernames', cleanUsername);
       const usernameSnap = await getDoc(usernameRef);
       if (usernameSnap.exists()) {
         toast({ variant: "destructive", title: "Username Taken", description: "Please choose another username." });
@@ -135,13 +138,9 @@ export default function LoginPage() {
         return;
       }
 
-      // 2. Create Auth User (Wait for result to get UID)
-      const userCredential = await createUserWithEmailAndPassword(auth, registerEmail, registerPassword);
+      const userCredential = await createUserWithEmailAndPassword(auth!, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      // 3. Initiate Firestore Mutations (NON-BLOCKING)
-      
-      // A. Username Map
       const mapData = { uid: newUser.uid };
       setDoc(usernameRef, mapData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
@@ -151,15 +150,14 @@ export default function LoginPage() {
         }));
       });
 
-      // B. User Profile
-      const userRef = doc(db, 'users', newUser.uid);
+      const userRef = doc(db!, 'users', newUser.uid);
       const profileData = {
         uid: newUser.uid,
         username: cleanUsername,
         email: newUser.email,
-        role: 'reader', // Assign requested 'reader' role
+        role: 'reader',
         createdAt: serverTimestamp(),
-        lastUsernameChange: serverTimestamp() // Set initial change timestamp
+        lastUsernameChange: serverTimestamp()
       };
 
       setDoc(userRef, profileData).catch(async (err) => {
@@ -189,7 +187,6 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      // 30 day limit calculation - Bypassed for Admins
       const thirtyDays = 30 * 24 * 60 * 60 * 1000;
       const lastChange = profile?.lastUsernameChange;
       
@@ -210,7 +207,7 @@ export default function LoginPage() {
         }
       }
 
-      const usernameRef = doc(db, 'usernames', clean);
+      const usernameRef = doc(db!, 'usernames', clean);
       const snapshot = await getDoc(usernameRef);
 
       if (snapshot.exists()) {
@@ -229,7 +226,7 @@ export default function LoginPage() {
       });
 
       const oldUsername = profile?.username;
-      const userRef = doc(db, 'users', user!.uid);
+      const userRef = doc(db!, 'users', user!.uid);
       const updateData = {
         username: clean,
         lastUsernameChange: serverTimestamp(),
@@ -245,7 +242,7 @@ export default function LoginPage() {
       });
 
       if (oldUsername) {
-        deleteDoc(doc(db, 'usernames', oldUsername)).catch(() => {});
+        deleteDoc(doc(db!, 'usernames', oldUsername)).catch(() => {});
       }
 
       toast({ title: "Success", description: "Your username has been updated." });
@@ -258,11 +255,39 @@ export default function LoginPage() {
     }
   };
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user || !storage || !db) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: "destructive", title: "Invalid File", description: "Please select an image file." });
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const downloadURL = await uploadProfilePhoto(storage, file, user.uid);
+      
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { photoURL: downloadURL });
+      
+      if (auth?.currentUser) {
+        await updateProfile(auth.currentUser, { photoURL: downloadURL });
+      }
+
+      toast({ title: "Profile Photo Updated", description: "Your new avatar has been saved." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Upload Failed", description: error.message });
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
   const handlePasswordReset = async () => {
     if (!resetEmail) return;
     setLoading(true);
     try {
-      await sendPasswordResetEmail(auth, resetEmail);
+      await sendPasswordResetEmail(auth!, resetEmail);
       toast({ 
         title: "Reset link sent!", 
         description: `Check your email (${resetEmail}) for password reset instructions.` 
@@ -277,7 +302,7 @@ export default function LoginPage() {
   };
 
   const handleSignOut = async () => {
-    await signOut(auth);
+    await signOut(auth!);
     toast({ title: "Signed out", description: "Come back soon!" });
   };
 
@@ -364,14 +389,37 @@ export default function LoginPage() {
           ) : (
             <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
               <CardHeader className="text-center">
-                <div className="bg-primary/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 relative">
-                  <UserIcon className="h-10 w-10 text-primary" />
+                <div className="relative group mx-auto mb-4 w-24 h-24">
+                  <Avatar className="w-full h-full border-4 border-background shadow-xl">
+                    <AvatarImage src={profile?.photoURL || undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary">
+                      <UserIcon className="h-10 w-10" />
+                    </AvatarFallback>
+                  </Avatar>
+                  
+                  <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingPhoto}
+                    className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                  >
+                    {isUploadingPhoto ? <Loader2 className="h-6 w-6 animate-spin text-white" /> : <Camera className="h-6 w-6 text-white" />}
+                  </button>
+                  
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept="image/*" 
+                    onChange={handlePhotoUpload} 
+                  />
+
                   {isAdmin && (
-                    <div className="absolute -bottom-1 -right-1 bg-primary text-white p-1 rounded-full border-2 border-background">
+                    <div className="absolute -bottom-1 -right-1 bg-primary text-white p-1 rounded-full border-2 border-background z-10 shadow-md">
                       <Shield className="h-3 w-3" />
                     </div>
                   )}
                 </div>
+                
                 <CardTitle className="text-2xl font-headline font-bold flex flex-col items-center justify-center gap-2">
                   <span>{isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}</span>
                   {profile?.role === 'admin' && (

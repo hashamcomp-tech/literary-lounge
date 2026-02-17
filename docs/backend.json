@@ -20,6 +20,10 @@
           "description": "The user's registered email address.",
           "format": "email"
         },
+        "photoURL": {
+          "type": "string",
+          "description": "The URL of the user's profile photo."
+        },
         "role": {
           "type": "string",
           "enum": ["user", "admin", "reader"],

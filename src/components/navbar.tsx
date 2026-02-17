@@ -24,6 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export default function Navbar() {
   const router = useRouter();
@@ -46,7 +47,7 @@ export default function Navbar() {
         setIsAdmin(false);
         return;
       }
-      if (user.email === 'hashamcomp@gmail.com') {
+      if (user.email === 'hashamcomp@gmail.com' || profile?.role === 'admin') {
         setIsAdmin(true);
         return;
       }
@@ -157,8 +158,15 @@ export default function Navbar() {
 
               {!isOfflineMode ? (
                 <Link href="/login">
-                  <Button variant="ghost" size="icon" className={`${isLoggedIn ? 'text-primary' : 'text-muted-foreground'} hover:text-primary rounded-full`} title="Account">
-                    <User className="h-5 w-5" />
+                  <Button variant="ghost" size="icon" className="p-0 hover:bg-transparent rounded-full overflow-hidden" title="Account">
+                    {isLoggedIn && profile?.photoURL ? (
+                      <Avatar className="h-8 w-8">
+                        <AvatarImage src={profile.photoURL} />
+                        <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
+                      </Avatar>
+                    ) : (
+                      <User className={`h-5 w-5 ${isLoggedIn ? 'text-primary' : 'text-muted-foreground'}`} />
+                    )}
                   </Button>
                 </Link>
               ) : (
