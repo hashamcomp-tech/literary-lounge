@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, query, orderBy, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -30,6 +30,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 export default function AdminPage() {
   const db = useFirestore();
@@ -324,104 +330,117 @@ export default function AdminPage() {
 
           <AdminStorageBar />
 
-          {/* Library Management Section */}
-          <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem] mb-12">
-            <CardHeader className="bg-muted/30 p-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div>
-                <CardTitle className="text-2xl font-headline font-black">Global Manuscript Management</CardTitle>
-                <CardDescription className="text-base">Review and remove content from the global cloud library.</CardDescription>
-              </div>
-              <div className="relative w-full md:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Filter by title or author..." 
-                  className="pl-10 h-10 rounded-xl bg-background/50 border-none shadow-inner"
-                  value={bookSearch}
-                  onChange={(e) => setBookSearch(e.target.value)}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {isBooksLoading ? (
-                <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>
-              ) : filteredBooks.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/10 border-none">
-                      <TableHead className="pl-10 font-black uppercase tracking-widest text-[10px]">Title & Author</TableHead>
-                      <TableHead className="font-black uppercase tracking-widest text-[10px]">Genre</TableHead>
-                      <TableHead className="font-black uppercase tracking-widest text-[10px]">Views</TableHead>
-                      <TableHead className="text-right pr-10 font-black uppercase tracking-widest text-[10px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBooks.map((book) => (
-                      <TableRow key={book.id} className="border-border/50 hover:bg-primary/5 transition-colors h-24">
-                        <TableCell className="pl-10">
-                          <div className="flex flex-col">
-                            <span className="font-bold text-lg leading-tight">{book.title}</span>
-                            <span className="text-sm text-muted-foreground">By {book.author}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="border-primary/20 text-primary uppercase text-[9px] font-black">
-                            {book.genre}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs opacity-60">
-                          {(book.views || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right pr-10">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link href={`/pages/${book.id}/1`}>
-                              <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 text-primary">
-                                <ExternalLink className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  className="rounded-xl hover:bg-destructive/10 text-destructive"
-                                  disabled={processingId === book.id}
-                                >
-                                  {processingId === book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle className="text-2xl font-headline font-black">Global Deletion</AlertDialogTitle>
-                                  <AlertDialogDescription className="text-base">
-                                    Remove <span className="font-bold text-foreground">"{book.title}"</span>? This will purge the manuscript for all readers globally.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-                                  <AlertDialogAction 
-                                    onClick={() => handleDeleteBook(book.id)}
-                                    className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold"
-                                  >
-                                    Confirm Deletion
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="p-24 text-center opacity-50 flex flex-col items-center">
-                  <BookOpen className="h-16 w-16 mb-4 text-primary" />
-                  <p className="text-xl font-headline font-bold">No Manuscripts Found</p>
-                  <p className="text-sm mt-1">Try adjusting your search filter.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Library Management Section - Now Retractable */}
+          <Accordion type="single" collapsible className="mb-12">
+            <AccordionItem value="manuscripts" className="border-none">
+              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
+                <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
+                  <CardHeader className="bg-muted/30 p-10 flex flex-col md:flex-row md:items-center justify-between gap-6 w-full text-left cursor-pointer group">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <CardTitle className="text-2xl font-headline font-black">Global Manuscript Management</CardTitle>
+                        <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                      </div>
+                      <CardDescription className="text-base">Review and remove content from the global cloud library.</CardDescription>
+                    </div>
+                  </CardHeader>
+                </AccordionTrigger>
+                <AccordionContent className="p-0 border-t border-border/50">
+                  <div className="p-10 pb-6 bg-muted/10">
+                    <div className="relative w-full md:max-w-md">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input 
+                        placeholder="Filter by title or author..." 
+                        className="pl-10 h-12 rounded-xl bg-background border-none shadow-inner text-lg"
+                        value={bookSearch}
+                        onChange={(e) => setBookSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="p-0">
+                    {isBooksLoading ? (
+                      <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>
+                    ) : filteredBooks.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/10 border-none">
+                            <TableHead className="pl-10 font-black uppercase tracking-widest text-[10px]">Title & Author</TableHead>
+                            <TableHead className="font-black uppercase tracking-widest text-[10px]">Genre</TableHead>
+                            <TableHead className="font-black uppercase tracking-widest text-[10px]">Views</TableHead>
+                            <TableHead className="text-right pr-10 font-black uppercase tracking-widest text-[10px]">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredBooks.map((book) => (
+                            <TableRow key={book.id} className="border-border/50 hover:bg-primary/5 transition-colors h-24">
+                              <TableCell className="pl-10">
+                                <div className="flex flex-col">
+                                  <span className="font-bold text-lg leading-tight">{book.title}</span>
+                                  <span className="text-sm text-muted-foreground">By {book.author}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="border-primary/20 text-primary uppercase text-[9px] font-black">
+                                  {book.genre}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs opacity-60">
+                                {(book.views || 0).toLocaleString()}
+                              </TableCell>
+                              <TableCell className="text-right pr-10">
+                                <div className="flex items-center justify-end gap-2">
+                                  <Link href={`/pages/${book.id}/1`}>
+                                    <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 text-primary">
+                                      <ExternalLink className="h-4 w-4" />
+                                    </Button>
+                                  </Link>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="rounded-xl hover:bg-destructive/10 text-destructive"
+                                        disabled={processingId === book.id}
+                                      >
+                                        {processingId === book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle className="text-2xl font-headline font-black">Global Deletion</AlertDialogTitle>
+                                        <AlertDialogDescription className="text-base">
+                                          Remove <span className="font-bold text-foreground">"{book.title}"</span>? This will purge the manuscript for all readers globally.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                                        <AlertDialogAction 
+                                          onClick={() => handleDeleteBook(book.id)}
+                                          className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold"
+                                        >
+                                          Confirm Deletion
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <div className="p-24 text-center opacity-50 flex flex-col items-center">
+                        <BookOpen className="h-16 w-16 mb-4 text-primary" />
+                        <p className="text-xl font-headline font-bold">No Manuscripts Found</p>
+                        <p className="text-sm mt-1">Try adjusting your search filter.</p>
+                      </div>
+                    )}
+                  </div>
+                </AccordionContent>
+              </Card>
+            </AccordionItem>
+          </Accordion>
 
           <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
             <CardHeader className="bg-muted/30 p-10">
