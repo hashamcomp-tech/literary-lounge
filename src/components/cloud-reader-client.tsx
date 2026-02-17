@@ -103,7 +103,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         const data = snapshot.data();
         let chaptersList = data.chapters || [];
         
-        if (chaptersList.length === 0) {
+        // Slim documents don't store content in the root. If content is missing, we must fetch from subcollection.
+        const needsFullFetch = chaptersList.length === 0 || chaptersList.some((ch: any) => !ch.content);
+
+        if (needsFullFetch) {
           const subColRef = collection(firestore, 'books', id, 'chapters');
           const subSnap = await getDocs(subColRef);
           chaptersList = subSnap.docs.map(d => ({ 
