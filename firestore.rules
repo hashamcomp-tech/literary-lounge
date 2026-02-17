@@ -19,7 +19,7 @@ service cloud.firestore {
 
     /**
      * Verifies if the user is an authorized contributor.
-     * Robust check that handles missing settings documents.
+     * Fixed existence check and data access syntax.
      */
     function isContributor() {
       if (!isSignedIn()) return false;
