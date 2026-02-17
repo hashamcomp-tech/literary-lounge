@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
-import { Trash2, Loader2, Globe } from 'lucide-react';
+import { Trash2, Loader2, Globe, Book } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { deleteCloudBook } from '@/lib/cloud-library-utils';
@@ -31,7 +31,7 @@ interface NovelCardProps {
 /**
  * @fileOverview Universal Novel Card.
  * Intelligently routes between Mock, Cloud, and Local library collections.
- * Provides administrative deletion controls.
+ * Prioritizes uploaded cover URLs over random fallbacks.
  */
 export default function NovelCard({ novel }: NovelCardProps) {
   const { user } = useUser();
@@ -57,7 +57,12 @@ export default function NovelCard({ novel }: NovelCardProps) {
   }
 
   const authorName = novel.author || 'Unknown Author';
-  const displayImage = novel.coverURL || novel.coverImage || `https://picsum.photos/seed/${novel.id}/400/600`;
+  
+  // Prioritize uploaded cover URL, then fallback to metadata info, then mock image, finally a stable seeded placeholder
+  const displayImage = novel.coverURL || 
+                       novel.metadata?.info?.coverURL || 
+                       novel.coverImage || 
+                       `https://picsum.photos/seed/${novel.id}/400/600`;
 
   const handleDeleteCloudBook = () => {
     if (!db || !novel.id) return;
@@ -83,15 +88,19 @@ export default function NovelCard({ novel }: NovelCardProps) {
       <Link href={href}>
         <Card className="overflow-hidden border-none shadow-none bg-transparent hover:bg-card/50 transition-colors duration-300">
           <CardContent className="p-0">
-            <div className="relative aspect-[150/220] w-full overflow-hidden rounded-lg mb-3 shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-all duration-500 border border-border/10">
-              <Image
-                src={displayImage}
-                alt={novel.title}
-                fill
-                className="object-cover transition-transform duration-700 group-hover:scale-110"
-                sizes="(max-width: 768px) 50vw, (max-width: 1200px) 25vw, 20vw"
-                data-ai-hint="book cover"
-              />
+            <div className="relative aspect-[150/220] w-full overflow-hidden rounded-lg mb-3 shadow-sm group-hover:shadow-lg group-hover:-translate-y-1 transition-all duration-500 border border-border/10 bg-muted/20 flex items-center justify-center">
+              {displayImage ? (
+                <Image
+                  src={displayImage}
+                  alt={novel.title}
+                  fill
+                  className="object-cover transition-transform duration-700 group-hover:scale-110"
+                  sizes="(max-width: 768px) 50vw, (max-width: 1200px) 25vw, 20vw"
+                  data-ai-hint="book cover"
+                />
+              ) : (
+                <Book className="h-12 w-12 text-muted-foreground/20" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
                 <Badge variant="secondary" className="bg-white/95 backdrop-blur-sm text-primary border-none font-bold py-1 px-3">
                   Read Now

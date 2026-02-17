@@ -1,9 +1,10 @@
+
 'use client';
 
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
 import NovelCard from '@/components/novel-card';
-import { PlayCircle, Clock, ArrowRight } from 'lucide-react';
+import { PlayCircle, Clock, ArrowRight, Book } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { Button } from '@/components/ui/button';
 /**
  * @fileOverview Continue Reading Section.
  * Fetches and displays the top 3 most recently read books for the current user.
+ * Prioritizes uploaded covers.
  */
 export default function ContinueReadingSection() {
   const { user, isUserLoading } = useUser();
@@ -63,34 +65,42 @@ export default function ContinueReadingSection() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {historyItems.map((item) => (
-          <Link key={item.id} href={item.isCloud ? `/pages/${item.bookId}/${item.lastReadChapter}` : `/novel/${item.bookId}`}>
-            <div className="group bg-card/40 backdrop-blur-xl border border-border/50 rounded-2xl p-4 flex items-center gap-4 transition-all hover:shadow-xl hover:bg-card/60 hover:-translate-y-1">
-              <div className="relative h-20 w-14 shrink-0 rounded-md overflow-hidden shadow-md">
-                <img 
-                  src={item.coverURL || `https://picsum.photos/seed/${item.bookId}/200/300`} 
-                  alt={item.title}
-                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-headline font-bold text-base leading-tight line-clamp-1 group-hover:text-primary transition-colors">
-                  {item.title}
-                </h3>
-                <p className="text-xs text-muted-foreground truncate mb-2">By {item.author}</p>
-                <div className="flex items-center gap-2">
-                  <div className="bg-primary/10 text-primary text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <Clock className="h-2.5 w-2.5" />
-                    Chapter {item.lastReadChapter}
+        {historyItems.map((item) => {
+          const coverURL = item.coverURL || `https://picsum.photos/seed/${item.bookId}/200/300`;
+          
+          return (
+            <Link key={item.id} href={item.isCloud ? `/pages/${item.bookId}/${item.lastReadChapter}` : `/novel/${item.bookId}`}>
+              <div className="group bg-card/40 backdrop-blur-xl border border-border/50 rounded-2xl p-4 flex items-center gap-4 transition-all hover:shadow-xl hover:bg-card/60 hover:-translate-y-1">
+                <div className="relative h-20 w-14 shrink-0 rounded-md overflow-hidden shadow-md bg-muted/20 flex items-center justify-center">
+                  {coverURL ? (
+                    <img 
+                      src={coverURL} 
+                      alt={item.title}
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                  ) : (
+                    <Book className="h-6 w-6 text-muted-foreground/30" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-headline font-bold text-base leading-tight line-clamp-1 group-hover:text-primary transition-colors">
+                    {item.title}
+                  </h3>
+                  <p className="text-xs text-muted-foreground truncate mb-2">By {item.author}</p>
+                  <div className="flex items-center gap-2">
+                    <div className="bg-primary/10 text-primary text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-1">
+                      <Clock className="h-2.5 w-2.5" />
+                      Chapter {item.lastReadChapter}
+                    </div>
                   </div>
                 </div>
+                <div className="h-8 w-8 rounded-full bg-primary/5 text-primary flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <ArrowRight className="h-4 w-4" />
+                </div>
               </div>
-              <div className="h-8 w-8 rounded-full bg-primary/5 text-primary flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <ArrowRight className="h-4 w-4" />
-              </div>
-            </div>
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
     </section>
   );

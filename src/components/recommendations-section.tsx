@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, where } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, Eye, Star, Zap, Clock } from 'lucide-react';
+import { TrendingUp, Eye, Star, Zap, Clock, Book } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
@@ -89,53 +90,61 @@ export default function RecommendationsSection({
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {sortedBooks.map((book) => (
-          <Link key={book.id} href={`/pages/${book.id}/1`}>
-            <Card className="bg-card/50 border-none shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer h-full flex flex-col overflow-hidden">
-              <div className="flex flex-row">
-                <div className="relative w-[100px] h-[150px] shrink-0 m-4 shadow-md">
-                  <Image 
-                    src={book.coverURL || book.coverImage || `https://picsum.photos/seed/${book.id}/400/600`}
-                    alt={book.title || "Book Cover"}
-                    fill
-                    className="object-cover rounded-md"
-                    data-ai-hint="book cover"
-                  />
-                </div>
-                <div className="flex-1 flex flex-col py-4 pr-4 min-w-0">
-                  <CardHeader className="p-0 mb-2">
-                    <CardTitle className="text-lg font-headline font-bold group-hover:text-primary transition-colors line-clamp-2">
-                      {book.title || book.metadata?.info?.bookTitle}
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground font-medium truncate">By {book.author || book.metadata?.info?.author}</p>
-                  </CardHeader>
-                  <CardContent className="p-0 flex-1 flex flex-col justify-between">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                        <Eye className="h-3 w-3" />
-                        {(book.views || book.metadata?.info?.views || 0).toLocaleString()}
-                      </div>
-                      {book.metadata?.info?.totalChapters && (
+        {sortedBooks.map((book) => {
+          const coverImg = book.coverURL || book.metadata?.info?.coverURL || book.coverImage || `https://picsum.photos/seed/${book.id}/400/600`;
+          
+          return (
+            <Link key={book.id} href={`/pages/${book.id}/1`}>
+              <Card className="bg-card/50 border-none shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer h-full flex flex-col overflow-hidden">
+                <div className="flex flex-row">
+                  <div className="relative w-[100px] h-[150px] shrink-0 m-4 shadow-md bg-muted/20 flex items-center justify-center rounded-md overflow-hidden">
+                    {coverImg ? (
+                      <Image 
+                        src={coverImg}
+                        alt={book.title || "Book Cover"}
+                        fill
+                        className="object-cover"
+                        data-ai-hint="book cover"
+                      />
+                    ) : (
+                      <Book className="h-8 w-8 text-muted-foreground/20" />
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-col py-4 pr-4 min-w-0">
+                    <CardHeader className="p-0 mb-2">
+                      <CardTitle className="text-lg font-headline font-bold group-hover:text-primary transition-colors line-clamp-2">
+                        {book.title || book.metadata?.info?.bookTitle}
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground font-medium truncate">By {book.author || book.metadata?.info?.author}</p>
+                    </CardHeader>
+                    <CardContent className="p-0 flex-1 flex flex-col justify-between">
+                      <div className="flex items-center gap-3 mb-2">
                         <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                          <Zap className="h-3 w-3" />
-                          {book.metadata.info.totalChapters} ch
+                          <Eye className="h-3 w-3" />
+                          {(book.views || book.metadata?.info?.views || 0).toLocaleString()}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10">
-                        {book.genre || book.metadata?.info?.genre || 'Novel'}
-                      </Badge>
-                      <span className="text-[10px] font-black text-primary group-hover:translate-x-1 transition-transform">
-                        Read Now →
-                      </span>
-                    </div>
-                  </CardContent>
+                        {book.metadata?.info?.totalChapters && (
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                            <Zap className="h-3 w-3" />
+                            {book.metadata.info.totalChapters} ch
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Badge variant="outline" className="text-[9px] uppercase font-bold text-accent tracking-tighter bg-accent/5 px-2 py-0.5 rounded-full border border-accent/10">
+                          {book.genre || book.metadata?.info?.genre || 'Novel'}
+                        </Badge>
+                        <span className="text-[10px] font-black text-primary group-hover:translate-x-1 transition-transform">
+                          Read Now →
+                        </span>
+                      </div>
+                    </CardContent>
+                  </div>
                 </div>
-              </div>
-            </Card>
-          </Link>
-        ))}
+              </Card>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

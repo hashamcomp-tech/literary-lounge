@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useUser, useFirestore, useCollection, useMemoFirebase, useFirebase } from '@/firebase';
@@ -13,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 /**
  * @fileOverview Reading History page.
  * Displays a list of novels the user has recently read, with their last progress.
+ * Respects uploaded cover URLs.
  */
 export default function ReadingHistoryPage() {
   const { user, isUserLoading } = useUser();
@@ -125,7 +127,7 @@ export default function ReadingHistoryPage() {
           ) : (
             <div className="py-24 text-center border-2 border-dashed rounded-3xl bg-muted/20">
               <BookX className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-20" />
-              <h2 className="text-2xl font-headline font-bold mb-2">Your shelf is waiting</h2>
+              <h2 className="text-2xl font-headline font-black mb-2">Your shelf is waiting</h2>
               <p className="text-muted-foreground max-w-md mx-auto mb-8">
                 You haven't started reading any novels yet. Explore our collection to begin your adventure.
               </p>
