@@ -1,10 +1,9 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2 } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -14,7 +13,7 @@ import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
-import { deleteCloudBook } from '@/lib/cloud-library-utils';
+import { deleteCloudBook, deleteCloudChapter } from '@/lib/cloud-library-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +34,7 @@ interface CloudReaderClientProps {
 /**
  * @fileOverview Cloud Reader Client.
  * Implements a 700px optimized width reading experience with admin controls.
+ * Admins can delete the entire book or just the current chapter.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -53,7 +53,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mounted, setMounted] = useState(false);
 
   // Check admin status via profile
-  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(firestore!, 'users', user.uid) : null, [firestore, user]);
+  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous && firestore) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: profile } = useDoc(profileRef);
   const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
 
@@ -91,7 +91,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           chaptersList = subSnap.docs.map(d => ({ 
             id: d.id, 
             ...d.data() 
-          })).sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+          })).sort((a, b) => (Number(a.chapterNumber) || 0) - (Number(b.chapterNumber) || 0));
         }
 
         if (chaptersList.length === 0) {
@@ -128,7 +128,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     stopTextToSpeech();
   }, [firestore, id, user, currentChapterNum, isOfflineMode]);
 
-  const handleDelete = async () => {
+  const handleDeleteBook = async () => {
     if (!firestore || !id) return;
     setIsDeleting(true);
     try {
@@ -136,14 +136,33 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       toast({ title: "Manuscript Removed", description: "Novel successfully deleted from global library." });
       router.push('/');
     } catch (err) {
-      // Handled by listener
+      // Handled by global listener
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteChapter = async () => {
+    if (!firestore || !id) return;
+    setIsDeleting(true);
+    try {
+      await deleteCloudChapter(firestore, id, currentChapterNum);
+      toast({ title: "Chapter Removed", description: `Chapter ${currentChapterNum} has been deleted.` });
+      // Redirect to chapter 1 or back to library if no chapters left
+      if (chapters.length > 1) {
+        router.push(`/pages/${id}/1`);
+      } else {
+        router.push('/');
+      }
+    } catch (err) {
+      // Handled by global listener
     } finally {
       setIsDeleting(false);
     }
   };
 
   const handleReadAloud = async (startIndex: number = 0) => {
-    const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum);
+    const currentChapter = chapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
     if (!currentChapter?.content) return;
     
     setIsSpeaking(true);
@@ -194,7 +213,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       <div className="flex flex-col items-center justify-center py-32 space-y-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">
-          {isDeleting ? 'Removing Manuscript...' : 'Syncing with Library...'}
+          {isDeleting ? 'Updating Manuscript...' : 'Syncing with Library...'}
         </p>
       </div>
     );
@@ -211,7 +230,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     );
   }
 
-  const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum) || chapters[0];
+  const currentChapter = chapters.find(ch => Number(ch.chapterNumber) === currentChapterNum) || chapters[0];
   const totalChapters = chapters.length;
 
   if (!mounted) return null;
@@ -229,27 +248,53 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </Button>
           <div className="flex gap-2">
             {isAdmin && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10" title="Delete Manuscript">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-2xl font-headline font-black">Confirm Global Deletion</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span> and all its chapters for all readers. This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">
-                      Delete Forever
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <div className="flex gap-1">
+                {/* Delete Current Chapter */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-full text-amber-600 hover:bg-amber-100/50" title="Delete Opened Chapter">
+                      <Eraser className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="text-2xl font-headline font-black">Delete Chapter {currentChapterNum}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will remove <span className="font-bold text-foreground">"{currentChapter.title || `Chapter ${currentChapterNum}`}"</span> from this manuscript. Other chapters will remain intact.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDeleteChapter} className="bg-amber-600 hover:bg-amber-700 rounded-xl font-bold">
+                        Delete Chapter
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                {/* Delete Entire Book */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10" title="Delete Entire Manuscript">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="text-2xl font-headline font-black">Confirm Global Deletion</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span> and all its chapters for all readers. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleDeleteBook} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">
+                        Delete Forever
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             )}
             <Button 
               variant="outline" 
