@@ -27,6 +27,7 @@ service cloud.firestore {
       if (isSuperAdmin()) return true;
       
       // Check approved email list for publishing permissions
+      // Use full path for robustness
       return exists(/databases/$(database)/documents/settings/approvedEmails) && 
              request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails;
     }
@@ -79,8 +80,7 @@ service cloud.firestore {
 
     // BOOKS & MANUSCRIPTS
     match /books/{bookId} {
-      // PUBLIC ACCESS: Explicitly allow guests and readers to list books and view individual volumes.
-      // This enables the "Explore Library" page and genre filtering for everyone.
+      // PUBLIC ACCESS: Allow anyone to view and list books
       allow get, list: if true;
       
       // Allow contributors/admins to create and delete
@@ -89,7 +89,7 @@ service cloud.firestore {
       
       // Update allowed for contributors OR for public view counting
       allow update: if isContributor() || isSuperAdmin() || 
-                    (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
 
       // Sub-collections (chapters, metadata, messages)
       match /{allChildren=**} {

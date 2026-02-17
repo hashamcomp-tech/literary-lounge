@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useEffect, useState, useRef } from 'react';
+import { doc, getDoc, collection, getDocs, setDoc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser, ListChecks, Check, MoreVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -65,6 +65,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   
+  // Track viewed book to prevent multiple increments in one session
+  const viewLoggedRef = useRef<string | null>(null);
+
   // Administrative UI States
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
   const [isBookDeleteDialogOpen, setIsBookDeleteDialogOpen] = useState(false);
@@ -121,6 +124,12 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           const meta = data.metadata?.info || data;
           setMetadata(meta);
           setChapters(chaptersList);
+
+          // Increment Views (Once per book ID per mount)
+          if (viewLoggedRef.current !== id) {
+            updateDoc(bookRef, { views: increment(1) }).catch(() => {});
+            viewLoggedRef.current = id;
+          }
 
           if (user && !user.isAnonymous) {
             const historyRef = doc(firestore, 'users', user.uid, 'history', id);
