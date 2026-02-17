@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -9,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertTriangle, Sparkles, Wand2 } from 'lucide-react';
+import { Upload, BookPlus, Loader2, CheckCircle2, User, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, AlertTriangle } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc, collection, query, where, getDocs, limit, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -19,11 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
 import { uploadCoverImage } from '@/lib/upload-cover';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
-import { identifyBookFromFilename } from '@/ai/flows/identify-book';
-import { generateBookCover } from '@/ai/flows/generate-cover';
-import { optimizeCoverImage, dataURLtoFile } from '@/lib/image-utils';
+import { optimizeCoverImage } from '@/lib/image-utils';
 import {
   Select,
   SelectContent,
@@ -31,99 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-interface AutocompleteInputProps {
-  type: 'author' | 'book';
-  value: string;
-  onChange: (val: string) => void;
-  placeholder: string;
-  disabled?: boolean;
-}
-
-function AutocompleteInput({ type, value, onChange, placeholder, disabled }: AutocompleteInputProps) {
-  const { firestore: db } = useFirebase();
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [show, setShow] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const lowerValue = value.toLowerCase();
-    if (!db || lowerValue.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-
-    const fetchSuggestions = async () => {
-      const fieldPath = type === 'author' ? 'authorLower' : 'titleLower';
-      const q = query(
-        collection(db, 'books'),
-        where(fieldPath, '>=', lowerValue),
-        where(fieldPath, '<=', lowerValue + '\uf8ff'),
-        limit(5)
-      );
-      try {
-        const snap = await getDocs(q);
-        const items: string[] = [];
-        snap.forEach(doc => {
-          const data = doc.data();
-          const val = type === 'author' ? data.author : data.title;
-          if (val) items.push(val);
-        });
-        setSuggestions([...new Set(items)]);
-      } catch (e) {
-        // Handled silently
-      }
-    };
-
-    const debounce = setTimeout(fetchSuggestions, 300);
-    return () => clearTimeout(debounce);
-  }, [value, db, type]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setShow(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  return (
-    <div className="relative w-full" ref={containerRef}>
-      <Input
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setShow(true);
-        }}
-        onFocus={() => setShow(true)}
-        placeholder={placeholder}
-        className="bg-background/50 rounded-lg h-10"
-        disabled={disabled}
-      />
-      {show && suggestions.length > 0 && (
-        <ul className="absolute z-50 w-full mt-1 bg-card border rounded-xl shadow-2xl max-h-48 overflow-auto animate-in fade-in slide-in-from-top-1 duration-200">
-          {suggestions.map((s, i) => (
-            <li
-              key={i}
-              className="px-3 py-2 hover:bg-muted cursor-pointer text-sm flex items-center gap-2 group transition-colors"
-              onClick={() => {
-                onChange(s);
-                setShow(false);
-              }}
-            >
-              <div className="p-1 bg-muted group-hover:bg-primary/10 rounded transition-colors">
-                {type === 'author' ? <User className="h-3.5 w-3.5 text-primary" /> : <Book className="h-3.5 w-3.5 text-primary" />}
-              </div>
-              <span className="font-bold">{s}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 export function UploadNovelForm() {
   const router = useRouter();
@@ -140,15 +42,11 @@ export function UploadNovelForm() {
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   
   const [loading, setLoading] = useState(false);
-  const [isIdentifying, setIsIdentifying] = useState(false);
-  const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
   const [checkingApproval, setCheckingApproval] = useState(true);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
-
-  const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
@@ -182,52 +80,6 @@ export function UploadNovelForm() {
     checkApproval();
   }, [user, db, isOfflineMode]);
 
-  const handleAIAutoFill = async () => {
-    if (!selectedFile) return;
-    setIsIdentifying(true);
-    setLoadingStatus('AI identifying...');
-    try {
-      const result = await identifyBookFromFilename(selectedFile.name);
-      if (result.title) setTitle(result.title);
-      if (result.author) setAuthor(result.author);
-      if (result.genre) {
-        const matchedGenre = GENRES.find(g => g.toLowerCase() === result.genre?.toLowerCase());
-        if (matchedGenre) setGenre(matchedGenre);
-      }
-      toast({ title: "AI Match Found", description: `Suggested: ${result.title} by ${result.author}` });
-    } catch (error) {
-      toast({ variant: 'destructive', title: "AI Error", description: "Failed to identify work automatically." });
-    } finally {
-      setIsIdentifying(false);
-    }
-  };
-
-  const handleAIGenerateCover = async () => {
-    if (!title || !genre) {
-      toast({ variant: 'destructive', title: "Metadata Required", description: "Please enter a title and genre first." });
-      return;
-    }
-    
-    setIsGeneratingCover(true);
-    try {
-      const dataUri = await generateBookCover({
-        title,
-        author: author || 'Anonymous',
-        genre
-      });
-      
-      setCoverPreview(dataUri);
-      const file = dataURLtoFile(dataUri, `cover_${Date.now()}.png`);
-      setCoverFile(file);
-      
-      toast({ title: "Cover Generated", description: "AI has crafted a new cover for your volume." });
-    } catch (err) {
-      toast({ variant: 'destructive', title: "Generation Error", description: "AI cover generator is currently unavailable." });
-    } finally {
-      setIsGeneratingCover(false);
-    }
-  };
-
   const slugify = (text: string) => {
     return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
   };
@@ -246,7 +98,6 @@ export function UploadNovelForm() {
         if (metadata.title) setTitle(metadata.title);
         if (metadata.creator) setAuthor(metadata.creator);
         
-        // Attempt cover extraction
         try {
           const coverUrl = await book.coverUrl();
           if (coverUrl) {
@@ -269,6 +120,11 @@ export function UploadNovelForm() {
     }
   };
 
+  const handleCoverChange = (file: File) => {
+    setCoverFile(file);
+    setCoverPreview(URL.createObjectURL(file));
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre.' });
@@ -283,31 +139,12 @@ export function UploadNovelForm() {
       let finalAuthor = author.trim() || 'Anonymous Author';
       let chapters: any[] = [];
 
-      // AUTOMATIC AI COVER GENERATION if missing
-      let finalCoverToUse = coverFile;
-      
-      if (!finalCoverToUse && isSuperAdmin) {
-        setLoadingStatus('AI Creating Cover...');
-        try {
-          const dataUri = await generateBookCover({
-            title: finalTitle,
-            author: finalAuthor,
-            genre
-          });
-          finalCoverToUse = dataURLtoFile(dataUri, `ai_cover_${Date.now()}.png`);
-          setCoverPreview(dataUri);
-        } catch (genErr) {
-          console.warn("Auto cover generation failed, proceeding without cover.");
-        }
-      }
-
       setLoadingStatus('Optimizing Assets...');
 
-      // Optimize cover image if present
       let optimizedCover: File | null = null;
-      if (finalCoverToUse) {
-        const optimizedBlob = await optimizeCoverImage(finalCoverToUse);
-        optimizedCover = new File([optimizedBlob], finalCoverToUse.name, { type: 'image/jpeg' });
+      if (coverFile) {
+        const optimizedBlob = await optimizeCoverImage(coverFile);
+        optimizedCover = new File([optimizedBlob], coverFile.name, { type: 'image/jpeg' });
       }
 
       if (selectedFile?.name.endsWith('.epub')) {
@@ -325,9 +162,6 @@ export function UploadNovelForm() {
           const body = chapterDoc.querySelector('body');
           if (body) {
             const chContent = body.innerHTML;
-            if (new TextEncoder().encode(chContent).length > 1000000) {
-              throw new Error(`Chapter ${idx} exceeds Firestore limits. Please split the manuscript.`);
-            }
             chapters.push({ 
               chapterNumber: idx++, 
               content: chContent, 
@@ -365,7 +199,7 @@ export function UploadNovelForm() {
           try {
             coverURL = await uploadCoverImage(storage, optimizedCover, docId);
           } catch (coverErr) {
-            console.warn("Optional cover upload failed for local draft, proceeding without it:", coverErr);
+            console.warn("Optional cover upload failed for local draft.");
           }
         }
         
@@ -454,12 +288,12 @@ export function UploadNovelForm() {
             <div className="grid gap-4">
               <div className="grid gap-1.5">
                 <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Author</Label>
-                <AutocompleteInput type="author" value={author} onChange={setAuthor} placeholder="Pen Name" disabled={isOfflineMode && !author} />
+                <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Pen Name" />
               </div>
 
               <div className="grid gap-1.5">
                 <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Book Title</Label>
-                <AutocompleteInput type="book" value={title} onChange={setTitle} placeholder="Title of the Work" disabled={isOfflineMode && !title} />
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title of the Work" />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -487,32 +321,15 @@ export function UploadNovelForm() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/50">
               <div className="space-y-2">
-                <div className="flex items-center justify-between mb-1.5">
-                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                    <ImageIcon className="h-3 w-3" /> Cover Preview
-                  </Label>
-                  {isSuperAdmin && title && genre && !coverFile && (
-                    <Button 
-                      type="button"
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-5 px-2 rounded-md text-[8px] font-black uppercase text-primary gap-1 hover:bg-primary/10"
-                      onClick={handleAIGenerateCover}
-                      disabled={isGeneratingCover}
-                    >
-                      {isGeneratingCover ? <Loader2 className="h-2 w-2 animate-spin" /> : <Wand2 className="h-2 w-2" />}
-                      AI Create
-                    </Button>
-                  )}
-                </div>
+                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
+                  <ImageIcon className="h-3 w-3" /> Cover Image
+                </Label>
                 <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center overflow-hidden ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'bg-muted/20'}`}>
+                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onChange={(e) => e.target.files && handleCoverChange(e.target.files[0])} />
                   {coverPreview ? (
                     <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
                   ) : (
-                    <div className="flex flex-col items-center gap-1 opacity-20">
-                      <Sparkles className="h-5 w-5" />
-                      <span className="text-[8px] font-black uppercase">AI Automated Cover</span>
-                    </div>
+                    <Upload className="h-5 w-5 opacity-20" />
                   )}
                   {coverFile && (
                     <div className="flex flex-col items-center gap-1 relative z-10 bg-background/80 p-1 rounded-md backdrop-blur-sm">
@@ -524,24 +341,9 @@ export function UploadNovelForm() {
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between mb-1.5">
-                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                    <FileType className="h-3 w-3" /> EPUB File
-                  </Label>
-                  {isSuperAdmin && selectedFile && (
-                    <Button 
-                      type="button"
-                      variant="ghost" 
-                      size="sm" 
-                      className="h-5 px-2 rounded-md text-[8px] font-black uppercase text-primary gap-1 hover:bg-primary/10"
-                      onClick={handleAIAutoFill}
-                      disabled={isIdentifying}
-                    >
-                      {isIdentifying ? <Loader2 className="h-2 w-2 animate-spin" /> : <Sparkles className="h-2 w-2" />}
-                      AI Match
-                    </Button>
-                  )}
-                </div>
+                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
+                  <FileType className="h-3 w-3" /> EPUB File
+                </Label>
                 <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center ${selectedFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
                   <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
                   {selectedFile ? (
@@ -555,13 +357,6 @@ export function UploadNovelForm() {
                   )}
                 </div>
               </div>
-            </div>
-
-            <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-amber-800 leading-tight">
-                <strong>AI Cover:</strong> If no cover art is found in your file, our AI will automatically design one for the global library upon submission.
-              </p>
             </div>
 
             {!selectedFile && (
@@ -579,9 +374,9 @@ export function UploadNovelForm() {
               <Button 
                 type="submit" 
                 className="w-full py-6 text-sm font-headline font-black rounded-xl shadow-lg transition-all active:scale-[0.98]"
-                disabled={loading || isIdentifying || isGeneratingCover || (!title.trim() && !selectedFile)}
+                disabled={loading || (!title.trim() && !selectedFile)}
               >
-                {loading || isIdentifying || isGeneratingCover ? (
+                {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {loadingStatus || 'Processing...'}
@@ -589,7 +384,7 @@ export function UploadNovelForm() {
                 ) : (uploadMode === 'cloud') ? (
                   <>
                     <ShieldCheck className="mr-2 h-4 w-4" />
-                    Publish Optimized Volume
+                    Publish Volume
                   </>
                 ) : (
                   <>

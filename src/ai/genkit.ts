@@ -3,12 +3,12 @@ import { googleAI } from '@genkit-ai/google-genai';
 
 /**
  * @fileOverview Global Genkit initialization.
- * Uses the provided Google Gemini API key for server-side AI processing.
+ * Uses environment variables for API keys to maintain security.
  */
 export const ai = genkit({
   plugins: [
     googleAI({
-      apiKey: 'AIzaSyCLn2M1ci_YkYegbORKnJiSBpCiCZhVz48',
+      apiKey: process.env.GOOGLE_GENAI_API_KEY,
     }),
   ],
   model: 'googleai/gemini-1.5-flash',
