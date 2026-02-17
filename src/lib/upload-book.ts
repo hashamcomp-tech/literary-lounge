@@ -1,4 +1,3 @@
-
 import { doc, setDoc, serverTimestamp, Firestore, increment } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
@@ -61,7 +60,7 @@ export async function uploadBookToCloud({
     lastUpdated: serverTimestamp(),
     ownerId,
     totalChapters: chapters.length,
-    genre: genres, // Saved as array
+    genre: genres,
     views: 0,
     coverURL,
     coverSize,
@@ -74,7 +73,7 @@ export async function uploadBookToCloud({
     titleLower: title.toLowerCase(),
     author,
     authorLower: author.toLowerCase(),
-    genre: genres, // Saved as array for array-contains queries
+    genre: genres,
     views: 0,
     isCloud: true,
     ownerId,
@@ -99,7 +98,7 @@ export async function uploadBookToCloud({
     throw serverError;
   });
 
-  // 4. Global Stats Update (only if cover actually uploaded)
+  // 4. Global Stats Update: Accumulate the exact bytes used
   if (coverSize > 0 && coverURL) {
     const statsRef = doc(db, 'stats', 'storageUsage');
     setDoc(statsRef, { 

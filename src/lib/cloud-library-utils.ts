@@ -14,7 +14,7 @@ export async function deleteCloudBook(db: Firestore, bookId: string) {
   }
   
   const data = bookSnap.data();
-  const coverSize = data.coverSize || 0;
+  const coverSize = data.coverSize || data.metadata?.info?.coverSize || 0;
 
   const chaptersRef = collection(db, 'books', bookId, 'chapters');
   const chaptersSnap = await getDocs(chaptersRef);
@@ -41,6 +41,51 @@ export async function deleteCloudBook(db: Firestore, bookId: string) {
     const statsRef = doc(db, 'stats', 'storageUsage');
     setDoc(statsRef, { 
       storageBytesUsed: increment(-coverSize) 
+    }, { merge: true }).catch(() => {});
+  }
+}
+
+/**
+ * Updates or adds a cover to an existing cloud book.
+ */
+export async function updateCloudBookCover(
+  db: Firestore, 
+  bookId: string, 
+  coverURL: string, 
+  coverSize: number
+) {
+  const bookRef = doc(db, 'books', bookId);
+  const bookSnap = await getDoc(bookRef);
+  
+  if (!bookSnap.exists()) throw new Error("Manuscript not found.");
+  
+  const oldData = bookSnap.data();
+  const oldSize = oldData.coverSize || oldData.metadata?.info?.coverSize || 0;
+
+  const updatePayload = {
+    coverURL,
+    coverSize,
+    'metadata.info.coverURL': coverURL,
+    'metadata.info.coverSize': coverSize,
+    lastUpdated: serverTimestamp()
+  };
+
+  await updateDoc(bookRef, updatePayload).catch(async (err) => {
+    errorEmitter.emit('permission-error', new FirestorePermissionError({
+      path: bookRef.path,
+      operation: 'update',
+      requestResourceData: updatePayload
+    }));
+    throw err;
+  });
+
+  // Update Global Stats: Subtract old size and add new size
+  const statsRef = doc(db, 'stats', 'storageUsage');
+  const sizeDiff = coverSize - oldSize;
+  
+  if (sizeDiff !== 0) {
+    await setDoc(statsRef, { 
+      storageBytesUsed: increment(sizeDiff) 
     }, { merge: true }).catch(() => {});
   }
 }

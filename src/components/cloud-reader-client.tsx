@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, updateDoc, increment, serverTimestamp, query, where, limit, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser, ListChecks, Check, MoreVertical, Zap, ZapOff, Sparkles } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, Eraser, ListChecks, Check, MoreVertical, Zap, ZapOff, Sparkles, Image as ImageIcon, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -13,7 +13,10 @@ import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
-import { deleteCloudBook, deleteCloudChaptersBulk } from '@/lib/cloud-library-utils';
+import { deleteCloudBook, deleteCloudChaptersBulk, updateCloudBookCover } from '@/lib/cloud-library-utils';
+import { generateBookCover } from '@/ai/flows/generate-cover';
+import { uploadCoverImage } from '@/lib/upload-cover';
+import { optimizeCoverImage } from '@/lib/image-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,8 +44,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from '@/components/ui/progress';
 
 interface CloudReaderClientProps {
@@ -50,13 +51,8 @@ interface CloudReaderClientProps {
   chapterNumber: string;
 }
 
-/**
- * @fileOverview Optimized Cloud Reader.
- * Features incremental loading and "Pre-load next 10 chapters" functionality.
- * Minimizes Firestore reads by only fetching what is needed or requested.
- */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
-  const { firestore, isOfflineMode } = useFirebase();
+  const { firestore, storage, isOfflineMode } = useFirebase();
   const { user } = useUser();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
@@ -73,11 +69,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mounted, setMounted] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   // Administrative UI States
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
   const [isBookDeleteDialogOpen, setIsBookDeleteDialogOpen] = useState(false);
-  const [selectedChapters, setSelectedChapters] = useState<number[]>([]);
+  const [isUpdatingCover, setIsUpdatingCover] = useState(false);
+  const [isGeneratingCover, setIsGeneratingCover] = useState(false);
 
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous && firestore) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: profile } = useDoc(profileRef);
@@ -88,36 +86,26 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return () => stopTextToSpeech();
   }, []);
 
-  /**
-   * Fetches specific chapters and adds them to the local cache.
-   */
   const fetchChaptersRange = useCallback(async (start: number, count: number) => {
     if (!firestore || !id) return;
-    
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
       .filter(n => !chaptersCache[n] && n > 0 && n <= (metadata?.totalChapters || 9999));
-
     if (targetNumbers.length === 0) return;
-
     try {
       const chaptersCol = collection(firestore, 'books', id, 'chapters');
-      // Firestore 'in' queries are limited to 10 items
       const q = query(chaptersCol, where('chapterNumber', 'in', targetNumbers));
       const snap = await getDocs(q);
-      
       const newEntries: Record<number, any> = {};
       snap.docs.forEach(d => {
         const data = d.data();
         newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
       });
-
       setChaptersCache(prev => ({ ...prev, ...newEntries }));
     } catch (err) {
       console.error("Preload fetch failed", err);
     }
   }, [firestore, id, chaptersCache, metadata]);
 
-  // Initial and Chapter Navigation Effect
   useEffect(() => {
     if (isOfflineMode) {
       setIsLoading(false);
@@ -126,7 +114,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (!firestore || !id) return;
 
     const loadChapter = async () => {
-      // If we already have the metadata and the chapter in cache, just update views/history
       if (metadata && chaptersCache[currentChapterNum]) {
         if (viewLoggedRef.current !== id) {
           updateDoc(doc(firestore, 'books', id), { views: increment(1) }).catch(() => {});
@@ -143,18 +130,15 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       try {
         const bookRef = doc(firestore, 'books', id);
         const snapshot = await getDoc(bookRef);
-        
         if (!snapshot.exists()) {
           setError('Document not found in the cloud library.');
           setIsLoading(false);
           return;
         }
-
         const bookData = snapshot.data();
         const meta = bookData.metadata?.info || bookData;
         setMetadata(meta);
 
-        // Fetch current chapter if not cached
         const chapterRef = doc(firestore, 'books', id, 'chapters', currentChapterNum.toString());
         const chapterSnap = await getDoc(chapterRef);
         
@@ -162,7 +146,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           const chData = { id: chapterSnap.id, ...chapterSnap.data() };
           setChaptersCache(prev => ({ ...prev, [currentChapterNum]: chData }));
         } else {
-          // Fallback check: maybe the chapter ID is not the number string
           const chaptersCol = collection(firestore, 'books', id, 'chapters');
           const q = query(chaptersCol, where('chapterNumber', '==', currentChapterNum), limit(1));
           const querySnap = await getDocs(q);
@@ -174,13 +157,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           }
         }
 
-        // Analytics & History
         if (viewLoggedRef.current !== id) {
           updateDoc(bookRef, { views: increment(1) }).catch(() => {});
           viewLoggedRef.current = id;
         }
         updateHistory(meta);
-
       } catch (err: any) {
         setError('Insufficient permissions or network error.');
       } finally {
@@ -192,7 +173,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       if (user && !user.isAnonymous && firestore) {
         const meta = metaOverride || metadata;
         if (!meta) return;
-        
         const historyRef = doc(firestore, 'users', user.uid, 'history', id);
         setDoc(historyRef, {
           bookId: id,
@@ -211,27 +191,56 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     stopTextToSpeech();
   }, [firestore, id, currentChapterNum, isOfflineMode, user]);
 
+  const handleUpdateCover = async (file: File) => {
+    if (!firestore || !storage || !id) return;
+    setIsUpdatingCover(true);
+    try {
+      const optimizedBlob = await optimizeCoverImage(file);
+      const optimizedFile = new File([optimizedBlob], file.name, { type: 'image/jpeg' });
+      const downloadURL = await uploadCoverImage(storage, optimizedFile, id);
+      if (downloadURL) {
+        await updateCloudBookCover(firestore, id, downloadURL, optimizedFile.size);
+        setMetadata((prev: any) => ({ ...prev, coverURL: downloadURL }));
+        toast({ title: "Cover Updated", description: "The manuscript's visual identity has been refreshed." });
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+    } finally {
+      setIsUpdatingCover(false);
+    }
+  };
+
+  const handleGenerateAiCover = async () => {
+    if (!firestore || !storage || !id || !metadata) return;
+    setIsGeneratingCover(true);
+    try {
+      const genres = Array.isArray(metadata.genre) ? metadata.genre : [metadata.genre];
+      const dataUri = await generateBookCover({
+        title: metadata.bookTitle || metadata.title,
+        author: metadata.author,
+        genres: genres,
+        description: `An authentic cover for the manuscript titled ${metadata.bookTitle || metadata.title}`
+      });
+      const resp = await fetch(dataUri);
+      const blob = await resp.blob();
+      const file = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
+      await handleUpdateCover(file);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "AI Generation Failed", description: err.message });
+    } finally {
+      setIsGeneratingCover(false);
+    }
+  };
+
   const handlePreloadNext10 = async () => {
     if (isPreloading) return;
     setIsPreloading(true);
-    
-    toast({
-      title: "Syncing Ahead",
-      description: "Pre-loading the next 10 chapters for seamless reading.",
-    });
-
+    toast({ title: "Syncing Ahead", description: "Pre-loading the next 10 chapters for seamless reading." });
     try {
       await fetchChaptersRange(currentChapterNum + 1, 10);
-      toast({
-        title: "Shelf Ready",
-        description: "Next 10 chapters cached successfully.",
-      });
+      toast({ title: "Shelf Ready", description: "Next 10 chapters cached successfully." });
     } catch (e) {
-      toast({
-        variant: "destructive",
-        title: "Preload Interrupted",
-        description: "Cloud connection was unstable. Some chapters may still need fetching.",
-      });
+      toast({ variant: "destructive", title: "Preload Interrupted", description: "Cloud connection was unstable." });
     } finally {
       setIsPreloading(false);
     }
@@ -243,27 +252,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     setIsBookDeleteDialogOpen(false);
     try {
       await deleteCloudBook(firestore, id);
-      toast({ title: "Manuscript Removed", description: "Novel successfully deleted from global library." });
+      toast({ title: "Manuscript Removed", description: "Novel successfully deleted." });
       router.push('/');
-    } catch (err) {
-      // Handled by global listener
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleDeleteCurrentChapter = async () => {
-    if (!firestore || !id) return;
-    setIsDeleting(true);
-    try {
-      await deleteCloudChaptersBulk(firestore, id, [currentChapterNum]);
-      toast({ title: "Chapter Erased", description: `Chapter ${currentChapterNum} has been removed.` });
-      
-      // Navigate to another chapter or home
-      router.push('/');
-    } catch (err) {
-      // Handled by global listener
-    } finally {
+    } catch (err) {} finally {
       setIsDeleting(false);
     }
   };
@@ -271,25 +262,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const handleReadAloud = async (startIndex: number = 0) => {
     const currentChapter = chaptersCache[currentChapterNum];
     if (!currentChapter?.content) return;
-    
     setIsSpeaking(true);
     try {
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
-      
-      const paragraphs = currentChapter.content.split(/<p>|\n\n/)
+      const textToRead = (currentChapter.content || '').split(/<p>|\n\n/)
         .map((p: string) => p.replace(/<\/p>|<[^>]*>?/gm, '').trim())
-        .filter((p: string) => p.length > 0);
-
-      const textToRead = paragraphs.slice(startIndex).join('\n\n');
-      
+        .filter((p: string) => p.length > 0)
+        .slice(startIndex).join('\n\n');
       await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Speech Error",
-        description: err.message || "Failed to generate speech."
-      });
+      toast({ variant: "destructive", title: "Speech Error", description: err.message });
     } finally {
       setIsSpeaking(false);
     }
@@ -303,7 +286,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <AlertTitle className="text-4xl font-headline font-black mb-4">Independent Mode Active</AlertTitle>
           <AlertDescription className="text-lg opacity-80 leading-relaxed max-w-lg mx-auto">
             Cloud volumes require an active connection to the Lounge database. 
-            Reconnect to access this novel and sync your reading journey.
           </AlertDescription>
           <div className="mt-10">
             <Button variant="outline" className="rounded-2xl h-14 px-10 font-bold border-amber-500/30 text-amber-900 bg-amber-500/5 hover:bg-amber-500/10" onClick={() => router.push('/')}>
@@ -331,7 +313,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       <div className="flex flex-col items-center justify-center py-24 text-center px-6">
         {error?.includes('permissions') ? <ShieldAlert className="h-16 w-16 text-destructive mb-4 opacity-20" /> : <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />}
         <h1 className="text-4xl font-headline font-black mb-4">{error?.includes('permissions') ? 'Access Restricted' : 'Shelf Empty'}</h1>
-        <p className="text-muted-foreground max-w-md mb-8">{error || "This novel doesn't seem to exist in the cloud library."}</p>
+        <p className="text-muted-foreground max-w-md mb-8">{error || "This novel doesn't seem to exist."}</p>
         <Button variant="outline" className="rounded-2xl h-12 px-8 font-bold" onClick={() => router.push('/')}>Back to Library</Button>
       </div>
     );
@@ -339,14 +321,12 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   const currentChapter = chaptersCache[currentChapterNum];
   const totalChapters = metadata?.totalChapters || 0;
-
   if (!mounted) return null;
 
   const paragraphs = (currentChapter.content || '').split(/<p>|\n\n/)
     .map((para: string) => para.replace(/<\/p>|<[^>]*>?/gm, '').trim())
     .filter((para: string) => para.length > 0);
 
-  // Check how many next chapters are cached
   const preloadedCount = Array.from({ length: 10 }, (_, i) => currentChapterNum + 1 + i)
     .filter(n => chaptersCache[n]).length;
 
@@ -361,19 +341,19 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             {isAdmin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10">
-                    <Trash2 className="h-4 w-4" />
+                  <Button variant="ghost" size="icon" className="rounded-full text-primary hover:bg-primary/10">
+                    <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="rounded-xl w-56 shadow-2xl border-none">
-                  <DropdownMenuItem className="rounded-lg gap-2 text-destructive cursor-pointer py-2.5" onClick={handleDeleteCurrentChapter}>
-                    <Eraser className="h-4 w-4" />
-                    <span>Erase Current Chapter</span>
+                  <DropdownMenuItem className="rounded-lg gap-2 cursor-pointer py-2.5" onClick={() => setIsManageDialogOpen(true)}>
+                    <ImageIcon className="h-4 w-4" />
+                    <span>Update Cover Art</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="rounded-lg gap-2 text-destructive font-bold cursor-pointer py-2.5" onClick={() => setIsBookDeleteDialogOpen(true)}>
                     <Trash2 className="h-4 w-4" />
-                    <span>Delete Entire Manuscript</span>
+                    <span>Delete Manuscript</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -388,17 +368,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             >
               {isPreloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className={`h-3 w-3 ${preloadedCount === 10 ? 'text-green-500 fill-green-500' : 'text-primary'}`} />}
               <span className="text-[10px] font-black uppercase tracking-widest">
-                {preloadedCount === 10 ? 'Chapters Ready' : `Pre-load Next 10`}
+                {preloadedCount === 10 ? 'Buffered' : `Buffer 10`}
               </span>
             </Button>
 
             <VoiceSettingsPopover />
             <Link href={`/chat/${id}`}>
-              <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5 shadow-sm" title="Reader Lounge">
+              <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5 shadow-sm">
                 <MessageSquare className="h-4 w-4" />
               </Button>
             </Link>
-            <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full shadow-sm">
+            <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full">
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
             </Button>
           </div>
@@ -406,31 +386,23 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
         {preloadedCount > 0 && (
           <div className="mb-8 animate-in fade-in slide-in-from-top-1">
-            <div className="flex justify-between items-center mb-1.5 px-1">
-              <span className="text-[8px] font-black uppercase tracking-[0.2em] text-muted-foreground/60 flex items-center gap-1">
-                <Sparkles className="h-2 w-2 text-primary" /> Cloud Seamless Cache
-              </span>
-              <span className="text-[8px] font-black text-primary uppercase">{preloadedCount} / 10 Next Chapters Buffered</span>
-            </div>
             <Progress value={(preloadedCount / 10) * 100} className="h-1 bg-primary/5" />
           </div>
         )}
 
         <div className="space-y-6 text-center sm:text-left">
           <div className="flex items-center justify-center sm:justify-start gap-3">
-             <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] uppercase font-black px-4 py-1 tracking-widest">Cloud Volume</Badge>
+             <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] font-black px-4 py-1">Cloud</Badge>
              <Badge variant="outline" className="border-accent/30 text-accent uppercase text-[10px] font-black px-4 py-1">{metadata?.genre?.[0] || metadata?.genre || 'Novel'}</Badge>
           </div>
           <h1 className="text-5xl sm:text-6xl font-headline font-black leading-[1.1] tracking-tight">
-            {metadata?.bookTitle || metadata?.title || 'Untitled Novel'}
+            {metadata?.bookTitle || metadata?.title || 'Untitled'}
           </h1>
-          <p className="text-xl text-muted-foreground italic font-medium opacity-80">
-            By {metadata?.author || 'Unknown Author'}
-          </p>
+          <p className="text-xl text-muted-foreground italic font-medium opacity-80">By {metadata?.author || 'Unknown'}</p>
         </div>
       </header>
 
-      <article id={`chapter-${currentChapter.chapterNumber}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <article className="animate-in fade-in slide-in-from-bottom-4 duration-700">
         <header className="mb-10 border-b border-border/50 pb-10">
           <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
             <Bookmark className="h-4 w-4" />
@@ -443,61 +415,68 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
         <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] font-body leading-[1.6] text-foreground/90">
           {paragraphs.map((cleanPara: string, idx: number) => (
-            <p 
-              key={idx} 
-              onClick={() => handleReadAloud(idx)}
-              className="mb-8 cursor-pointer hover:text-foreground transition-colors"
-            >
-              {cleanPara}
-            </p>
+            <p key={idx} onClick={() => handleReadAloud(idx)} className="mb-8 cursor-pointer hover:text-foreground transition-colors">{cleanPara}</p>
           ))}
         </div>
       </article>
 
       <section className="mt-20 pt-12 border-t border-border/50">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-8">
-          <div className="flex items-center gap-6 w-full sm:w-auto">
-            <Button 
-              variant="outline" 
-              className="flex-1 sm:flex-none h-12 px-8 rounded-2xl border-primary/20 hover:bg-primary/5 font-black text-xs uppercase tracking-widest shadow-sm"
-              disabled={currentChapterNum <= 1}
-              onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
-            >
-              <ChevronLeft className="mr-2 h-4 w-4" /> Prev
-            </Button>
-
-            <div className="text-center min-w-[80px]">
-               <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
-                 {currentChapterNum} / {totalChapters || '...'}
-               </span>
-            </div>
-
-            <Button 
-              variant="default" 
-              className="flex-1 sm:flex-none h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest"
-              disabled={totalChapters > 0 && currentChapterNum >= totalChapters}
-              onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
-            >
-              Next <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
+        <div className="flex items-center justify-between gap-8">
+          <Button variant="outline" className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest" disabled={currentChapterNum <= 1} onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}>
+            <ChevronLeft className="mr-2 h-4 w-4" /> Prev
+          </Button>
+          <div className="text-center min-w-[80px]">
+             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">{currentChapterNum} / {totalChapters || '...'}</span>
           </div>
+          <Button variant="default" className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" disabled={totalChapters > 0 && currentChapterNum >= totalChapters} onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}>
+            Next <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
         </div>
       </section>
 
-      {/* Global Delete Alert */}
+      {/* Edit Cover Dialog */}
+      <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
+        <DialogContent className="rounded-2xl shadow-2xl border-none max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-headline font-black">Manage Manuscript</DialogTitle>
+            <DialogDescription>Refresh the visual identity of this cloud volume.</DialogDescription>
+          </DialogHeader>
+          <div className="py-6 space-y-6">
+            <div className="relative aspect-[2/3] w-40 mx-auto bg-muted rounded-xl overflow-hidden shadow-2xl border-4 border-background group">
+              <img src={metadata?.coverURL || `https://picsum.photos/seed/${id}/400/600`} alt="Current Cover" className="w-full h-full object-cover" />
+              {(isUpdatingCover || isGeneratingCover) && (
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">{isGeneratingCover ? 'AI Designing...' : 'Syncing...'}</span>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files && handleUpdateCover(e.target.files[0])} />
+              <Button variant="outline" className="rounded-xl h-14 font-bold gap-2" onClick={() => coverInputRef.current?.click()} disabled={isUpdatingCover || isGeneratingCover}>
+                <Upload className="h-4 w-4" /> Manual Upload
+              </Button>
+              <Button variant="outline" className="rounded-xl h-14 font-bold gap-2 bg-primary/5 text-primary border-primary/20 hover:bg-primary/10" onClick={handleGenerateAiCover} disabled={isUpdatingCover || isGeneratingCover}>
+                <Sparkles className="h-4 w-4" /> AI Generate
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" className="w-full rounded-xl" onClick={() => setIsManageDialogOpen(false)}>Close Manager</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Manuscript Alert */}
       <AlertDialog open={isBookDeleteDialogOpen} onOpenChange={setIsBookDeleteDialogOpen}>
         <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl font-headline font-black">Confirm Global Deletion</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span> and all its chapters for all readers. This action cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle className="text-2xl font-headline font-black text-destructive">Final Deletion</AlertDialogTitle>
+            <AlertDialogDescription>Remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span>? This will purge the volume globally for all readers.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteBook} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">
-              Delete Forever
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteBook} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">Delete Forever</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
