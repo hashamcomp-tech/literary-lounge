@@ -11,7 +11,7 @@ import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase, useStorage } f
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight, Camera } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight, Camera, AlertCircle } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -257,7 +257,16 @@ export default function LoginPage() {
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !user || !storage || !db) return;
+    if (!file || !user || !db) return;
+
+    if (!storage) {
+      toast({
+        variant: "destructive",
+        title: "Service Unavailable",
+        description: "Cloud storage is currently disconnected. Please try again later."
+      });
+      return;
+    }
 
     if (!file.type.startsWith('image/')) {
       toast({ variant: "destructive", title: "Invalid File", description: "Please select an image file." });
@@ -277,9 +286,16 @@ export default function LoginPage() {
 
       toast({ title: "Profile Photo Updated", description: "Your new avatar has been saved." });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Upload Failed", description: error.message });
+      console.error("Photo upload error:", error);
+      toast({ 
+        variant: "destructive", 
+        title: "Upload Failed", 
+        description: error.message || "Could not complete the photo upload. Check your connection." 
+      });
     } finally {
+      // ALWAYS reset loading state
       setIsUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -419,6 +435,12 @@ export default function LoginPage() {
                     </div>
                   )}
                 </div>
+                
+                {isUploadingPhoto && (
+                  <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-primary animate-pulse mb-4 uppercase tracking-widest">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Updating Avatar...
+                  </div>
+                )}
                 
                 <CardTitle className="text-2xl font-headline font-bold flex flex-col items-center justify-center gap-2">
                   <span>{isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}</span>

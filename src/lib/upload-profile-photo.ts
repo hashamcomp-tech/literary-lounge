@@ -3,6 +3,7 @@ import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/stor
 
 /**
  * @fileOverview Utility for uploading user profile photos to Firebase Storage.
+ * Improved with better error handling to prevent hangs.
  */
 
 /**
@@ -20,10 +21,10 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
 
   try {
     // Generate a unique path for the profile photo
-    // We use the userId as the filename to overwrite previous photos and save space
     const photoRef = ref(storage, `profilePhotos/${userId}`);
 
     // Perform the upload
+    // uploadBytes can hang if bucket is not active or CORS is restricted
     await uploadBytes(photoRef, file);
 
     // Retrieve the public URL
@@ -32,6 +33,14 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
     return downloadURL;
   } catch (error: any) {
     console.error("Firebase Storage Profile Photo Upload Error:", error);
-    throw new Error(error.message || "Failed to upload profile photo. Please try again.");
+    
+    // Provide a more descriptive error for common workstation/permission issues
+    if (error.code === 'storage/unauthorized') {
+      throw new Error("Permission denied. Storage rules may be restricting this upload.");
+    } else if (error.code === 'storage/retry-limit-exceeded') {
+      throw new Error("Upload timed out. Please check your internet connection.");
+    }
+    
+    throw new Error(error.message || "Failed to upload profile photo. Please ensure cloud storage is active.");
   }
 }

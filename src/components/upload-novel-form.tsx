@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -234,9 +235,18 @@ export function UploadNovelForm() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!genre) return toast({ variant: 'destructive', title: 'Missing Genre', description: 'Please select a genre.' });
-    if (!db || !storage) return;
+    if (!db) return;
 
     const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
+
+    if (isCloudTarget && !storage) {
+      toast({ 
+        variant: "destructive", 
+        title: "Storage Error", 
+        description: "Cloud storage is unavailable. You can still save locally to your browser." 
+      });
+      return;
+    }
 
     setLoading(true);
     setLoadingStatus(isCloudTarget ? 'Publishing...' : 'Saving Locally...');
@@ -280,7 +290,7 @@ export function UploadNovelForm() {
       if (isCloudTarget) {
         await uploadBookToCloud({
           db, 
-          storage, 
+          storage: storage!, 
           bookId: `${docId}_${Date.now()}`,
           title: finalTitle, 
           author: finalAuthor, 
@@ -292,11 +302,11 @@ export function UploadNovelForm() {
         toast({ title: "Cloud Published", description: "Novel published to the Lounge." });
       } else {
         let coverURL = null;
-        if (coverFile && !isOfflineMode) {
+        if (coverFile && !isOfflineMode && storage) {
           try {
             coverURL = await uploadCoverImage(storage, coverFile, docId);
           } catch (e) {
-            console.warn("Cover upload failed for local draft");
+            console.warn("Cover upload failed for local draft, proceeding without it.");
           }
         }
         
@@ -319,7 +329,12 @@ export function UploadNovelForm() {
       
       router.push('/');
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Upload Failed", description: error.message });
+      console.error("Upload process failed:", error);
+      toast({ 
+        variant: "destructive", 
+        title: "Upload Failed", 
+        description: error.message || "An unexpected error occurred during the upload." 
+      });
     } finally {
       setLoading(false);
     }
