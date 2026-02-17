@@ -251,8 +251,8 @@ export function UploadNovelForm() {
           if (coverUrl) {
             const resp = await fetch(coverUrl);
             const blob = await resp.blob();
-            const coverFile = new File([blob], 'cover.jpg', { type: 'image/jpeg' });
-            setCoverFile(coverFile);
+            const extractedCoverFile = new File([blob], 'cover.jpg', { type: 'image/jpeg' });
+            setCoverFile(extractedCoverFile);
             setCoverPreview(URL.createObjectURL(blob));
           }
         } catch (coverErr) {
@@ -276,21 +276,41 @@ export function UploadNovelForm() {
     const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
 
     setLoading(true);
-    setLoadingStatus('Optimizing Assets...');
-
+    
     try {
       let finalTitle = title.trim();
       let finalAuthor = author.trim() || 'Anonymous Author';
       let chapters: any[] = [];
 
+      // AUTOMATIC AI COVER GENERATION if missing
+      let finalCoverToUse = coverFile;
+      
+      if (!finalCoverToUse && isSuperAdmin) {
+        setLoadingStatus('AI Creating Cover...');
+        try {
+          const dataUri = await generateBookCover({
+            title: finalTitle,
+            author: finalAuthor,
+            genre
+          });
+          finalCoverToUse = dataURLtoFile(dataUri, `ai_cover_${Date.now()}.png`);
+          setCoverPreview(dataUri);
+        } catch (genErr) {
+          console.warn("Auto cover generation failed, proceeding without cover.");
+        }
+      }
+
+      setLoadingStatus('Optimizing Assets...');
+
       // Optimize cover image if present
       let optimizedCover: File | null = null;
-      if (coverFile) {
-        const optimizedBlob = await optimizeCoverImage(coverFile);
-        optimizedCover = new File([optimizedBlob], coverFile.name, { type: 'image/jpeg' });
+      if (finalCoverToUse) {
+        const optimizedBlob = await optimizeCoverImage(finalCoverToUse);
+        optimizedCover = new File([optimizedBlob], finalCoverToUse.name, { type: 'image/jpeg' });
       }
 
       if (selectedFile?.name.endsWith('.epub')) {
+        setLoadingStatus('Extracting Chapters...');
         const arrayBuffer = await selectedFile.arrayBuffer();
         const book = ePub(arrayBuffer);
         await book.ready;
@@ -464,9 +484,9 @@ export function UploadNovelForm() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-1.5">
                   <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                    <ImageIcon className="h-3 w-3" /> Cover Art
+                    <ImageIcon className="h-3 w-3" /> Cover Preview
                   </Label>
-                  {isSuperAdmin && title && genre && (
+                  {isSuperAdmin && title && genre && !coverFile && (
                     <Button 
                       type="button"
                       variant="ghost" 
@@ -480,19 +500,15 @@ export function UploadNovelForm() {
                     </Button>
                   )}
                 </div>
-                <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center overflow-hidden ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
+                <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center overflow-hidden ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'bg-muted/20'}`}>
                   {coverPreview ? (
-                    <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-40" />
+                    <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
                   ) : (
-                    <Upload className="h-5 w-5 opacity-20 relative z-10" />
+                    <div className="flex flex-col items-center gap-1 opacity-20">
+                      <Sparkles className="h-5 w-5" />
+                      <span className="text-[8px] font-black uppercase">AI Automated Cover</span>
+                    </div>
                   )}
-                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" accept="image/*" onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setCoverFile(file);
-                      setCoverPreview(URL.createObjectURL(file));
-                    }
-                  }} />
                   {coverFile && (
                     <div className="flex flex-col items-center gap-1 relative z-10 bg-background/80 p-1 rounded-md backdrop-blur-sm">
                        <CheckCircle2 className="h-3 w-3 text-primary" />
@@ -539,7 +555,7 @@ export function UploadNovelForm() {
             <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-3 flex items-start gap-2">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
               <p className="text-[10px] text-amber-800 leading-tight">
-                <strong>Limit:</strong> Manuscripts are automatically optimized. Individual chapters exceeding 1MB will trigger a warning during the optimization phase.
+                <strong>AI Cover:</strong> If no cover art is found in your file, our AI will automatically design one for the global library upon submission.
               </p>
             </div>
 
