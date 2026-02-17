@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -73,7 +72,7 @@ function AutocompleteInput({ type, value, onChange, placeholder, disabled }: Aut
         });
         setSuggestions([...new Set(items)]);
       } catch (e) {
-        console.error("Suggestions error", e);
+        // Handled silently for suggestions
       }
     };
 
@@ -147,25 +146,21 @@ export function UploadNovelForm() {
   const [checkingApproval, setCheckingApproval] = useState(true);
 
   useEffect(() => {
-    if (isOfflineMode) {
-      setCheckingApproval(false);
-      return;
-    }
-    if (!user || user.isAnonymous) {
+    if (isOfflineMode || !db || !user || user.isAnonymous) {
       setCheckingApproval(false);
       return;
     }
 
     const checkApproval = async () => {
       try {
-        const pRef = doc(db!, 'users', user.uid);
+        const pRef = doc(db, 'users', user.uid);
         const snap = await getDoc(pRef);
         const pData = snap.data();
         
         if (user.email === 'hashamcomp@gmail.com' || pData?.role === 'admin') {
           setIsApprovedUser(true);
         } else {
-          const settingsRef = doc(db!, 'settings', 'approvedEmails');
+          const settingsRef = doc(db, 'settings', 'approvedEmails');
           const settingsSnap = await getDoc(settingsRef);
           if (settingsSnap.exists()) {
             const emails = settingsSnap.data().emails || [];
@@ -173,7 +168,7 @@ export function UploadNovelForm() {
           }
         }
       } catch (e) {
-        console.error("Approval check error", e);
+        // Silently handled
       } finally {
         setCheckingApproval(false);
       }

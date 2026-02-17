@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
-import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, Calendar, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -153,7 +153,9 @@ export default function AdminPage() {
     const approvedRef = doc(db, 'settings', 'approvedEmails');
     const deleteReqRef = doc(db, 'publishRequests', requestId);
 
-    updateDoc(approvedRef, { emails: arrayUnion(email) })
+    // Use setDoc with merge to ensure document exists
+    const approvalPayload = { emails: arrayUnion(email) };
+    setDoc(approvedRef, approvalPayload, { merge: true })
       .then(() => deleteDoc(deleteReqRef))
       .then(() => {
         toast({ title: "User Approved", description: `${email} has been added to the cloud contributors.` });
@@ -161,8 +163,8 @@ export default function AdminPage() {
       .catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: approvedRef.path,
-          operation: 'update',
-          requestResourceData: { emails: arrayUnion(email) }
+          operation: 'write',
+          requestResourceData: approvalPayload,
         }));
       })
       .finally(() => setProcessingId(null));
