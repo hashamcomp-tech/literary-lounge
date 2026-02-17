@@ -19,14 +19,15 @@ service cloud.firestore {
 
     /**
      * Verifies if the user is an authorized contributor.
-     * Checks both super admin status and the approved email whitelist.
+     * Robust check that handles missing settings documents.
      */
     function isContributor() {
-      let approvedEmailsDoc = get(/databases/$(database)/documents/settings/approvedEmails);
-      return isSignedIn() && (
-        isSuperAdmin() || 
-        (exists(approvedEmailsDoc) && request.auth.token.email in approvedEmailsDoc.data.emails)
-      );
+      if (!isSignedIn()) return false;
+      if (isSuperAdmin()) return true;
+      
+      let approvedEmailsPath = /databases/$(database)/documents/settings/approvedEmails;
+      return exists(approvedEmailsPath) && 
+             request.auth.token.email in get(approvedEmailsPath).data.emails;
     }
 
     // USER PROFILES
@@ -36,9 +37,7 @@ service cloud.firestore {
       
       allow create: if isSignedIn() && request.auth.uid == userId;
       
-      allow update: if isSignedIn() && request.auth.uid == userId
-                    && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)
-                    && (!('uid' in request.resource.data) || request.auth.uid == userId);
+      allow update: if isSignedIn() && request.auth.uid == userId;
 
       // READING HISTORY
       match /history/{bookId} {
@@ -61,9 +60,7 @@ service cloud.firestore {
     
     match /stats/storageUsage {
       allow read: if true;
-      allow update: if isContributor();
-      allow create: if isContributor();
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin() || isContributor();
     }
 
     // PUBLISH REQUESTS
@@ -82,17 +79,16 @@ service cloud.firestore {
 
     // BOOKS & MANUSCRIPTS
     match /books/{bookId} {
+      // Explicitly allow both get and list for all users
       allow read: if true;
       
-      // Allow contributors to create new manuscripts
+      // Allow contributors/admins to create and delete
       allow create: if isContributor();
-      
-      // Allow deletion only for admins
       allow delete: if isSuperAdmin();
       
-      // Update is allowed if admin OR if only 'views' is being modified by a reader
+      // Update allowed for contributors OR for public view counting
       allow update: if isContributor() || isSuperAdmin() || 
-                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
+                    (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
 
       // Sub-collections (chapters, metadata, messages)
       match /{allChildren=**} {
