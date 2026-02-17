@@ -61,6 +61,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   
   const [metadata, setMetadata] = useState<any>(null);
   const [chaptersCache, setChaptersCache] = useState<Record<number, any>>({});
+  const [visibleChapterNums, setVisibleChapterNums] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPreloading, setIsPreloading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -86,24 +87,37 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return () => stopTextToSpeech();
   }, []);
 
+  // Reset visible chapters when the route changes
+  useEffect(() => {
+    setVisibleChapterNums([currentChapterNum]);
+  }, [currentChapterNum]);
+
   const fetchChaptersRange = useCallback(async (start: number, count: number) => {
-    if (!firestore || !id) return;
+    if (!firestore || !id) return [];
+    
+    // Determine which chapters actually need to be fetched (not in cache)
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
-      .filter(n => !chaptersCache[n] && n > 0 && n <= (metadata?.totalChapters || 9999));
-    if (targetNumbers.length === 0) return;
-    try {
-      const chaptersCol = collection(firestore, 'books', id, 'chapters');
-      const q = query(chaptersCol, where('chapterNumber', 'in', targetNumbers));
-      const snap = await getDocs(q);
-      const newEntries: Record<number, any> = {};
-      snap.docs.forEach(d => {
-        const data = d.data();
-        newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
-      });
-      setChaptersCache(prev => ({ ...prev, ...newEntries }));
-    } catch (err) {
-      console.error("Preload fetch failed", err);
+      .filter(n => n > 0 && n <= (metadata?.totalChapters || 9999));
+    
+    const missingNumbers = targetNumbers.filter(n => !chaptersCache[n]);
+    
+    if (missingNumbers.length > 0) {
+      try {
+        const chaptersCol = collection(firestore, 'books', id, 'chapters');
+        const q = query(chaptersCol, where('chapterNumber', 'in', missingNumbers));
+        const snap = await getDocs(q);
+        const newEntries: Record<number, any> = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
+        });
+        setChaptersCache(prev => ({ ...prev, ...newEntries }));
+      } catch (err) {
+        console.error("Preload fetch failed", err);
+      }
     }
+    
+    return targetNumbers;
   }, [firestore, id, chaptersCache, metadata]);
 
   useEffect(() => {
@@ -235,12 +249,25 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const handlePreloadNext10 = async () => {
     if (isPreloading) return;
     setIsPreloading(true);
-    toast({ title: "Syncing Ahead", description: "Pre-loading the next 10 chapters for seamless reading." });
+    
+    // The current seamless block ends at the last chapter in visibleChapterNums
+    const lastVisible = Math.max(...visibleChapterNums);
+    const total = metadata?.totalChapters || 9999;
+    
+    if (lastVisible >= total) {
+      toast({ title: "End of Volume", description: "You have reached the final chapter of this manuscript." });
+      setIsPreloading(false);
+      return;
+    }
+
+    toast({ title: "Expanding Shelf", description: "Appending the next 10 chapters for seamless reading." });
+    
     try {
-      await fetchChaptersRange(currentChapterNum + 1, 10);
-      toast({ title: "Shelf Ready", description: "Next 10 chapters cached successfully." });
+      const fetchedNums = await fetchChaptersRange(lastVisible + 1, 10);
+      setVisibleChapterNums(prev => [...prev, ...fetchedNums]);
+      toast({ title: "Reader Extended", description: `${fetchedNums.length} more chapters are now seamless.` });
     } catch (e) {
-      toast({ variant: "destructive", title: "Preload Interrupted", description: "Cloud connection was unstable." });
+      toast({ variant: "destructive", title: "Sync Interrupted", description: "Cloud connection was unstable." });
     } finally {
       setIsPreloading(false);
     }
@@ -259,8 +286,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleReadAloud = async (startIndex: number = 0) => {
-    const currentChapter = chaptersCache[currentChapterNum];
+  const handleReadAloud = async (chNum: number, startIndex: number = 0) => {
+    const currentChapter = chaptersCache[chNum];
     if (!currentChapter?.content) return;
     setIsSpeaking(true);
     try {
@@ -319,16 +346,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     );
   }
 
-  const currentChapter = chaptersCache[currentChapterNum];
   const totalChapters = metadata?.totalChapters || 0;
   if (!mounted) return null;
 
-  const paragraphs = (currentChapter.content || '').split(/<p>|\n\n/)
-    .map((para: string) => para.replace(/<\/p>|<[^>]*>?/gm, '').trim())
-    .filter((para: string) => para.length > 0);
-
-  const preloadedCount = Array.from({ length: 10 }, (_, i) => currentChapterNum + 1 + i)
-    .filter(n => chaptersCache[n]).length;
+  const lastVisibleNum = Math.max(...visibleChapterNums);
 
   return (
     <div className="max-w-[700px] mx-auto px-5 py-5 transition-all duration-500 selection:bg-primary/20 selection:text-primary">
@@ -364,11 +385,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               size="sm" 
               className={`rounded-xl px-4 gap-2 transition-all ${isPreloading ? 'opacity-50' : 'hover:border-primary/40'}`}
               onClick={handlePreloadNext10}
-              disabled={isPreloading || currentChapterNum >= totalChapters}
+              disabled={isPreloading || lastVisibleNum >= totalChapters}
             >
-              {isPreloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className={`h-3 w-3 ${preloadedCount === 10 ? 'text-green-500 fill-green-500' : 'text-primary'}`} />}
+              {isPreloading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className={`h-3 w-3 ${visibleChapterNums.length > 1 ? 'text-green-500 fill-green-500' : 'text-primary'}`} />}
               <span className="text-[10px] font-black uppercase tracking-widest">
-                {preloadedCount === 10 ? 'Buffered' : `Buffer 10`}
+                {visibleChapterNums.length > 1 ? 'Extended' : `Buffer 10`}
               </span>
             </Button>
 
@@ -384,9 +405,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </div>
         </div>
 
-        {preloadedCount > 0 && (
+        {isPreloading && (
           <div className="mb-8 animate-in fade-in slide-in-from-top-1">
-            <Progress value={(preloadedCount / 10) * 100} className="h-1 bg-primary/5" />
+            <Progress value={50} className="h-1 bg-primary/5" />
           </div>
         )}
 
@@ -402,23 +423,38 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </header>
 
-      <article className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <header className="mb-10 border-b border-border/50 pb-10">
-          <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
-            <Bookmark className="h-4 w-4" />
-            Chapter {currentChapter.chapterNumber}
-          </div>
-          <h2 className="text-4xl font-headline font-black leading-tight text-primary">
-            {currentChapter.title || `Chapter ${currentChapter.chapterNumber}`}
-          </h2>
-        </header>
+      <div className="space-y-20">
+        {visibleChapterNums.map((chNum) => {
+          const chData = chaptersCache[chNum];
+          if (!chData) return null;
 
-        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] font-body leading-[1.6] text-foreground/90">
-          {paragraphs.map((cleanPara: string, idx: number) => (
-            <p key={idx} onClick={() => handleReadAloud(idx)} className="mb-8 cursor-pointer hover:text-foreground transition-colors">{cleanPara}</p>
-          ))}
-        </div>
-      </article>
+          const paragraphs = (chData.content || '').split(/<p>|\n\n/)
+            .map((para: string) => para.replace(/<\/p>|<[^>]*>?/gm, '').trim())
+            .filter((para: string) => para.length > 0);
+
+          return (
+            <article key={chNum} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <header className="mb-10 border-b border-border/50 pb-10">
+                <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
+                  <Bookmark className="h-4 w-4" />
+                  Chapter {chNum}
+                </div>
+                <h2 className="text-4xl font-headline font-black leading-tight text-primary">
+                  {chData.title || `Chapter ${chNum}`}
+                </h2>
+              </header>
+
+              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] font-body leading-[1.6] text-foreground/90">
+                {paragraphs.map((cleanPara: string, idx: number) => (
+                  <p key={idx} onClick={() => handleReadAloud(chNum, idx)} className="mb-8 cursor-pointer hover:text-foreground transition-colors">
+                    {cleanPara}
+                  </p>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+      </div>
 
       <section className="mt-20 pt-12 border-t border-border/50">
         <div className="flex items-center justify-between gap-8">
@@ -426,9 +462,14 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ChevronLeft className="mr-2 h-4 w-4" /> Prev
           </Button>
           <div className="text-center min-w-[80px]">
-             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">{currentChapterNum} / {totalChapters || '...'}</span>
+             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">{lastVisibleNum} / {totalChapters || '...'}</span>
           </div>
-          <Button variant="default" className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" disabled={totalChapters > 0 && currentChapterNum >= totalChapters} onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}>
+          <Button 
+            variant="default" 
+            className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" 
+            disabled={totalChapters > 0 && lastVisibleNum >= totalChapters} 
+            onClick={() => router.push(`/pages/${id}/${lastVisibleNum + 1}`)}
+          >
             Next <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
