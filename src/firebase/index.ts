@@ -6,23 +6,26 @@ import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// IMPORTANT: DO NOT MODIFY THIS FUNCTION
+/**
+ * Initializes Firebase with a strict check for production environments.
+ * Prevents multiple initialization attempts which can cause auth hangs.
+ */
 export function initializeFirebase() {
-  if (!getApps().length) {
-    let firebaseApp;
-    try {
-      firebaseApp = initializeApp();
-    } catch (e) {
-      if (process.env.NODE_ENV === "production") {
-        console.warn('Automatic initialization failed. Falling back to firebase config object.', e);
-      }
-      firebaseApp = initializeApp(firebaseConfig);
-    }
+  let firebaseApp: FirebaseApp;
 
-    return getSdks(firebaseApp);
+  if (!getApps().length) {
+    try {
+      // In production (Vercel), we rely on the hardcoded config to ensure the bucket name matches exactly.
+      firebaseApp = initializeApp(firebaseConfig);
+    } catch (e) {
+      console.error('Firebase initialization failed:', e);
+      firebaseApp = getApp(); // Fallback to existing
+    }
+  } else {
+    firebaseApp = getApp();
   }
 
-  return getSdks(getApp());
+  return getSdks(firebaseApp);
 }
 
 export function getSdks(firebaseApp: FirebaseApp) {

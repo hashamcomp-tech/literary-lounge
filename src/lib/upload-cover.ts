@@ -1,43 +1,46 @@
 import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
+import { getAuth } from "firebase/auth";
 
 /**
  * Uploads a cover image for a book to Firebase Storage.
- * Includes a safety timeout to prevent the UI from hanging on slow connections.
- * 
- * @param storage The Firebase Storage instance.
- * @param file The image file to upload.
- * @param bookId The unique ID of the book.
- * @returns A promise that resolves to the download URL of the uploaded image, or null if no file.
+ * includes an explicit check for authentication state to prevent production hangs.
  */
 const UPLOAD_TIMEOUT = 60000; // 60 seconds
 
 export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string): Promise<string | null> {
   if (!file || !storage) return null;
 
+  // DIAGNOSTIC: Ensure user is authenticated before attempting upload
+  const auth = getAuth();
+  if (!auth.currentUser) {
+    console.error("Upload attempted without active Firebase Auth session.");
+    throw new Error("Authentication required. Please wait for the Lounge to sync your session.");
+  }
+
   const storageRef = ref(storage, `bookCovers/${bookId}`);
   
-  // Create a timeout promise
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Cover upload timed out.")), UPLOAD_TIMEOUT)
+    setTimeout(() => reject(new Error("Cover upload timed out. This usually indicates a CORS block or network restriction.")), UPLOAD_TIMEOUT)
   );
 
   try {
-    // Race the upload against the timeout
+    // Perform the upload
     const uploadPromise = uploadBytes(storageRef, file);
+    
+    // Race against timeout
     await Promise.race([uploadPromise, timeoutPromise]);
     
-    // Get and return the download URL
+    // Get download URL
     return await getDownloadURL(storageRef);
   } catch (error: any) {
-    console.error("Cover upload error:", error);
+    console.error("Firebase Storage Production Error:", error);
     
-    // Explicitly handle timeout or permission errors for better debugging
-    if (error.message === "Cover upload timed out.") {
-      throw new Error("Cover upload timed out. Please check your connection or try a smaller image.");
+    if (error.message.includes("timed out")) {
+      throw new Error("Connection timed out. If this is production, please verify CORS settings on your Firebase Storage bucket.");
     }
     
     if (error.code === 'storage/unauthorized') {
-      throw new Error("Access denied. Please ensure you are signed in and storage rules allow uploads.");
+      throw new Error("Permission denied. Ensure your storage.rules allow writes for authenticated users.");
     }
 
     throw error;
