@@ -3,8 +3,8 @@
 
 import { useEffect, useState } from 'react';
 import { doc, getDoc, collection, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff } from 'lucide-react';
+import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -14,6 +14,18 @@ import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
+import { deleteCloudBook } from '@/lib/cloud-library-utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface CloudReaderClientProps {
   id: string;
@@ -22,8 +34,7 @@ interface CloudReaderClientProps {
 
 /**
  * @fileOverview Cloud Reader Client.
- * Implements a 700px optimized width reading experience.
- * Features invisible 'Click to Read from Here' functionality.
+ * Implements a 700px optimized width reading experience with admin controls.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -36,9 +47,15 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [metadata, setMetadata] = useState<any>(null);
   const [chapters, setChapters] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+
+  // Check admin status via profile
+  const profileRef = useMemoFirebase(() => (user && !user.isAnonymous) ? doc(firestore!, 'users', user.uid) : null, [firestore, user]);
+  const { data: profile } = useDoc(profileRef);
+  const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
 
   useEffect(() => {
     setMounted(true);
@@ -111,6 +128,20 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     stopTextToSpeech();
   }, [firestore, id, user, currentChapterNum, isOfflineMode]);
 
+  const handleDelete = async () => {
+    if (!firestore || !id) return;
+    setIsDeleting(true);
+    try {
+      await deleteCloudBook(firestore, id);
+      toast({ title: "Manuscript Removed", description: "Novel successfully deleted from global library." });
+      router.push('/');
+    } catch (err) {
+      // Handled by listener
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleReadAloud = async (startIndex: number = 0) => {
     const currentChapter = chapters.find(ch => ch.chapterNumber === currentChapterNum);
     if (!currentChapter?.content) return;
@@ -158,11 +189,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     );
   }
 
-  if (isLoading) {
+  if (isLoading || isDeleting) {
     return (
       <div className="flex flex-col items-center justify-center py-32 space-y-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Syncing with Library...</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">
+          {isDeleting ? 'Removing Manuscript...' : 'Syncing with Library...'}
+        </p>
       </div>
     );
   }
@@ -195,6 +228,29 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
           <div className="flex gap-2">
+            {isAdmin && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="icon" className="rounded-full text-destructive hover:bg-destructive/10" title="Delete Manuscript">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-2xl font-headline font-black">Confirm Global Deletion</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span> and all its chapters for all readers. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">
+                      Delete Forever
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             <Button 
               variant="outline" 
               size="icon" 

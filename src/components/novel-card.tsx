@@ -1,15 +1,17 @@
+
 "use client";
 
 import Link from 'next/link';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { useUser, useFirestore } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Trash2, Loader2, Globe } from 'lucide-react';
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { deleteCloudBook } from '@/lib/cloud-library-utils';
+import { doc } from 'firebase/firestore';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +31,7 @@ interface NovelCardProps {
 /**
  * @fileOverview Universal Novel Card.
  * Intelligently routes between Mock, Cloud, and Local library collections.
- * Provides administrative deletion controls for the Super Admin.
+ * Provides administrative deletion controls.
  */
 export default function NovelCard({ novel }: NovelCardProps) {
   const { user } = useUser();
@@ -40,7 +42,11 @@ export default function NovelCard({ novel }: NovelCardProps) {
   // Explicitly determine route type
   const isLocal = !!(novel.isLocalOnly || novel._isLocal);
   const isCloud = !!(novel.isCloud && !isLocal);
-  const isAdmin = user?.email === 'hashamcomp@gmail.com';
+  
+  // Check admin status
+  const profileRef = useMemoFirebase(() => (db && user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
+  const { data: profile } = useDoc(profileRef);
+  const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
   
   let href = `/novel/${novel.id}`; // Default to Mock
   
@@ -65,7 +71,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
         });
       })
       .catch((err: any) => {
-        // Specialized error handled by lib/cloud-library-utils and FirebaseErrorListener
+        // Handled via listener
       })
       .finally(() => {
         setIsDeleting(false);
@@ -135,7 +141,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
               <AlertDialogHeader>
                 <AlertDialogTitle className="text-2xl font-headline font-black">Global Manuscript Deletion</AlertDialogTitle>
                 <AlertDialogDescription className="text-base">
-                  You are about to remove <span className="font-bold text-foreground">"{novel.title}"</span> from the Lounge's global cloud library. This will purge the volume for all readers and free up allocated cloud storage.
+                  You are about to remove <span className="font-bold text-foreground">"{novel.title}"</span> from the Lounge's global cloud library. This will purge the volume for all readers.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter className="pt-4">

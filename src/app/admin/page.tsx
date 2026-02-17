@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -7,15 +8,28 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, query, orderBy, limit } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, ShieldAlert, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
+import { Input } from '@/components/ui/input';
+import { deleteCloudBook } from '@/lib/cloud-library-utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function AdminPage() {
   const db = useFirestore();
@@ -26,6 +40,7 @@ export default function AdminPage() {
 
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [bookSearch, setBookSearch] = useState('');
   
   // Library Stats
   const [bookCount, setBookCount] = useState<number>(0);
@@ -101,7 +116,7 @@ export default function AdminPage() {
     }
   }, [isAdmin, router, toast]);
 
-  // Fetch Library Statistics (Only if admin)
+  // Fetch Library Statistics
   useEffect(() => {
     if (!isAdmin || isOfflineMode || !db) return;
 
@@ -140,11 +155,12 @@ export default function AdminPage() {
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
-  const bookRequestsQuery = useMemoFirebase(() => {
+  const booksQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
-    return query(collection(db, 'cloudUploadRequests'));
+    return query(collection(db, 'books'), orderBy('createdAt', 'desc'), limit(100));
   }, [db, isAdmin, isOfflineMode]);
-  const { data: bookRequests } = useCollection(bookRequestsQuery);
+
+  const { data: allBooks, isLoading: isBooksLoading } = useCollection(booksQuery);
 
   const handleApprove = async (requestId: string, email: string) => {
     if (!db) return;
@@ -153,7 +169,6 @@ export default function AdminPage() {
     const approvedRef = doc(db, 'settings', 'approvedEmails');
     const deleteReqRef = doc(db, 'publishRequests', requestId);
 
-    // Use setDoc with merge to ensure document exists
     const approvalPayload = { emails: arrayUnion(email) };
     setDoc(approvedRef, approvalPayload, { merge: true })
       .then(() => deleteDoc(deleteReqRef))
@@ -185,6 +200,18 @@ export default function AdminPage() {
           operation: 'delete',
         }));
       })
+      .finally(() => setProcessingId(null));
+  };
+
+  const handleDeleteBook = async (bookId: string) => {
+    if (!db) return;
+    setProcessingId(bookId);
+    
+    deleteCloudBook(db, bookId)
+      .then(() => {
+        toast({ title: "Book Deleted", description: "The novel has been removed from the global library." });
+      })
+      .catch(() => {})
       .finally(() => setProcessingId(null));
   };
 
@@ -223,6 +250,11 @@ export default function AdminPage() {
 
   if (isAdmin === false) return null;
 
+  const filteredBooks = allBooks?.filter(b => 
+    b.title?.toLowerCase().includes(bookSearch.toLowerCase()) || 
+    b.author?.toLowerCase().includes(bookSearch.toLowerCase())
+  ) || [];
+
   return (
     <div className="min-h-screen pb-20 bg-background transition-colors duration-500">
       <Navbar />
@@ -241,10 +273,7 @@ export default function AdminPage() {
               <Link href="/admin/requests">
                 <Button variant="outline" className="h-12 rounded-2xl border-amber-500/20 text-amber-700 bg-amber-500/5 hover:bg-amber-500/10 transition-all font-bold">
                   <Inbox className="h-4 w-4 mr-2" />
-                  Manuscripts
-                  {bookRequests && bookRequests.length > 0 && (
-                    <Badge className="ml-2 bg-amber-500 h-5 px-1.5 min-w-5">{bookRequests.length}</Badge>
-                  )}
+                  Submissions
                 </Button>
               </Link>
               <Link href="/admin/dashboard">
@@ -294,6 +323,105 @@ export default function AdminPage() {
           </div>
 
           <AdminStorageBar />
+
+          {/* Library Management Section */}
+          <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem] mb-12">
+            <CardHeader className="bg-muted/30 p-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div>
+                <CardTitle className="text-2xl font-headline font-black">Global Manuscript Management</CardTitle>
+                <CardDescription className="text-base">Review and remove content from the global cloud library.</CardDescription>
+              </div>
+              <div className="relative w-full md:max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Filter by title or author..." 
+                  className="pl-10 h-10 rounded-xl bg-background/50 border-none shadow-inner"
+                  value={bookSearch}
+                  onChange={(e) => setBookSearch(e.target.value)}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isBooksLoading ? (
+                <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>
+              ) : filteredBooks.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/10 border-none">
+                      <TableHead className="pl-10 font-black uppercase tracking-widest text-[10px]">Title & Author</TableHead>
+                      <TableHead className="font-black uppercase tracking-widest text-[10px]">Genre</TableHead>
+                      <TableHead className="font-black uppercase tracking-widest text-[10px]">Views</TableHead>
+                      <TableHead className="text-right pr-10 font-black uppercase tracking-widest text-[10px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredBooks.map((book) => (
+                      <TableRow key={book.id} className="border-border/50 hover:bg-primary/5 transition-colors h-24">
+                        <TableCell className="pl-10">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-lg leading-tight">{book.title}</span>
+                            <span className="text-sm text-muted-foreground">By {book.author}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="border-primary/20 text-primary uppercase text-[9px] font-black">
+                            {book.genre}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs opacity-60">
+                          {(book.views || 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right pr-10">
+                          <div className="flex items-center justify-end gap-2">
+                            <Link href={`/pages/${book.id}/1`}>
+                              <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 text-primary">
+                                <ExternalLink className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="rounded-xl hover:bg-destructive/10 text-destructive"
+                                  disabled={processingId === book.id}
+                                >
+                                  {processingId === book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle className="text-2xl font-headline font-black">Global Deletion</AlertDialogTitle>
+                                  <AlertDialogDescription className="text-base">
+                                    Remove <span className="font-bold text-foreground">"{book.title}"</span>? This will purge the manuscript for all readers globally.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
+                                  <AlertDialogAction 
+                                    onClick={() => handleDeleteBook(book.id)}
+                                    className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold"
+                                  >
+                                    Confirm Deletion
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="p-24 text-center opacity-50 flex flex-col items-center">
+                  <BookOpen className="h-16 w-16 mb-4 text-primary" />
+                  <p className="text-xl font-headline font-bold">No Manuscripts Found</p>
+                  <p className="text-sm mt-1">Try adjusting your search filter.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
             <CardHeader className="bg-muted/30 p-10">
