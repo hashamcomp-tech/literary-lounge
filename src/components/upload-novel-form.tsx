@@ -361,43 +361,24 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-border/50">
+            <div className="pt-2 border-t border-border/50">
               <div className="space-y-2">
                 <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                  <ImageIcon className="h-3 w-3" /> Book Cover
-                </Label>
-                <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center overflow-hidden ${coverFile ? 'bg-primary/5 border-primary shadow-inner' : 'bg-muted/20'}`}>
-                  {coverPreview ? (
-                    <img src={coverPreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-60" />
-                  ) : (
-                    <div className="text-center flex flex-col items-center opacity-30">
-                      <BrainCircuit className="h-5 w-5 mb-1" />
-                      <span className="text-[8px] font-black uppercase tracking-widest">AI Generated</span>
-                    </div>
-                  )}
-                  {coverFile && (
-                    <div className="flex flex-col items-center gap-1 relative z-10 bg-background/80 p-1 rounded-md backdrop-blur-sm">
-                       <CheckCircle2 className="h-3 w-3 text-primary" />
-                       <span className="text-[8px] font-bold truncate max-w-[100px]">{coverFile.name}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                  <FileType className="h-3 w-3" /> EPUB File
+                  <FileType className="h-3 w-3" /> Manuscript File
                 </Label>
                 <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center ${selectedFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
                   <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
                   {selectedFile ? (
                     <div className="flex flex-col items-center gap-1 text-center">
                       <FileType className="h-4 w-4 text-primary" />
-                      <span className="text-[9px] font-bold truncate max-w-[120px]">{selectedFile.name}</span>
-                      <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }} className="text-[8px] text-destructive font-black uppercase">Clear</button>
+                      <span className="text-[9px] font-bold truncate max-w-[250px]">{selectedFile.name}</span>
+                      <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }} className="text-[8px] text-destructive font-black uppercase">Clear File</button>
                     </div>
                   ) : (
-                    <BookPlus className="h-5 w-5 opacity-20" />
+                    <div className="flex flex-col items-center opacity-30 gap-1">
+                      <BookPlus className="h-5 w-5" />
+                      <span className="text-[8px] font-black uppercase tracking-widest">Select EPUB</span>
+                    </div>
                   )}
                 </div>
               </div>
