@@ -1,7 +1,7 @@
 'use server';
 /**
  * @fileOverview AI flow for generating book covers using Imagen 4.
- * Creates professional-grade cover art based on book metadata.
+ * Creates professional-grade cover art based on book metadata and identified context.
  */
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
@@ -30,10 +30,18 @@ const generateCoverFlow = ai.defineFlow(
     outputSchema: z.string(),
   },
   async (input) => {
-    const prompt = `A professional book cover for a ${input.genre} novel titled "${input.title}" by ${input.author}. 
-    Style: Cinematic, high-quality, illustrative, minimalist typography if any. 
-    Mood: ${input.genre === 'Fantasy' ? 'Magical and epic' : input.genre === 'Mystery' ? 'Dark and moody' : 'Evocative and clean'}.
-    Do not include any gibberish text other than the title and author name if possible.`;
+    // We instruct the model to use its knowledge of the book's history if applicable
+    const prompt = `Create a professional and authentic book cover for the ${input.genre} novel titled "${input.title}" by ${input.author}.
+    
+    Context: ${input.description || 'A unique work of literature.'}
+    
+    Instructions:
+    1. If this is a known literary work (classic or modern), utilize your internal knowledge of its iconic cover aesthetics, historic symbols, and traditional artistic styles to generate a faithful yet high-definition reimagining.
+    2. If the work is new, use the genre and description to create an evocative, thematic masterpiece.
+    3. Style: Cinematic, high-quality, illustrative, with minimalist and elegant typography for the title and author name only.
+    4. Avoid: Gibberish text, cluttered layouts, or unrelated imagery.
+    
+    Mood: ${input.genre === 'Fantasy' ? 'Magical and epic' : input.genre === 'Mystery' ? 'Dark and moody' : input.genre === 'History' ? 'Sophisticated and classic' : 'Evocative and clean'}.`;
 
     const { media } = await ai.generate({
       model: 'googleai/imagen-4.0-fast-generate-001',

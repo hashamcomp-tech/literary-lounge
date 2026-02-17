@@ -42,6 +42,7 @@ export function UploadNovelForm() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [identifiedSummary, setIdentifiedSummary] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
@@ -86,13 +87,15 @@ export function UploadNovelForm() {
   }, [user, db, isOfflineMode, isSuperAdmin]);
 
   const handleAiAutoFill = async () => {
-    if (!selectedFile || !isSuperAdmin) return;
+    if (!selectedFile) return;
     setIsIdentifying(true);
     try {
       const result = await identifyBookFromFilename(selectedFile.name);
       if (result.title) setTitle(result.title);
       if (result.author) setAuthor(result.author);
       if (result.genre && GENRES.includes(result.genre)) setGenre(result.genre);
+      if (result.summary) setIdentifiedSummary(result.summary);
+      
       toast({ title: "AI Identification Complete", description: `Matched: ${result.title} by ${result.author}` });
     } catch (err: any) {
       toast({ variant: "destructive", title: "AI Search Failed", description: err.message });
@@ -148,14 +151,35 @@ export function UploadNovelForm() {
     try {
       let finalTitle = title.trim();
       let finalAuthor = author.trim() || 'Anonymous Author';
+      let finalGenre = genre;
+      let finalSummary = identifiedSummary;
       let chapters: any[] = [];
+
+      // Background AI Identification if info is sparse
+      if ((!finalTitle || !finalSummary) && selectedFile) {
+        setLoadingStatus('Identifying Manuscript...');
+        try {
+          const idResult = await identifyBookFromFilename(selectedFile.name);
+          finalTitle = finalTitle || idResult.title || 'Untitled';
+          finalAuthor = finalAuthor || idResult.author || 'Unknown';
+          finalGenre = finalGenre || idResult.genre || genre;
+          finalSummary = finalSummary || idResult.summary || '';
+        } catch (e) {
+          console.warn("Background identification failed");
+        }
+      }
 
       // AI Cover Generation if missing
       let finalCoverFile = coverFile;
       if (!finalCoverFile && isCloudTarget) {
-        setLoadingStatus('AI Generating Cover...');
+        setLoadingStatus('AI Designing Authentic Cover...');
         try {
-          const coverDataUri = await generateBookCover({ title: finalTitle, author: finalAuthor, genre });
+          const coverDataUri = await generateBookCover({ 
+            title: finalTitle, 
+            author: finalAuthor, 
+            genre: finalGenre,
+            description: finalSummary
+          });
           const resp = await fetch(coverDataUri);
           const blob = await resp.blob();
           finalCoverFile = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
@@ -212,7 +236,7 @@ export function UploadNovelForm() {
           bookId: `${docId}_${Date.now()}`,
           title: finalTitle, 
           author: finalAuthor, 
-          genre, 
+          genre: finalGenre, 
           chapters, 
           coverFile: optimizedCover, 
           ownerId: user!.uid
@@ -233,7 +257,7 @@ export function UploadNovelForm() {
           id: docId, 
           title: finalTitle, 
           author: finalAuthor, 
-          genre, 
+          genre: finalGenre, 
           coverURL,
           lastUpdated: new Date().toISOString(), 
           isLocalOnly: true
