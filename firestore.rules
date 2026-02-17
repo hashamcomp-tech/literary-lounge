@@ -9,12 +9,23 @@ service cloud.firestore {
 
     /**
      * Verifies if the user is the primary system administrator.
-     * Uses both UID and Email for robust multi-layer verification.
      */
     function isSuperAdmin() {
       return isSignedIn() && (
         request.auth.uid == "KFRoNNMCn9XBK34tYwLhMHNZSD33" ||
         request.auth.token.email == "hashamcomp@gmail.com"
+      );
+    }
+
+    /**
+     * Verifies if the user is an authorized contributor.
+     * Checks both super admin status and the approved email whitelist.
+     */
+    function isContributor() {
+      let approvedEmailsDoc = get(/databases/$(database)/documents/settings/approvedEmails);
+      return isSignedIn() && (
+        isSuperAdmin() || 
+        (exists(approvedEmailsDoc) && request.auth.token.email in approvedEmailsDoc.data.emails)
       );
     }
 
@@ -44,12 +55,14 @@ service cloud.firestore {
 
     // SETTINGS & WHITELIST
     match /settings/approvedEmails {
-      allow read: if isSuperAdmin();
+      allow read: if isSignedIn();
       allow write: if isSuperAdmin();
     }
     
     match /stats/storageUsage {
       allow read: if true;
+      allow update: if isContributor();
+      allow create: if isContributor();
       allow write: if isSuperAdmin();
     }
 
@@ -71,17 +84,20 @@ service cloud.firestore {
     match /books/{bookId} {
       allow read: if true;
       
-      // Explicitly allow admins to perform any operation
-      allow create, delete: if isSuperAdmin();
+      // Allow contributors to create new manuscripts
+      allow create: if isContributor();
+      
+      // Allow deletion only for admins
+      allow delete: if isSuperAdmin();
       
       // Update is allowed if admin OR if only 'views' is being modified by a reader
-      allow update: if isSuperAdmin() || 
+      allow update: if isContributor() || isSuperAdmin() || 
                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
 
       // Sub-collections (chapters, metadata, messages)
       match /{allChildren=**} {
         allow read: if true;
-        allow write: if isSuperAdmin();
+        allow write: if isContributor() || isSuperAdmin();
       }
       
       // Readers can post messages in the Lounge
