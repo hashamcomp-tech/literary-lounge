@@ -31,7 +31,7 @@ export default function Home() {
                 Your next great chapter is waiting in the Lounge.
               </p>
               <div className="flex gap-4">
-                <Link href="/search">
+                <Link href="/explore">
                   <button className="bg-primary text-primary-foreground px-8 py-4 rounded-2xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">
                     Explore Library
                   </button>
@@ -71,7 +71,7 @@ export default function Home() {
             {GENRES.map((genre) => (
               <Link 
                 key={genre} 
-                href={`/genre/${encodeURIComponent(genre)}`}
+                href={`/explore?genre=${encodeURIComponent(genre)}`}
                 className="group"
               >
                 <div className="h-full px-4 py-8 bg-card border border-transparent hover:border-primary/20 hover:bg-primary/5 rounded-3xl transition-all duration-500 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-xl">
