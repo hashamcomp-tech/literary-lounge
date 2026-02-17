@@ -330,28 +330,28 @@ export default function AdminPage() {
 
           <AdminStorageBar />
 
-          {/* Library Management Section - Now Retractable */}
+          {/* Library Management Section - Compressed and Retractable */}
           <Accordion type="single" collapsible className="mb-12">
             <AccordionItem value="manuscripts" className="border-none">
-              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2.5rem]">
+              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
                 <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
-                  <CardHeader className="bg-muted/30 p-10 flex flex-col md:flex-row md:items-center justify-between gap-6 w-full text-left cursor-pointer group">
+                  <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 w-full text-left cursor-pointer group">
                     <div className="flex-1">
                       <div className="flex items-center gap-3">
-                        <CardTitle className="text-2xl font-headline font-black">Global Manuscript Management</CardTitle>
-                        <ChevronDown className="h-5 w-5 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                        <CardTitle className="text-xl font-headline font-black">Global Manuscript Management</CardTitle>
+                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
                       </div>
-                      <CardDescription className="text-base">Review and remove content from the global cloud library.</CardDescription>
+                      <CardDescription className="text-xs">Quick review and removal of cloud volumes.</CardDescription>
                     </div>
                   </CardHeader>
                 </AccordionTrigger>
                 <AccordionContent className="p-0 border-t border-border/50">
-                  <div className="p-10 pb-6 bg-muted/10">
-                    <div className="relative w-full md:max-w-md">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <div className="p-6 pb-4 bg-muted/10">
+                    <div className="relative w-full md:max-w-xs">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                       <Input 
-                        placeholder="Filter by title or author..." 
-                        className="pl-10 h-12 rounded-xl bg-background border-none shadow-inner text-lg"
+                        placeholder="Search volumes..." 
+                        className="pl-9 h-9 rounded-lg bg-background border-none shadow-inner text-sm"
                         value={bookSearch}
                         onChange={(e) => setBookSearch(e.target.value)}
                       />
@@ -359,39 +359,39 @@ export default function AdminPage() {
                   </div>
                   <div className="p-0">
                     {isBooksLoading ? (
-                      <div className="p-20 flex justify-center"><Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" /></div>
+                      <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" /></div>
                     ) : filteredBooks.length > 0 ? (
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/10 border-none">
-                            <TableHead className="pl-10 font-black uppercase tracking-widest text-[10px]">Title & Author</TableHead>
-                            <TableHead className="font-black uppercase tracking-widest text-[10px]">Genre</TableHead>
-                            <TableHead className="font-black uppercase tracking-widest text-[10px]">Views</TableHead>
-                            <TableHead className="text-right pr-10 font-black uppercase tracking-widest text-[10px]">Actions</TableHead>
+                            <TableHead className="pl-6 font-black uppercase tracking-widest text-[9px]">Title & Author</TableHead>
+                            <TableHead className="font-black uppercase tracking-widest text-[9px]">Genre</TableHead>
+                            <TableHead className="font-black uppercase tracking-widest text-[9px]">Views</TableHead>
+                            <TableHead className="text-right pr-6 font-black uppercase tracking-widest text-[9px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredBooks.map((book) => (
-                            <TableRow key={book.id} className="border-border/50 hover:bg-primary/5 transition-colors h-24">
-                              <TableCell className="pl-10">
+                            <TableRow key={book.id} className="border-border/50 hover:bg-primary/5 transition-colors h-14">
+                              <TableCell className="pl-6">
                                 <div className="flex flex-col">
-                                  <span className="font-bold text-lg leading-tight">{book.title}</span>
-                                  <span className="text-sm text-muted-foreground">By {book.author}</span>
+                                  <span className="font-bold text-sm leading-tight line-clamp-1">{book.title}</span>
+                                  <span className="text-[10px] text-muted-foreground">By {book.author}</span>
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="border-primary/20 text-primary uppercase text-[9px] font-black">
+                                <Badge variant="outline" className="border-primary/20 text-primary uppercase text-[8px] font-black h-4 px-1.5">
                                   {book.genre}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="font-mono text-xs opacity-60">
+                              <TableCell className="font-mono text-[10px] opacity-60">
                                 {(book.views || 0).toLocaleString()}
                               </TableCell>
-                              <TableCell className="text-right pr-10">
-                                <div className="flex items-center justify-end gap-2">
+                              <TableCell className="text-right pr-6">
+                                <div className="flex items-center justify-end gap-1">
                                   <Link href={`/pages/${book.id}/1`}>
-                                    <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 text-primary">
-                                      <ExternalLink className="h-4 w-4" />
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary">
+                                      <ExternalLink className="h-3.5 w-3.5" />
                                     </Button>
                                   </Link>
                                   <AlertDialog>
@@ -399,10 +399,10 @@ export default function AdminPage() {
                                       <Button 
                                         variant="ghost" 
                                         size="icon" 
-                                        className="rounded-xl hover:bg-destructive/10 text-destructive"
+                                        className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive"
                                         disabled={processingId === book.id}
                                       >
-                                        {processingId === book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                        {processingId === book.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                                       </Button>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
@@ -430,10 +430,9 @@ export default function AdminPage() {
                         </TableBody>
                       </Table>
                     ) : (
-                      <div className="p-24 text-center opacity-50 flex flex-col items-center">
-                        <BookOpen className="h-16 w-16 mb-4 text-primary" />
-                        <p className="text-xl font-headline font-bold">No Manuscripts Found</p>
-                        <p className="text-sm mt-1">Try adjusting your search filter.</p>
+                      <div className="p-12 text-center opacity-50 flex flex-col items-center">
+                        <BookOpen className="h-10 w-10 mb-2 text-primary" />
+                        <p className="text-sm font-headline font-bold">No Manuscripts Found</p>
                       </div>
                     )}
                   </div>
