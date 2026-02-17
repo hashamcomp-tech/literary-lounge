@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -361,7 +362,11 @@ export function UploadNovelForm() {
         setLoadingStatus('Saving Local Draft...');
         let coverURL = null;
         if (optimizedCover && !isOfflineMode && storage) {
-          coverURL = await uploadCoverImage(storage, optimizedCover, docId);
+          try {
+            coverURL = await uploadCoverImage(storage, optimizedCover, docId);
+          } catch (coverErr) {
+            console.warn("Optional cover upload failed for local draft, proceeding without it:", coverErr);
+          }
         }
         
         const bookData = {

@@ -6,7 +6,7 @@ import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/stor
  * Improved with safety timeouts to prevent UI hangs.
  */
 
-const UPLOAD_TIMEOUT = 30000; // 30 seconds
+const UPLOAD_TIMEOUT = 60000; // 60 seconds
 
 /**
  * Uploads a profile photo for a user to Firebase Storage and returns the download URL.
@@ -21,10 +21,12 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
     throw new Error("Missing required parameters for profile photo upload.");
   }
 
-  // Create a timeout promise
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Upload timed out. Please check your internet connection and Firebase Storage setup.")), UPLOAD_TIMEOUT)
-  );
+  let timeoutId: any;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error("Upload timed out. Please check your internet connection and Firebase Storage rules."));
+    }, UPLOAD_TIMEOUT);
+  });
 
   try {
     const photoRef = ref(storage, `profilePhotos/${userId}`);
@@ -35,12 +37,18 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
       timeoutPromise
     ]);
 
+    // Success - clear the timeout
+    clearTimeout(timeoutId);
+
     // Retrieve the public URL
     const downloadURL = await getDownloadURL(photoRef);
 
     return downloadURL;
   } catch (error: any) {
-    console.error("Firebase Storage Profile Photo Upload Error:", error);
+    // Ensure timeout is cleared on error
+    if (timeoutId) clearTimeout(timeoutId);
+    
+    console.warn("Firebase Storage Profile Photo Upload Error:", error);
     
     if (error.code === 'storage/unauthorized') {
       throw new Error("Permission denied. Ensure Firebase Storage is enabled and rules allow user uploads.");

@@ -10,14 +10,15 @@ import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/stor
  * @param bookId The unique ID of the book.
  * @returns A promise that resolves to the download URL of the uploaded image, or null if no file.
  */
-const UPLOAD_TIMEOUT = 25000; // 25 seconds for covers
+const UPLOAD_TIMEOUT = 60000; // 60 seconds for covers
 
 export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string) {
   if (!file || !storage) return null;
 
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Cover upload timed out.")), UPLOAD_TIMEOUT)
-  );
+  let timeoutId: any;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error("Cover upload timed out.")), UPLOAD_TIMEOUT);
+  });
 
   try {
     const coverRef = ref(storage, `bookCovers/${bookId}`);
@@ -28,15 +29,25 @@ export async function uploadCoverImage(storage: FirebaseStorage, file: File | nu
       timeoutPromise
     ]);
 
+    // Success - clear the timeout
+    clearTimeout(timeoutId);
+
     // Retrieve the public URL
     const downloadURL = await getDownloadURL(coverRef);
 
     return downloadURL;
   } catch (error: any) {
-    console.error("Firebase Storage Cover Upload Error:", error);
+    // Ensure timeout is cleared on error
+    if (timeoutId) clearTimeout(timeoutId);
+    
+    console.warn("Firebase Storage Cover Upload Error:", error);
     
     if (error.code === 'storage/unauthorized') {
-      throw new Error("Access denied to Storage. Please check your security rules.");
+      throw new Error("Access denied to Storage. Please ensure Storage is enabled and rules allow uploads in your Firebase Console.");
+    }
+    
+    if (error.message === "Cover upload timed out.") {
+      throw error;
     }
     
     throw new Error(error.message || "Failed to upload cover art.");
