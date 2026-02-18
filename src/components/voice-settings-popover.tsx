@@ -83,7 +83,7 @@ export function VoiceSettingsPopover() {
           className="rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
           title="Voice Settings"
         >
-          <Settings2 className="h-4 w-4" />
+          <Volume2 className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6" align="end">
