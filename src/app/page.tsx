@@ -1,3 +1,4 @@
+
 import Link from 'next/link';
 import Navbar from '@/components/navbar';
 import RecommendationsSection from '@/components/recommendations-section';
@@ -60,12 +61,6 @@ export default function Home() {
 
         {/* Your Private Browser Library */}
         <LocalLibrarySection />
-
-        <RecommendationsSection 
-          title="Fantasy Favorites" 
-          genre="Fantasy" 
-          limitCount={3} 
-        />
       </main>
     </div>
   );

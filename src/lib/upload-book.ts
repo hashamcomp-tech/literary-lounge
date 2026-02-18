@@ -1,4 +1,5 @@
-import { doc, setDoc, serverTimestamp, Firestore, increment, collection, getDocs, writeBatch } from "firebase/firestore";
+
+import { doc, setDoc, serverTimestamp, Firestore, increment, writeBatch } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 

@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -52,7 +53,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Storage and operational stats
     match /stats/{statId} {
       allow read: if true;
       allow write: if isAdmin();

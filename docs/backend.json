@@ -2,23 +2,31 @@
 {
   "entities": {
     "UsernameMap": {
+      "title": "Username Map",
       "description": "Mapping of username to email/uid for multi-identifier login.",
+      "type": "object",
       "properties": {
         "uid": { "type": "string" },
         "email": { "type": "string" }
-      }
+      },
+      "required": ["uid", "email"]
     },
     "PublishRequest": {
+      "title": "Publish Request",
       "description": "Reader application for cloud contributor status.",
+      "type": "object",
       "properties": {
         "uid": { "type": "string" },
         "email": { "type": "string" },
         "requestedAt": { "type": "string", "format": "date-time" },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
-      }
+      },
+      "required": ["uid", "email", "status"]
     },
     "Book": {
+      "title": "Book",
       "description": "A cloud-hosted literary volume.",
+      "type": "object",
       "properties": {
         "title": { "type": "string" },
         "author": { "type": "string" },
@@ -26,15 +34,16 @@
         "views": { "type": "number" },
         "coverURL": { "type": "string" },
         "isCloud": { "type": "boolean" }
-      }
+      },
+      "required": ["title", "author", "genre"]
     }
   },
   "auth": {
     "providers": ["email"]
   },
   "firestore": {
-    "/usernames/{username}": { "schema": "#/entities/UsernameMap", "description": "Lookup index for username-based login." },
-    "/publishRequests/{requestId}": { "schema": "#/entities/PublishRequest", "description": "Global queue for contributor vetting." },
-    "/books/{bookId}": { "schema": "#/entities/Book", "description": "Main cloud library storage." }
+    "/usernames/{username}": { "schema": { "$ref": "#/entities/UsernameMap" }, "description": "Lookup index for username-based login." },
+    "/publishRequests/{requestId}": { "schema": { "$ref": "#/entities/PublishRequest" }, "description": "Global queue for contributor vetting." },
+    "/books/{bookId}": { "schema": { "$ref": "#/entities/Book" }, "description": "Main cloud library storage." }
   }
 }

@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, Globe, HardDrive, Sparkles, Send, FileText, ChevronDown, Check, ImageIcon, CloudUpload, ClipboardList } from 'lucide-react';
+import { Upload, BookPlus, Loader2, Globe, HardDrive, Sparkles, Send, FileText, ChevronDown, Check, ImageIcon, CloudUpload } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -68,7 +67,6 @@ export function UploadNovelForm() {
     if (!pastedText.trim()) return toast({ variant: 'destructive', title: 'Empty Content', description: 'Paste some text first.' });
     setIsAiAnalyzing(true);
     try {
-      // Use the first 2000 characters for analysis to be efficient
       const result = await parsePastedChapter(pastedText.substring(0, 2000));
       setTitle(result.bookTitle);
       setAuthor(result.author);
