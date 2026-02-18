@@ -497,13 +497,11 @@ export function UploadNovelForm() {
                   className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0"
                   style={{ height: `${progress}%` }}
                 >
-                  {/* Rotating wave shapes to create the surface effect */}
                   <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-[#1e293b] animate-liquid-wave opacity-80" />
                   <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[88%] rounded-[38%] bg-[#334155] animate-liquid-wave-fast opacity-40" />
                 </div>
               )}
 
-              {/* Button Content */}
               <div className="relative z-10 flex flex-col items-center justify-center">
                 {loading ? (
                   <>
