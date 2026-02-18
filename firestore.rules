@@ -7,15 +7,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    /**
-     * Verifies if the user is an administrator.
-     * Uses custom claims or email fallback for robustness.
-     */
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.admin == true ||
-        request.auth.token.email == "hashamcomp@gmail.com" ||
-        request.auth.uid == "KFRoNNMCn9XBK34tYwLhMHNZSD33"
+        request.auth.token.email == "hashamcomp@gmail.com"
       );
     }
 
@@ -32,42 +27,17 @@ service cloud.firestore {
         allow read: if true;
         allow write: if isAdmin();
       }
-      
-      // Public view counting fallback
-      allow update: if isSignedIn() && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
     }
 
     // USER PROFILES & HISTORY
     match /users/{userId} {
-      // Profiles are publicly viewable for anonymous linking
-      allow get: if true;
+      // Admin only access to user profiles as requested
+      allow read, write: if isAdmin();
       
-      // Admin can manage all users
-      allow list, write: if isAdmin();
-      
-      // Users can manage their own profile and history
-      allow create, update: if isSignedIn() && request.auth.uid == userId;
-
+      // Allow users to manage their own history if needed for sync (optional override)
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
-    }
-
-    // SYSTEM STATS & SETTINGS
-    match /stats/storageUsage {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /settings/approvedEmails {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    // UPLOAD REQUESTS
-    match /cloudUploadRequests/{requestId} {
-      allow create: if isSignedIn();
-      allow read, list, delete: if isAdmin();
     }
 
     // CHATS & MESSAGES
@@ -76,10 +46,10 @@ service cloud.firestore {
       allow create: if isSignedIn();
     }
     
-    match /usernames/{username} {
-      allow get: if true;
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    // Fallback for public stats
+    match /stats/storageUsage {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }

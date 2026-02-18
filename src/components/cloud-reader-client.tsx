@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'export { CloudReaderClient }';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon } from 'lucide-react';
@@ -191,18 +191,18 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   const updateHistory = (metaOverride?: any) => {
     const meta = metaOverride || metadata;
-    if (!meta || !firestore) return;
+    if (!meta) return;
 
     const bookTitle = meta.bookTitle || meta.title || 'Untitled';
     const bookAuthor = meta.author || 'Unknown';
     const coverURL = meta.coverURL || null;
     const genre = meta.genre || 'Novel';
 
-    // 1. Local storage persistence for all users (including unlogged in)
+    // 1. Local storage persistence for all users (instant resume truth)
     const localKey = `lounge-progress-${id}`;
     localStorage.setItem(localKey, currentChapterNum.toString());
 
-    // 2. Minimal history for unlogged users or session persistence
+    // 2. Minimal history for unlogged users (Browser Session History)
     saveToLocalHistory({
       id,
       title: bookTitle,
@@ -214,8 +214,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       isCloud: true
     });
 
-    // 3. Cloud persistence if authenticated (Anonymous or Registered)
-    if (user) {
+    // 3. Cloud persistence if authenticated (Synced History)
+    if (user && firestore) {
       const historyRef = doc(firestore, 'users', user.uid, 'history', id);
       setDoc(historyRef, {
         bookId: id,
@@ -226,7 +226,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         lastReadChapter: currentChapterNum,
         lastReadAt: serverTimestamp(),
         isCloud: true
-      }, { merge: true }).catch(() => {});
+      }, { merge: true }).catch(() => {
+        // Silently ignore if rules block history sync for regular users
+      });
     }
   };
 
