@@ -1,4 +1,3 @@
-
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore, collection, query, where, getDocs, limit, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { firebaseConfig } from "@/firebase/config";
@@ -112,7 +111,7 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
  */
 export async function POST(req: Request) {
   try {
-    const { fileUrl, pastedText, ownerId } = await req.json();
+    const { fileUrl, pastedText, ownerId, overrideMetadata } = await req.json();
     let parsedBook;
 
     if (fileUrl) {
@@ -121,18 +120,22 @@ export async function POST(req: Request) {
     } else if (pastedText) {
       const clean = removeCredits(cleanText(pastedText));
       parsedBook = {
-        title: "Pasted Manuscript",
-        author: "Anonymous",
+        title: overrideMetadata?.title || "Pasted Manuscript",
+        author: overrideMetadata?.author || "Anonymous",
         chapters: splitChapters(clean)
       };
     } else {
       return Response.json({ error: "No file or text provided" }, { status: 400 });
     }
 
+    const finalTitle = overrideMetadata?.title || parsedBook.title;
+    const finalAuthor = overrideMetadata?.author || parsedBook.author;
+    const finalGenres = overrideMetadata?.genres || ['Ingested'];
+
     // 1. Check/Create Book
     const bookQuery = query(
       collection(db, "books"),
-      where("title", "==", parsedBook.title),
+      where("title", "==", finalTitle),
       limit(1)
     );
     const existingBook = await getDocs(bookQuery);
@@ -143,16 +146,27 @@ export async function POST(req: Request) {
     } else {
       const newBookRef = doc(collection(db, "books"));
       bookId = newBookRef.id;
+      
+      const metaInfo = {
+        author: finalAuthor,
+        bookTitle: finalTitle,
+        totalChapters: parsedBook.chapters.length,
+        genre: finalGenres,
+        lastUpdated: serverTimestamp()
+      };
+
       await setDoc(newBookRef, {
-        title: parsedBook.title,
-        titleLower: parsedBook.title.toLowerCase(),
-        author: parsedBook.author,
-        authorLower: parsedBook.author.toLowerCase(),
+        title: finalTitle,
+        titleLower: finalTitle.toLowerCase(),
+        author: finalAuthor,
+        authorLower: finalAuthor.toLowerCase(),
         createdAt: serverTimestamp(),
+        lastUpdated: serverTimestamp(),
         isCloud: true,
         ownerId: ownerId || 'system',
         views: 0,
-        genre: ['Ingested']
+        genre: finalGenres,
+        metadata: { info: metaInfo }
       });
     }
 
