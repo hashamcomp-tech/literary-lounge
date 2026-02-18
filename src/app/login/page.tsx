@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -11,7 +10,7 @@ import { useAuth, useFirestore, useUser } from '@/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Mail, Shield } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Eye, EyeOff } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function LoginPage() {
@@ -26,6 +25,7 @@ export default function LoginPage() {
   const [regEmail, setRegEmail] = useState('');
   const [regUsername, setRegUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,14 +131,25 @@ export default function LoginPage() {
                           required 
                           className="h-14 rounded-2xl bg-muted/20" 
                         />
-                        <Input 
-                          type="password" 
-                          placeholder="Password" 
-                          value={password} 
-                          onChange={e => setPassword(e.target.value)} 
-                          required 
-                          className="h-14 rounded-2xl bg-muted/20" 
-                        />
+                        <div className="relative">
+                          <Input 
+                            type={showPassword ? "text" : "password"} 
+                            placeholder="Password" 
+                            value={password} 
+                            onChange={e => setPassword(e.target.value)} 
+                            required 
+                            className="h-14 rounded-2xl bg-muted/20 pr-12" 
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl text-muted-foreground hover:text-primary transition-colors"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                          </Button>
+                        </div>
                       </div>
                       <Button type="submit" className="w-full h-16 font-black rounded-2xl text-lg shadow-xl" disabled={loading}>
                         {loading ? <Loader2 className="animate-spin" /> : <LogIn className="mr-2 h-5 w-5" />}
@@ -165,14 +176,25 @@ export default function LoginPage() {
                           required 
                           className="h-14 rounded-2xl bg-muted/20" 
                         />
-                        <Input 
-                          type="password" 
-                          placeholder="Create Password" 
-                          value={password} 
-                          onChange={e => setPassword(e.target.value)} 
-                          required 
-                          className="h-14 rounded-2xl bg-muted/20" 
-                        />
+                        <div className="relative">
+                          <Input 
+                            type={showPassword ? "text" : "password"} 
+                            placeholder="Create Password" 
+                            value={password} 
+                            onChange={e => setPassword(e.target.value)} 
+                            required 
+                            className="h-14 rounded-2xl bg-muted/20 pr-12" 
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 h-10 w-10 rounded-xl text-muted-foreground hover:text-primary transition-colors"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                          </Button>
+                        </div>
                       </div>
                       <Button type="submit" className="w-full h-16 font-black rounded-2xl text-lg shadow-xl bg-primary" disabled={loading}>
                         {loading ? <Loader2 className="animate-spin" /> : <UserPlus className="mr-2 h-5 w-5" />}
