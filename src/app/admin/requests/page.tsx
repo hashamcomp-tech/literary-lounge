@@ -2,6 +2,7 @@
 'use client';
 
 import { useState } from 'react';
+import { MessageSquareQuote } from 'lucide-react';
 import Navbar from '@/components/navbar';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
@@ -15,7 +16,6 @@ import {
   Trash2, 
   CheckCircle2, 
   ArrowLeft, 
-  MessageSquareQuote, 
   User, 
   FileText, 
   Sparkles, 

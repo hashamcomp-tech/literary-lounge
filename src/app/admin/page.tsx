@@ -121,6 +121,15 @@ export default function AdminPage() {
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
+  // New Cloud Upload Requests query for notification dot
+  const cloudRequestsQuery = useMemoFirebase(() => {
+    if (!isAdmin || isOfflineMode || !db) return null;
+    return collection(db, 'cloudUploadRequests');
+  }, [db, isAdmin, isOfflineMode]);
+
+  const { data: cloudRequests } = useCollection(cloudRequestsQuery);
+  const hasCloudRequests = cloudRequests && cloudRequests.length > 0;
+
   const booksQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
     return query(collection(db, 'books'), orderBy('createdAt', 'desc'), limit(100));
@@ -176,7 +185,17 @@ export default function AdminPage() {
               <h1 className="text-5xl font-headline font-black leading-none">Lounge Control</h1>
             </div>
             <div className="flex items-center gap-3">
-              <Link href="/admin/requests"><Button variant="outline" className="rounded-2xl">Submissions</Button></Link>
+              <Link href="/admin/requests">
+                <Button variant="outline" className="rounded-2xl relative">
+                  Submissions
+                  {hasCloudRequests && (
+                    <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                  )}
+                </Button>
+              </Link>
               <Link href="/admin/dashboard"><Button className="rounded-2xl">Live Analytics</Button></Link>
             </div>
           </header>

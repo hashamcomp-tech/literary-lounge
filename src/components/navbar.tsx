@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebase, useCollection } from '@/firebase';
+import { doc, collection, query } from 'firebase/firestore';
 import { ModeToggle } from '@/components/mode-toggle';
 import {
   DropdownMenu,
@@ -55,6 +55,15 @@ export default function Navbar() {
     };
     checkAdminStatus();
   }, [user, profile, db, isUserLoading, isOfflineMode]);
+
+  // Real-time listener for new cloud requests (notifications for admins)
+  const requestsQuery = useMemoFirebase(() => {
+    if (!isAdmin || isOfflineMode || !db) return null;
+    return collection(db, 'cloudUploadRequests');
+  }, [db, isAdmin, isOfflineMode]);
+
+  const { data: requests } = useCollection(requestsQuery);
+  const hasNewRequests = requests && requests.length > 0;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,8 +115,14 @@ export default function Navbar() {
             <div className="flex items-center gap-1">
               {isAdmin && !isOfflineMode ? (
                 <Link href="/admin">
-                  <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full" title="Admin Dashboard">
+                  <Button variant="ghost" size="icon" className="text-primary hover:bg-primary/10 rounded-full relative" title="Admin Dashboard">
                     <Shield className="h-5 w-5" />
+                    {hasNewRequests && (
+                      <span className="absolute top-2 right-2 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                      </span>
+                    )}
                   </Button>
                 </Link>
               ) : null}
