@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -93,21 +94,48 @@ export function UploadNovelForm() {
     setSelectedFile(file);
     setIsIdentifying(true);
     try {
-      // Trigger AI identification based on filename
-      const result = await identifyBookFromFilename(file.name);
-      if (result.title) setTitle(result.title);
-      if (result.author) setAuthor(result.author);
-      if (result.genres && result.genres.length > 0) {
-        // Intersect identified genres with our supported list
-        const validGenres = result.genres.filter(g => GENRES.includes(g));
-        if (validGenres.length > 0) setSelectedGenres(validGenres);
+      const isEpub = file.name.toLowerCase().endsWith('.epub');
+      
+      if (isEpub) {
+        // For EPUBs, we upload to temp storage and use the Ingest API to extract metadata
+        const fileUrl = await uploadManuscriptFile(storage!, file, `temp_${Date.now()}`);
+        const response = await fetch('/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            fileUrl, 
+            returnOnly: true 
+          })
+        });
+
+        if (response.ok) {
+          const { book } = await response.json();
+          if (book.title) setTitle(book.title);
+          if (book.author) setAuthor(book.author);
+          if (book.genres && book.genres.length > 0) {
+            const validGenres = book.genres.filter((g: string) => GENRES.includes(g));
+            if (validGenres.length > 0) setSelectedGenres(validGenres);
+          }
+          toast({ title: 'EPUB Metadata Parsed', description: `Detected: ${book.title}` });
+        }
+      } else {
+        // For text files, we read a snippet and use AI
+        const snippet = await file.slice(0, 2000).text();
+        const result = await identifyBookFromFilename({
+          filename: file.name,
+          textSnippet: snippet
+        });
+        
+        if (result.title) setTitle(result.title);
+        if (result.author) setAuthor(result.author);
+        if (result.genres && result.genres.length > 0) {
+          const validGenres = result.genres.filter(g => GENRES.includes(g));
+          if (validGenres.length > 0) setSelectedGenres(validGenres);
+        }
+        toast({ title: 'AI Identification Complete', description: `Identified: ${result.title}` });
       }
-      toast({ 
-        title: 'AI Librarian Active', 
-        description: `Identified: ${result.title || 'Unknown Title'} by ${result.author || 'Unknown Author'}` 
-      });
     } catch (err) {
-      console.warn("AI Identification failed, proceeding with manual entry.");
+      console.warn("Metadata extraction failed, proceeding with manual entry.");
     } finally {
       setIsIdentifying(false);
     }
@@ -346,7 +374,7 @@ export function UploadNovelForm() {
                         <Loader2 className="h-16 w-16 animate-spin text-primary opacity-20 absolute inset-0" />
                         <BrainCircuit className="h-10 w-10 text-primary absolute inset-3 animate-pulse" />
                       </div>
-                      <p className="text-sm font-black uppercase tracking-widest text-primary animate-pulse">AI Examining Manuscript...</p>
+                      <p className="text-sm font-black uppercase tracking-widest text-primary animate-pulse">AI Identifying Manuscript...</p>
                     </div>
                   ) : (
                     <>
