@@ -1,247 +1,135 @@
-
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore, collection, query, where, getDocs, limit, doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { firebaseConfig } from "@/firebase/config";
-import EPub from "epub2";
+import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import JSZip from "jszip";
+import { v4 as uuidv4 } from "uuid";
 
-// Initialize Firebase for server-side usage
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-const db = getFirestore(app);
+/* -------------------------------
+  Helper: Split chapters by heading
+---------------------------------*/
+function splitChapters(rawText: string) {
+  const chapterRegex = /^(chapter\s+\d+.*)$/gim;
+  const matches = [...rawText.matchAll(chapterRegex)];
 
-/**
- * Robust HTML to Text conversion for EPUB content.
- * Preserves semantic paragraph spacing and headers while stripping all noise.
- */
-function htmlToReadableText(html: string): string {
-  if (!html) return "";
-  
-  // 1. Replace block tags with double newlines to maintain paragraph structure
-  let text = html
-    .replace(/<(p|div|h[1-6]|section|article|li)[^>]*>/gi, '\n\n')
-    .replace(/<\/ (p|div|h[1-6]|section|article|li)>/gi, '\n\n')
-    .replace(/<br\s*\/?>/gi, '\n');
-  
-  // 2. Remove all remaining tags (scripts, styles, etc.)
-  text = text.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
-  text = text.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "");
-  text = text.replace(/<[^>]*>/g, ' ');
-  
-  // 3. Decode common HTML entities
-  text = text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&rsquo;/g, "'")
-    .replace(/&lsquo;/g, "'")
-    .replace(/&rdquo;/g, '"')
-    .replace(/&ldquo;/g, '"')
-    .replace(/&mdash;/g, '—')
-    .replace(/&ndash;/g, '–');
+  if (!matches.length) return [{ title: "Chapter 1", content: rawText }];
 
-  // 4. Normalize whitespace: trim lines and remove excessive gaps
-  return text
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-    .join('\n\n');
-}
-
-/**
- * Remove common ebook artifacts and watermarks.
- */
-function cleanManuscriptText(text: string) {
-  const patterns = [
-    /Project Gutenberg.*?\n/gi,
-    /©.*?\n/gi,
-    /All rights reserved.*?\n/gi,
-    /Converted by.*?\n/gi,
-    /This ebook.*?is for.*?\n/gi,
-    /http[s]?:\/\/\S+/gi // Remove URLs
-  ];
-  let cleaned = text;
-  patterns.forEach(p => { cleaned = cleaned.replace(p, ""); });
-  return cleaned.trim();
-}
-
-/**
- * Sequential processing of EPUB chapters to ensure stability.
- */
-async function processEpubChapters(epub: EPub): Promise<any[]> {
   const chapters = [];
-  // flow is the ordered list of IDs to read
-  for (let item of epub.flow) {
-    if (!item.id) continue;
-    
-    // Safety: ignore non-text assets
-    const manifestItem = epub.manifest[item.id];
-    const mediaType = manifestItem?.['media-type'] || '';
-    if (mediaType && !mediaType.includes('xml') && !mediaType.includes('html') && !mediaType.includes('text')) {
-      continue;
-    }
-
-    try {
-      const rawData = await new Promise<any>((res, rej) => {
-        epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(txt || "")));
-      });
-      
-      const html = Buffer.isBuffer(rawData) ? rawData.toString('utf8') : rawData;
-      const cleanBody = htmlToReadableText(html);
-      const finalContent = cleanManuscriptText(cleanBody);
-      
-      // Only keep chapters with significant content
-      if (finalContent.length > 100) {
-        chapters.push({
-          title: item.title || manifestItem?.['title'] || "Untitled Chapter",
-          content: finalContent
-        });
-      }
-    } catch (err) {
-      console.warn(`Skipping chapter ${item.id} due to parse error`);
-    }
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index!;
+    const end = i + 1 < matches.length ? matches[i + 1].index! : rawText.length;
+    const title = matches[i][0].trim();
+    const content = rawText.slice(start, end).trim();
+    chapters.push({ title, content });
   }
   return chapters;
 }
 
-/**
- * Main API Route Handler.
- */
+/* -------------------------------
+  Helper: Create XHTML per chapter
+---------------------------------*/
+function createXHTML(title: string, body: string) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>${title}</title>
+  <meta charset="utf-8"/>
+</head>
+<body>
+<h1>${title}</h1>
+${body.split("\n\n").map(p => `<p>${p.trim()}</p>`).join("\n")}
+</body>
+</html>`;
+}
+
+/* -------------------------------
+  API Route
+---------------------------------*/
 export async function POST(req: Request) {
-  const tmpPath = path.join('/tmp', `${Date.now()}_upload.epub`);
-  
   try {
-    const { fileUrl, ownerId, overrideMetadata, returnOnly } = await req.json();
-    
-    if (!fileUrl) {
-      return Response.json({ error: "No file URL provided" }, { status: 400 });
-    }
+    const data = await req.json();
+    const { title, author, text } = data;
 
-    // Download to disk for EPub parser
-    const res = await fetch(fileUrl);
-    if (!res.ok) throw new Error(`Failed to download manuscript: ${res.statusText}`);
-    const arrayBuffer = await res.arrayBuffer();
-    fs.writeFileSync(tmpPath, Buffer.from(arrayBuffer));
+    const zip = new JSZip();
+    const bookId = uuidv4();
 
-    const parsedBook = await new Promise<any>((resolve, reject) => {
-      const epub = new EPub(tmpPath);
-      const timeout = setTimeout(() => reject(new Error("EPUB parsing timed out")), 45000);
+    // Required: mimetype uncompressed first
+    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
 
-      epub.on("end", async () => {
-        clearTimeout(timeout);
-        try {
-          const chapters = await processEpubChapters(epub);
-          resolve({
-            title: epub.metadata.title || "Unknown Title",
-            author: epub.metadata.creator || "Unknown Author",
-            chapters
-          });
-        } catch (err) { reject(err); }
-      });
+    const metaInf = zip.folder("META-INF");
+    metaInf?.file(
+      "container.xml",
+      `<?xml version="1.0"?>
+<container version="1.0"
+ xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+ <rootfiles>
+   <rootfile full-path="OEBPS/content.opf"
+     media-type="application/oebps-package+xml"/>
+ </rootfiles>
+</container>`
+    );
 
-      epub.on("error", (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
+    const oebps = zip.folder("OEBPS");
 
-      epub.parse();
+    const chapters = splitChapters(text);
+
+    // Add chapter files
+    chapters.forEach((chapter, i) => {
+      const filename = `chapter${i + 1}.xhtml`;
+      oebps?.file(filename, createXHTML(chapter.title, chapter.content));
     });
 
-    // Cleanup disk
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    // Create nav.xhtml
+    const navItems = chapters
+      .map((c, i) => `<li><a href="chapter${i + 1}.xhtml">${c.title}</a></li>`)
+      .join("\n");
 
-    const finalTitle = (overrideMetadata?.title || parsedBook.title || "Untitled").trim();
-    const finalAuthor = (overrideMetadata?.author || parsedBook.author || "Anonymous").trim();
-    const finalGenres = overrideMetadata?.genres || ['Ingested'];
+    const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:epub="http://www.idpf.org/2007/ops">
+<head><meta charset="utf-8"/><title>Navigation</title></head>
+<body>
+<nav epub:type="toc"><ol>${navItems}</ol></nav>
+</body>
+</html>`;
 
-    // If client just wants the parsed data (e.g. for Private Archive)
-    if (returnOnly) {
-      return Response.json({ 
-        success: true, 
-        book: {
-          title: finalTitle,
-          author: finalAuthor,
-          genres: finalGenres,
-          chapters: parsedBook.chapters
-        }
-      });
-    }
+    oebps?.file("nav.xhtml", navXhtml);
 
-    // Cloud Logic
-    const bookQuery = query(
-      collection(db, "books"),
-      where("titleLower", "==", finalTitle.toLowerCase()),
-      limit(1)
-    );
-    const existingBookSnap = await getDocs(bookQuery);
+    // content.opf
+    const manifestItems = chapters
+      .map((_, i) => `<item id="chapter${i + 1}" href="chapter${i + 1}.xhtml" media-type="application/xhtml+xml"/>`)
+      .join("\n");
 
-    let bookId;
-    let currentMaxChapter = 0;
-    let existingData = null;
+    const spineItems = chapters.map((_, i) => `<itemref idref="chapter${i + 1}"/>`).join("\n");
 
-    if (!existingBookSnap.empty) {
-      const docSnap = existingBookSnap.docs[0];
-      bookId = docSnap.id;
-      existingData = docSnap.data();
-      currentMaxChapter = existingData.metadata?.info?.totalChapters || 0;
-    } else {
-      const newBookRef = doc(collection(db, "books"));
-      bookId = newBookRef.id;
-    }
+    const opf = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:identifier id="bookid">${bookId}</dc:identifier>
+<dc:title>${title}</dc:title>
+<dc:creator>${author}</dc:creator>
+<dc:language>en</dc:language>
+</metadata>
+<manifest>
+<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+${manifestItems}
+</manifest>
+<spine>
+${spineItems}
+</spine>
+</package>`;
 
-    // Insert Chapters
-    let ingestMaxChapter = 0;
-    for (let i = 0; i < parsedBook.chapters.length; i++) {
-      const chap = parsedBook.chapters[i];
-      const chapterNumber = i + 1;
-      const chRef = doc(db, "books", bookId, "chapters", chapterNumber.toString());
-      
-      await setDoc(chRef, {
-        chapterNumber: chapterNumber, 
-        title: chap.title,
-        content: chap.content,
-        createdAt: serverTimestamp(),
-        ownerId: ownerId || 'system'
-      });
-      ingestMaxChapter = Math.max(ingestMaxChapter, chapterNumber);
-    }
+    oebps?.file("content.opf", opf);
 
-    // Update parent metadata
-    const finalTotalChapters = Math.max(currentMaxChapter, ingestMaxChapter);
-    const bookRef = doc(db, "books", bookId);
-    
-    await setDoc(bookRef, {
-      title: finalTitle,
-      titleLower: finalTitle.toLowerCase(),
-      author: finalAuthor,
-      authorLower: finalAuthor.toLowerCase(),
-      createdAt: existingData?.createdAt || serverTimestamp(),
-      lastUpdated: serverTimestamp(),
-      isCloud: true,
-      ownerId: existingData?.ownerId || ownerId || 'system',
-      views: existingData?.views || 0,
-      genre: finalGenres,
-      coverURL: existingData?.coverURL || null,
-      coverSize: existingData?.coverSize || 0,
-      metadata: { info: { 
-        author: finalAuthor, 
-        bookTitle: finalTitle, 
-        totalChapters: finalTotalChapters, 
-        genre: finalGenres, 
-        coverURL: existingData?.coverURL || null,
-        coverSize: existingData?.coverSize || 0,
-        lastUpdated: serverTimestamp() 
-      } }
-    }, { merge: true });
+    // Generate EPUB
+    const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 
-    return Response.json({ success: true, bookId, chaptersAdded: ingestMaxChapter });
+    // Optional: save on server (or return as download)
+    const outputPath = path.join(process.cwd(), "book.epub");
+    fs.writeFileSync(outputPath, buffer);
 
-  } catch (err: any) {
-    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-    console.error("Ingest API Error:", err);
-    return Response.json({ error: "Processing failed", details: err.message }, { status: 500 });
+    return NextResponse.json({ message: "EPUB generated", path: outputPath });
+  } catch (err) {
+    return NextResponse.json({ error: (err as any).message });
   }
 }
