@@ -9,7 +9,6 @@ import { useState, useEffect } from 'react';
 import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebase, useCollection } from '@/firebase';
 import { doc, collection, query } from 'firebase/firestore';
 import { ModeToggle } from '@/components/mode-toggle';
-import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -133,7 +132,6 @@ export default function Navbar() {
                 </Button>
               </Link>
               
-              <VoiceSettingsPopover />
               <ModeToggle />
 
               <DropdownMenu>
