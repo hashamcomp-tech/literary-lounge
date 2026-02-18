@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -15,14 +14,13 @@ import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-l
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
-import { uploadManuscriptFile } from '@/lib/upload-cover';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
 interface Suggestion {
@@ -55,7 +53,7 @@ export function UploadNovelForm() {
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
-  // Suggestion States
+  // Autocomplete States
   const [allBooks, setAllBooks] = useState<Suggestion[]>([]);
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -193,127 +191,51 @@ export function UploadNovelForm() {
       );
 
       const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
-      const isEpub = selectedFile?.name.toLowerCase().endsWith('.epub');
+      
+      // Get content to send to Ingest API
+      const fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
+      
+      setProgress(30);
+      setLoadingMessage('Generating Digital Volume...');
+      
+      // Call Ingest API with specific JSON format
+      const ingestResponse = await fetch('/api/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: searchTitle,
+          author: searchAuthor,
+          text: fullText
+        })
+      });
+
+      if (!ingestResponse.ok) {
+        throw new Error("EPUB generation failed on server.");
+      }
+
+      setProgress(70);
+      setLoadingMessage('Syncing with Library...');
 
       if (uploadMode === 'cloud') {
-        if (!canUploadCloud) throw new Error("You don't have permission to publish to the cloud.");
-        
-        if (sourceMode === 'file' && selectedFile && isEpub) {
-          setProgress(20);
-          setLoadingMessage('Uploading manuscript...');
-          const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
-          
-          setProgress(60);
-          setLoadingMessage('Cloud processing...');
-          const response = await fetch('/api/ingest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fileUrl,
-              ownerId: user!.uid,
-              overrideMetadata: {
-                title: searchTitle,
-                author: searchAuthor,
-                genres: selectedGenres.length > 0 ? selectedGenres : undefined
-              }
-            })
-          });
-
-          if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.details || "Cloud ingestion engine error.");
-          }
-          setProgress(100);
-          toast({ title: 'Success', description: 'Manuscript published to global library.' });
-        } else {
-          setProgress(30);
-          setLoadingMessage('Preparing content...');
-          const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
-          
-          // Validation for binary data if incorrectly picked up as text
-          if (text.includes('PK\x03\x04')) {
-            throw new Error("Binary file detected. Please ensure you are uploading a valid text or EPUB file.");
-          }
-
-          setProgress(70);
-          setLoadingMessage('Syncing with Cloud...');
-          await uploadBookToCloud({
-            db: db!, storage: storage!, bookId,
-            title: searchTitle, author: searchAuthor, genres: selectedGenres,
-            rawContent: text, ownerId: user!.uid,
-            manualChapterInfo: sourceMode === 'text' ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
-          });
-          setProgress(100);
-          toast({ title: 'Success', description: 'Available globally in the Lounge.' });
-        }
+        if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
+        await uploadBookToCloud({
+          db: db!, storage: storage!, bookId,
+          title: searchTitle, author: searchAuthor, genres: selectedGenres,
+          rawContent: fullText, ownerId: user!.uid,
+          manualChapterInfo: { number: parseInt(chapterNumber), title: chapterTitle }
+        });
       } else {
-        // Local Mode
-        if (sourceMode === 'file' && selectedFile && isEpub) {
-          setProgress(20);
-          setLoadingMessage('Uploading manuscript...');
-          const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
-          
-          setProgress(60);
-          setLoadingMessage('Parsing EPUB locally...');
-          const response = await fetch('/api/ingest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              fileUrl, 
-              returnOnly: true, 
-              overrideMetadata: { title: searchTitle, author: searchAuthor, genres: selectedGenres } 
-            })
-          });
-
-          if (!response.ok) throw new Error("Private archive engine failed.");
-          
-          const { book } = await response.json();
-          setProgress(80);
-          setLoadingMessage('Archiving...');
-          
-          await saveLocalBook({ 
-            id: bookId, 
-            title: book.title, 
-            author: book.author, 
-            genre: book.genres, 
-            isLocalOnly: true,
-            totalChapters: book.chapters.length
-          });
-          
-          for (let i = 0; i < book.chapters.length; i++) {
-            await saveLocalChapter({ 
-              bookId, 
-              chapterNumber: i + 1, 
-              content: book.chapters[i].content, 
-              title: book.chapters[i].title 
-            });
-          }
-          setProgress(100);
-          toast({ title: 'Success', description: 'Manuscript added to Private Archive.' });
-        } else {
-          setProgress(50);
-          setLoadingMessage('Archiving content...');
-          let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
-          
-          if (fullText.includes('PK\x03\x04')) {
-            throw new Error("Binary file detected. Please ensure you are uploading a valid text file.");
-          }
-
-          const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
-          
-          await saveLocalBook({ 
-            id: bookId, 
-            title: searchTitle, 
-            author: searchAuthor, 
-            genre: selectedGenres, 
-            isLocalOnly: true,
-            totalChapters: finalTotal
-          });
-          await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
-          setProgress(100);
-          toast({ title: 'Success', description: 'Stored in Private Archive.' });
-        }
+        // Local Archive Mode
+        const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
+        await saveLocalBook({ 
+          id: bookId, title: searchTitle, author: searchAuthor, genre: selectedGenres, 
+          isLocalOnly: true, totalChapters: finalTotal 
+        });
+        await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
       }
+
+      setProgress(100);
+      toast({ title: 'Success', description: 'Volume added to library.' });
       router.push('/');
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });
@@ -468,7 +390,7 @@ export function UploadNovelForm() {
                     <FileText className="h-8 w-8 text-primary" />
                   </div>
                   <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
-                  <p className="text-[10px] text-muted-foreground">EPUBs are auto-parsed into chapters.</p>
+                  <p className="text-[10px] text-muted-foreground">Standard text files only for now.</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
