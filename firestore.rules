@@ -21,10 +21,10 @@ service cloud.firestore {
 
     // BOOKS & MANUSCRIPTS
     match /books/{bookId} {
-      // Books are publicly readable to allow unlogged users access
+      // Anyone can read book metadata (title, chapters, etc.)
       allow read: if true;
       
-      // Only administrators can add, update, or delete books
+      // Only admin can add/update/delete books
       allow write: if isAdmin();
 
       // Sub-collections (chapters, messages)
