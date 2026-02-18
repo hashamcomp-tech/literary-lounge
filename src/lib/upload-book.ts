@@ -3,22 +3,19 @@ import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 
 /**
- * Converts Roman numerals to numbers for chapter indexing.
+ * Clean manuscript artifacts and normalize whitespace.
  */
-function romanToInt(roman: string): number {
-  const map: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
-  let num = 0, prev = 0;
-  roman = roman.toUpperCase();
-  for (let i = roman.length - 1; i >= 0; i--) {
-    let val = map[roman[i]] || 0;
-    if (val < prev) num -= val; else num += val;
-    prev = val;
-  }
-  return num;
+function cleanContent(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
+    .replace(/Page\s+\d+\s+of\s+\d+/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /**
- * Parses full manuscript text into chapters using regex if structured chapters aren't provided.
+ * Legacy Fallback: Parses full manuscript text into chapters using regex if structured chapters aren't provided.
  */
 function parseBookWithChapters(text: string): { title: string; chapters: { number: number; title: string; content: string }[] } {
   const lines = text.split(/\r?\n/);
@@ -33,7 +30,7 @@ function parseBookWithChapters(text: string): { title: string; chapters: { numbe
     if (match) {
       if (currentChapter) chapters.push(currentChapter);
       let numStr = match[2];
-      let number = /^[0-9]+$/.test(numStr) ? parseInt(numStr) : romanToInt(numStr);
+      let number = /^[0-9]+$/.test(numStr) ? parseInt(numStr) : 1; 
       let title = match[3] ? match[3].trim() : `Chapter ${number}`;
       currentChapter = { number, title, content: "" };
     } else {
@@ -50,19 +47,7 @@ function parseBookWithChapters(text: string): { title: string; chapters: { numbe
 }
 
 /**
- * Clean manuscript artifacts.
- */
-function cleanContent(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
-    .replace(/Page\s+\d+\s+of\s+\d+/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-/**
- * Uploads a book to the cloud with optional pre-parsed chapters.
+ * Uploads a book to the cloud. Supports both raw text and pre-parsed chapter arrays.
  */
 export async function uploadBookToCloud({
   db,
@@ -89,26 +74,26 @@ export async function uploadBookToCloud({
   manualChapterInfo?: { number: number; title: string };
   preParsedChapters?: { title: string; content: string }[];
 }) {
-  let chapters: any[] = [];
+  let chapters: { chapterNumber: number; title: string; content: string }[] = [];
   let detectedTitle = title;
 
-  // 1. Determine Chapter Structure
+  // 1. Determine Chapter Structure Logic
   if (preParsedChapters && preParsedChapters.length > 0) {
-    // Use high-fidelity chapters from the Ingest API
+    // High-fidelity structured path (from EPUB Ingest API)
     chapters = preParsedChapters.map((ch, i) => ({
       chapterNumber: i + 1,
       title: ch.title || `Chapter ${i + 1}`,
       content: cleanContent(ch.content)
     }));
   } else if (manualChapterInfo && rawContent) {
-    // Use manual single chapter entry
+    // Manual single chapter entry path
     chapters = [{
       chapterNumber: manualChapterInfo.number,
       title: manualChapterInfo.title,
       content: cleanContent(rawContent)
     }];
   } else if (rawContent) {
-    // Fallback to legacy regex splitting
+    // Legacy fallback path (regex splitting)
     const parsed = parseBookWithChapters(rawContent);
     chapters = parsed.chapters.map(ch => ({
       ...ch,
@@ -119,10 +104,10 @@ export async function uploadBookToCloud({
   }
 
   if (chapters.length === 0) {
-    throw new Error("No manuscript content detected for upload.");
+    throw new Error("No readable manuscript content detected.");
   }
 
-  // 2. Fetch/Create Metadata
+  // 2. Build Metadata & Sync Storage
   const bookRef = doc(db, 'books', bookId);
   const existingSnap = await getDoc(bookRef);
   const existingData = existingSnap.exists() ? existingSnap.data() : null;
@@ -164,7 +149,7 @@ export async function uploadBookToCloud({
     metadata: { info: metadataInfo }
   };
 
-  // 3. Commit to Firestore
+  // 3. Batch Transaction for Integrity
   await setDoc(bookRef, rootPayload, { merge: true });
 
   const batch = writeBatch(db);

@@ -1,47 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from 'fs';
-import { EPub } from 'epub';
+import { EPub } from 'epub2';
 import { JSDOM } from 'jsdom';
 import path from 'path';
 import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * @fileOverview Robust EPUB Reader API.
- * Extracts chapters from digital volumes and returns clean text.
+ * @fileOverview High-reliability EPUB Extraction API.
+ * Extracts structured chapters from digital volumes using server-side decompression.
  */
 export async function POST(req: NextRequest) {
+  let tempFilePath: string | null = null;
+  
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
     
     if (!file) {
-      return NextResponse.json({ error: "No manuscript file detected." }, { status: 400 });
+      return NextResponse.json({ error: "No digital volume detected." }, { status: 400 });
     }
 
-    // Prepare temporary storage for the binary archive
+    // 1. Prepare secure temporary storage
     const buffer = Buffer.from(await file.arrayBuffer());
     const tempDir = os.tmpdir();
-    const tempFilePath = path.join(tempDir, `${uuidv4()}.epub`);
+    tempFilePath = path.join(tempDir, `lounge_${uuidv4()}.epub`);
     fs.writeFileSync(tempFilePath, buffer);
 
+    // 2. Wrap EPUB parser in a Promise lifecycle
     return new Promise((resolve) => {
-      // Initialize the reader with the temporary path
-      const epub = new EPub(tempFilePath);
+      const epub = new EPub(tempFilePath!);
 
       epub.on('error', (err) => {
-        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        resolve(NextResponse.json({ error: 'Archive Error: ' + err.message }, { status: 500 }));
+        if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        resolve(NextResponse.json({ error: 'Archive Corruption: ' + err.message }, { status: 500 }));
       });
 
       epub.on('end', async () => {
         try {
-          // Wrap chapter extraction in a Promise.all to ensure completion
+          // 3. Sequentially extract chapters to maintain order and fidelity
           const chapterPromises = epub.flow.map((item, i) => {
             return new Promise<{ title: string; content: string; order: number }>((res) => {
               epub.getChapter(item.id, (err, text) => {
-                if (err) {
-                  res({ title: `Chapter ${i + 1}`, content: '[Extraction Failed]', order: i });
+                if (err || !text) {
+                  res({ title: `Chapter ${i + 1}`, content: '[Empty or Encrypted Content]', order: i });
                   return;
                 }
 
@@ -60,28 +62,28 @@ export async function POST(req: NextRequest) {
 
           const results = await Promise.all(chapterPromises);
           
-          // Sort results to match the book's intended sequence
+          // 4. Sort results to match intended reading sequence
           const sortedChapters = results
             .sort((a, b) => a.order - b.order)
             .map(({ title, content }) => ({ title, content }));
 
-          // Cleanup temporary files immediately
-          if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+          // Cleanup
+          if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
           
           resolve(NextResponse.json({ 
             success: true,
             chapters: sortedChapters 
           }));
         } catch (e: any) {
-          if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-          resolve(NextResponse.json({ error: 'Parsing failure: ' + e.message }, { status: 500 }));
+          if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+          resolve(NextResponse.json({ error: 'Extraction Failure: ' + e.message }, { status: 500 }));
         }
       });
 
-      // Execute parsing sequence
       epub.parse();
     });
   } catch (err: any) {
-    return NextResponse.json({ error: 'Ingestion pipeline error: ' + err.message }, { status: 500 });
+    if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+    return NextResponse.json({ error: 'System Error: ' + err.message }, { status: 500 });
   }
 }
