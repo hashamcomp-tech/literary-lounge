@@ -27,7 +27,7 @@ function cleanText(text: string) {
 function htmlToReadableText(html: string): string {
   if (!html) return "";
   
-  // Replace block tags with newlines
+  // Replace block tags with newlines to preserve paragraph structure
   let text = html
     .replace(/<(p|div|h[1-6]|li|section|article)[^>]*>/gi, '\n')
     .replace(/<\/ (p|div|h[1-6]|li|section|article)>/gi, '\n')
@@ -47,9 +47,11 @@ function htmlToReadableText(html: string): string {
     .replace(/&rsquo;/g, "'")
     .replace(/&lsquo;/g, "'")
     .replace(/&rdquo;/g, '"')
-    .replace(/&ldquo;/g, '"');
+    .replace(/&ldquo;/g, '"')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–');
 
-  // Normalize whitespace
+  // Normalize whitespace: remove triple+ newlines and trim each line
   return text
     .split('\n')
     .map(line => line.trim())
@@ -58,7 +60,7 @@ function htmlToReadableText(html: string): string {
 }
 
 /**
- * Remove legal-safe credits/watermarks.
+ * Remove common ebook artifacts and watermarks.
  */
 function removeCredits(text: string) {
   const patterns = [
@@ -75,7 +77,7 @@ function removeCredits(text: string) {
 }
 
 /**
- * Split chapters for pasted text.
+ * Split chapters for pasted text fallback.
  */
 function splitChapters(text: string) {
   const chapterRegex = /(chapter\s+\d+|chapter\s+[ivxlcdm]+|\n\d+\.)/gi;
@@ -108,7 +110,7 @@ async function downloadFile(url: string) {
  * Parse EPUB buffer into metadata + clean text chapters.
  */
 async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
-  const tmpPath = path.join('/tmp', `${Date.now()}.epub`);
+  const tmpPath = path.join('/tmp', `${Date.now()}_upload.epub`);
   fs.writeFileSync(tmpPath, buffer);
 
   return new Promise((resolve, reject) => {
@@ -117,13 +119,14 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
       
       const timeout = setTimeout(() => {
         if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-        reject(new Error("EPUB parsing timed out after 45 seconds."));
+        reject(new Error("EPUB parsing timed out. The file might be too complex or corrupt."));
       }, 45000);
 
       epub.on("end", async function () {
         clearTimeout(timeout);
         try {
           const chapters = [];
+          // Flow contains the ordered list of items to be read
           for (let item of epub.flow) {
             if (!item.id) continue;
             
@@ -152,6 +155,11 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
           
           if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
           
+          if (chapters.length === 0) {
+            reject(new Error("No readable text content found in the EPUB."));
+            return;
+          }
+
           resolve({
             title: epub.metadata.title || "Unknown Title",
             author: epub.metadata.creator || "Unknown Author",
@@ -199,8 +207,8 @@ export async function POST(req: Request) {
       return Response.json({ error: "No file or text provided" }, { status: 400 });
     }
 
-    const finalTitle = (overrideMetadata?.title || parsedBook.title).trim();
-    const finalAuthor = (overrideMetadata?.author || parsedBook.author).trim();
+    const finalTitle = (overrideMetadata?.title || parsedBook.title || "Untitled").trim();
+    const finalAuthor = (overrideMetadata?.author || parsedBook.author || "Anonymous").trim();
     const finalGenres = overrideMetadata?.genres || ['Ingested'];
 
     // If client just wants the parsed data (e.g. for Private Archive)
