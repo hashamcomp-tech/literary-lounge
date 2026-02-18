@@ -10,17 +10,33 @@ const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 /**
- * Remove UI artifacts and zero-width characters
+ * Remove UI artifacts and zero-width characters.
+ * Also performs basic HTML tag stripping if needed.
  */
 function cleanText(text: string) {
   return text
     .replace(/Restore scroll position.*?\n?/gi, "")
     .replace(/\u200B/g, "")
+    // Minimal HTML cleaning to preserve paragraph structure for the reader component
+    .replace(/<head>[\s\S]*?<\/head>/gi, "")
+    .replace(/<style>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script>[\s\S]*?<\/script>/gi, "")
     .trim();
 }
 
 /**
- * Remove legal-safe credits/watermarks
+ * Extracts content from within <body> tags if present, otherwise returns full text.
+ */
+function extractBodyContent(html: string): string {
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch && bodyMatch[1]) {
+    return bodyMatch[1].trim();
+  }
+  return html.trim();
+}
+
+/**
+ * Remove legal-safe credits/watermarks.
  */
 function removeCredits(text: string) {
   const patterns = [
@@ -36,7 +52,7 @@ function removeCredits(text: string) {
 }
 
 /**
- * Split large text into chunks
+ * Split large text into chunks to stay within Firestore document limits (1MB).
  */
 function chunkText(text: string, size = 15000) {
   const chunks = [];
@@ -47,7 +63,7 @@ function chunkText(text: string, size = 15000) {
 }
 
 /**
- * Deterministic chapter splitting using regex
+ * Deterministic chapter splitting using regex for pasted text.
  */
 function splitChapters(text: string) {
   const chapterRegex = /(chapter\s+\d+|chapter\s+[ivxlcdm]+|\n\d+\.)/gi;
@@ -67,7 +83,7 @@ function splitChapters(text: string) {
 }
 
 /**
- * Download file from URL
+ * Download file from URL.
  */
 async function downloadFile(url: string) {
   const res = await fetch(url);
@@ -77,7 +93,7 @@ async function downloadFile(url: string) {
 }
 
 /**
- * Parse EPUB buffer
+ * Parse EPUB buffer.
  */
 async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
   const tmpPath = `/tmp/${Date.now()}.epub`;
@@ -95,13 +111,22 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
       try {
         const chapters = [];
         for (let item of epub.flow) {
-          const text = await new Promise<string>((res, rej) => {
-            epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(cleanText(txt))));
+          if (!item.id) continue;
+          
+          const rawHtml = await new Promise<string>((res, rej) => {
+            epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(txt || "")));
           });
-          chapters.push({
-            title: item.title || "Untitled",
-            content: removeCredits(text)
-          });
+          
+          const bodyContent = extractBodyContent(rawHtml);
+          const cleanedContent = removeCredits(cleanText(bodyContent));
+          
+          // Only include chapters that actually have readable content
+          if (cleanedContent.length > 50) {
+            chapters.push({
+              title: item.title || "Untitled Chapter",
+              content: cleanedContent
+            });
+          }
         }
         resolve({
           title: epub.metadata.title || "Unknown Title",
@@ -126,7 +151,7 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
 }
 
 /**
- * Main API Route Handler
+ * Main API Route Handler.
  */
 export async function POST(req: Request) {
   try {
@@ -192,12 +217,12 @@ export async function POST(req: Request) {
     // 2. Insert Chapters into subcollection
     let chapterIndex = 1;
     for (const chap of parsedBook.chapters) {
-      // For very long chapters, we chunk them to stay within Firestore limits
+      // For very long chapters, we chunk them to stay within Firestore limits (approx 1MB)
       const chunks = chunkText(chap.content);
       for (const chunk of chunks) {
         const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
         await setDoc(chRef, {
-          chapterNumber: chapterIndex,
+          chapterNumber: chapterIndex, // Critical: Reader uses this number
           title: chap.title,
           content: chunk,
           createdAt: serverTimestamp(),
