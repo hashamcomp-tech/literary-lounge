@@ -230,6 +230,11 @@ export function UploadNovelForm() {
           setLoadingMessage('Preparing content...');
           const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           
+          // Validation for binary data if incorrectly picked up as text
+          if (text.includes('PK\x03\x04')) {
+            throw new Error("Binary file detected. Please ensure you are uploading a valid text or EPUB file.");
+          }
+
           setProgress(70);
           setLoadingMessage('Syncing with Cloud...');
           await uploadBookToCloud({
@@ -289,6 +294,11 @@ export function UploadNovelForm() {
           setProgress(50);
           setLoadingMessage('Archiving content...');
           let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
+          
+          if (fullText.includes('PK\x03\x04')) {
+            throw new Error("Binary file detected. Please ensure you are uploading a valid text file.");
+          }
+
           const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
           
           await saveLocalBook({ 

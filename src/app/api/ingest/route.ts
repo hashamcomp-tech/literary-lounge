@@ -11,32 +11,24 @@ const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 /**
- * Remove UI artifacts and zero-width characters.
- */
-function cleanText(text: string) {
-  return text
-    .replace(/Restore scroll position.*?\n?/gi, "")
-    .replace(/\u200B/g, "")
-    .trim();
-}
-
-/**
  * Robust HTML to Text conversion for EPUB content.
- * Preserves semantic paragraph spacing and headers.
+ * Preserves semantic paragraph spacing and headers while stripping all noise.
  */
 function htmlToReadableText(html: string): string {
   if (!html) return "";
   
-  // Replace block tags with newlines to preserve paragraph structure
+  // 1. Replace block tags with double newlines to maintain paragraph structure
   let text = html
-    .replace(/<(p|div|h[1-6]|li|section|article)[^>]*>/gi, '\n')
-    .replace(/<\/ (p|div|h[1-6]|li|section|article)>/gi, '\n')
+    .replace(/<(p|div|h[1-6]|section|article|li)[^>]*>/gi, '\n\n')
+    .replace(/<\/ (p|div|h[1-6]|section|article|li)>/gi, '\n\n')
     .replace(/<br\s*\/?>/gi, '\n');
   
-  // Remove all other tags
+  // 2. Remove all remaining tags (scripts, styles, etc.)
+  text = text.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
+  text = text.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "");
   text = text.replace(/<[^>]*>/g, ' ');
   
-  // Decode common HTML entities
+  // 3. Decode common HTML entities
   text = text
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -51,7 +43,7 @@ function htmlToReadableText(html: string): string {
     .replace(/&mdash;/g, '—')
     .replace(/&ndash;/g, '–');
 
-  // Normalize whitespace: remove triple+ newlines and trim each line
+  // 4. Normalize whitespace: trim lines and remove excessive gaps
   return text
     .split('\n')
     .map(line => line.trim())
@@ -62,7 +54,7 @@ function htmlToReadableText(html: string): string {
 /**
  * Remove common ebook artifacts and watermarks.
  */
-function removeCredits(text: string) {
+function cleanManuscriptText(text: string) {
   const patterns = [
     /Project Gutenberg.*?\n/gi,
     /©.*?\n/gi,
@@ -77,135 +69,89 @@ function removeCredits(text: string) {
 }
 
 /**
- * Split chapters for pasted text fallback.
+ * Sequential processing of EPUB chapters to ensure stability.
  */
-function splitChapters(text: string) {
-  const chapterRegex = /(chapter\s+\d+|chapter\s+[ivxlcdm]+|\n\d+\.)/gi;
-  const matches = [...text.matchAll(chapterRegex)];
-  if (!matches.length) return [{ title: "Full Volume", content: text }];
-
+async function processEpubChapters(epub: EPub): Promise<any[]> {
   const chapters = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i].index!;
-    const end = matches[i + 1]?.index || text.length;
-    chapters.push({
-      title: matches[i][0].trim(),
-      content: text.slice(start, end).trim()
-    });
+  // flow is the ordered list of IDs to read
+  for (let item of epub.flow) {
+    if (!item.id) continue;
+    
+    // Safety: ignore non-text assets
+    const manifestItem = epub.manifest[item.id];
+    const mediaType = manifestItem?.['media-type'] || '';
+    if (mediaType && !mediaType.includes('xml') && !mediaType.includes('html') && !mediaType.includes('text')) {
+      continue;
+    }
+
+    try {
+      const rawData = await new Promise<any>((res, rej) => {
+        epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(txt || "")));
+      });
+      
+      const html = Buffer.isBuffer(rawData) ? rawData.toString('utf8') : rawData;
+      const cleanBody = htmlToReadableText(html);
+      const finalContent = cleanManuscriptText(cleanBody);
+      
+      // Only keep chapters with significant content
+      if (finalContent.length > 100) {
+        chapters.push({
+          title: item.title || manifestItem?.['title'] || "Untitled Chapter",
+          content: finalContent
+        });
+      }
+    } catch (err) {
+      console.warn(`Skipping chapter ${item.id} due to parse error`);
+    }
   }
   return chapters;
-}
-
-/**
- * Download file from URL using native fetch.
- */
-async function downloadFile(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
-  const arrayBuffer = await res.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-/**
- * Parse EPUB buffer into metadata + clean text chapters.
- */
-async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
-  const tmpPath = path.join('/tmp', `${Date.now()}_upload.epub`);
-  fs.writeFileSync(tmpPath, buffer);
-
-  return new Promise((resolve, reject) => {
-    try {
-      const epub = new EPub(tmpPath);
-      
-      const timeout = setTimeout(() => {
-        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-        reject(new Error("EPUB parsing timed out. The file might be too complex or corrupt."));
-      }, 45000);
-
-      epub.on("end", async function () {
-        clearTimeout(timeout);
-        try {
-          const chapters = [];
-          // Flow contains the ordered list of items to be read
-          for (let item of epub.flow) {
-            if (!item.id) continue;
-            
-            // Only process text items
-            const manifestItem = epub.manifest[item.id];
-            const mediaType = manifestItem?.['media-type'] || '';
-            if (mediaType && !mediaType.includes('xml') && !mediaType.includes('html') && !mediaType.includes('text')) {
-              continue;
-            }
-
-            const rawData = await new Promise<any>((res, rej) => {
-              epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(txt || "")));
-            });
-            
-            const html = Buffer.isBuffer(rawData) ? rawData.toString('utf8') : rawData;
-            const cleanBody = htmlToReadableText(html);
-            const finalContent = removeCredits(cleanText(cleanBody));
-            
-            if (finalContent.length > 50) {
-              chapters.push({
-                title: item.title || "Untitled Chapter",
-                content: finalContent
-              });
-            }
-          }
-          
-          if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-          
-          if (chapters.length === 0) {
-            reject(new Error("No readable text content found in the EPUB."));
-            return;
-          }
-
-          resolve({
-            title: epub.metadata.title || "Unknown Title",
-            author: epub.metadata.creator || "Unknown Author",
-            chapters
-          });
-        } catch (err) {
-          if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-          reject(err);
-        }
-      });
-
-      epub.on("error", (err) => {
-        clearTimeout(timeout);
-        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-        reject(err);
-      });
-
-      epub.parse();
-    } catch (e) {
-      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
-      reject(e);
-    }
-  });
 }
 
 /**
  * Main API Route Handler.
  */
 export async function POST(req: Request) {
+  const tmpPath = path.join('/tmp', `${Date.now()}_upload.epub`);
+  
   try {
-    const { fileUrl, pastedText, ownerId, overrideMetadata, returnOnly } = await req.json();
-    let parsedBook;
-
-    if (fileUrl) {
-      const buffer = await downloadFile(fileUrl);
-      parsedBook = await parseEpubFromBuffer(buffer);
-    } else if (pastedText) {
-      const clean = removeCredits(cleanText(pastedText));
-      parsedBook = {
-        title: overrideMetadata?.title || "Pasted Manuscript",
-        author: overrideMetadata?.author || "Anonymous",
-        chapters: splitChapters(clean)
-      };
-    } else {
-      return Response.json({ error: "No file or text provided" }, { status: 400 });
+    const { fileUrl, ownerId, overrideMetadata, returnOnly } = await req.json();
+    
+    if (!fileUrl) {
+      return Response.json({ error: "No file URL provided" }, { status: 400 });
     }
+
+    // Download to disk for EPub parser
+    const res = await fetch(fileUrl);
+    if (!res.ok) throw new Error(`Failed to download manuscript: ${res.statusText}`);
+    const arrayBuffer = await res.arrayBuffer();
+    fs.writeFileSync(tmpPath, Buffer.from(arrayBuffer));
+
+    const parsedBook = await new Promise<any>((resolve, reject) => {
+      const epub = new EPub(tmpPath);
+      const timeout = setTimeout(() => reject(new Error("EPUB parsing timed out")), 45000);
+
+      epub.on("end", async () => {
+        clearTimeout(timeout);
+        try {
+          const chapters = await processEpubChapters(epub);
+          resolve({
+            title: epub.metadata.title || "Unknown Title",
+            author: epub.metadata.creator || "Unknown Author",
+            chapters
+          });
+        } catch (err) { reject(err); }
+      });
+
+      epub.on("error", (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+
+      epub.parse();
+    });
+
+    // Cleanup disk
+    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
 
     const finalTitle = (overrideMetadata?.title || parsedBook.title || "Untitled").trim();
     const finalAuthor = (overrideMetadata?.author || parsedBook.author || "Anonymous").trim();
@@ -224,7 +170,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 1. Check if book exists
+    // Cloud Logic
     const bookQuery = query(
       collection(db, "books"),
       where("titleLower", "==", finalTitle.toLowerCase()),
@@ -246,7 +192,7 @@ export async function POST(req: Request) {
       bookId = newBookRef.id;
     }
 
-    // 2. Insert Chapters
+    // Insert Chapters
     let ingestMaxChapter = 0;
     for (let i = 0; i < parsedBook.chapters.length; i++) {
       const chap = parsedBook.chapters[i];
@@ -263,7 +209,7 @@ export async function POST(req: Request) {
       ingestMaxChapter = Math.max(ingestMaxChapter, chapterNumber);
     }
 
-    // 3. Update parent metadata
+    // Update parent metadata
     const finalTotalChapters = Math.max(currentMaxChapter, ingestMaxChapter);
     const bookRef = doc(db, "books", bookId);
     
@@ -294,6 +240,7 @@ export async function POST(req: Request) {
     return Response.json({ success: true, bookId, chaptersAdded: ingestMaxChapter });
 
   } catch (err: any) {
+    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
     console.error("Ingest API Error:", err);
     return Response.json({ error: "Processing failed", details: err.message }, { status: 500 });
   }
