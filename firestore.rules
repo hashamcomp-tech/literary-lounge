@@ -22,8 +22,14 @@ service cloud.firestore {
       // Only admin can add/update/delete metadata
       allow write: if isAdmin();
 
-      // Sub-collections (chapters, messages)
-      match /{allChildren=**} {
+      // Sub-collections (chapters)
+      match /chapters/{chapterId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+      
+      // Metadata sub-collection
+      match /metadata/{metaId} {
         allow read: if true;
         allow write: if isAdmin();
       }
@@ -34,7 +40,7 @@ service cloud.firestore {
       // Admin only access to general user profiles
       allow read, write: if isAdmin();
       
-      // Allow users to manage their own history even if profiles are locked
+      // Allow users to manage their own history (even anonymous users have a UID)
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }

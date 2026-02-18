@@ -114,7 +114,7 @@ export async function uploadBookToCloud({
   let chapters: Chapter[] = [];
 
   if (manualChapterInfo) {
-    // Single chapter mode (typically for pasted text)
+    // Single chapter mode (typically for pasted text) - NO DIVISION
     chapters = [{
       chapterNumber: manualChapterInfo.number,
       title: manualChapterInfo.title || `Chapter ${manualChapterInfo.number}`,
