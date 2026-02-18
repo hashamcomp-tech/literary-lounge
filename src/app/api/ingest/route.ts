@@ -5,7 +5,7 @@ import EPub from "epub2";
 import fetch from "node-fetch";
 import fs from "fs";
 
-// Initialize Firebase for server-side usage
+// Initialize Firebase for server-side usage using the centralized config
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
@@ -47,7 +47,7 @@ function chunkText(text: string, size = 15000) {
 }
 
 /**
- * Deterministic chapter splitting
+ * Deterministic chapter splitting using regex
  */
 function splitChapters(text: string) {
   const chapterRegex = /(chapter\s+\d+|chapter\s+[ivxlcdm]+|\n\d+\.)/gi;
@@ -71,6 +71,7 @@ function splitChapters(text: string) {
  */
 async function downloadFile(url: string) {
   const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
   const buffer = await res.arrayBuffer();
   return Buffer.from(buffer);
 }
@@ -84,24 +85,42 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
 
   return new Promise((resolve, reject) => {
     const epub = new EPub(tmpPath);
+    
+    const timeout = setTimeout(() => {
+      reject(new Error("EPUB parsing timed out after 30 seconds."));
+    }, 30000);
+
     epub.on("end", async function () {
-      const chapters = [];
-      for (let item of epub.flow) {
-        const text = await new Promise<string>((res, rej) => {
-          epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(cleanText(txt))));
+      clearTimeout(timeout);
+      try {
+        const chapters = [];
+        for (let item of epub.flow) {
+          const text = await new Promise<string>((res, rej) => {
+            epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(cleanText(txt))));
+          });
+          chapters.push({
+            title: item.title || "Untitled",
+            content: removeCredits(text)
+          });
+        }
+        resolve({
+          title: epub.metadata.title || "Unknown Title",
+          author: epub.metadata.creator || "Unknown Author",
+          chapters
         });
-        chapters.push({
-          title: item.title || "Untitled",
-          content: removeCredits(text)
-        });
+      } catch (err) {
+        reject(err);
+      } finally {
+        if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
       }
-      resolve({
-        title: epub.metadata.title || "Unknown Title",
-        author: epub.metadata.creator || "Unknown Author",
-        chapters
-      });
     });
-    epub.on("error", reject);
+
+    epub.on("error", (err) => {
+      clearTimeout(timeout);
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+      reject(err);
+    });
+
     epub.parse();
   });
 }
@@ -132,7 +151,7 @@ export async function POST(req: Request) {
     const finalAuthor = overrideMetadata?.author || parsedBook.author;
     const finalGenres = overrideMetadata?.genres || ['Ingested'];
 
-    // 1. Check/Create Book
+    // 1. Check if book exists, or create it
     const bookQuery = query(
       collection(db, "books"),
       where("title", "==", finalTitle),
@@ -170,9 +189,10 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. Insert Chapters
+    // 2. Insert Chapters into subcollection
     let chapterIndex = 1;
     for (const chap of parsedBook.chapters) {
+      // For very long chapters, we chunk them to stay within Firestore limits
       const chunks = chunkText(chap.content);
       for (const chunk of chunks) {
         const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
@@ -187,7 +207,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Update total chapters
+    // 3. Update parent metadata with final count
     await setDoc(doc(db, "books", bookId), {
       'metadata.info.totalChapters': chapterIndex - 1
     }, { merge: true });
@@ -195,7 +215,7 @@ export async function POST(req: Request) {
     return Response.json({ success: true, bookId, chaptersAdded: chapterIndex - 1 });
 
   } catch (err: any) {
-    console.error(err);
+    console.error("Ingest API Error:", err);
     return Response.json({ error: "Processing failed", details: err.message }, { status: 500 });
   }
 }
