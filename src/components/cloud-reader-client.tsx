@@ -306,7 +306,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     setIsDeleting(true);
     setIsBookDeleteDialogOpen(false);
     try {
-      await deleteCloudBook(firestore, storage!, id);
+      await deleteCloudBook(firestore, id);
       toast({ title: "Manuscript Removed", description: "Novel successfully deleted." });
       router.push('/');
     } catch (err) {} finally {

@@ -19,7 +19,7 @@ service cloud.firestore {
       // Anyone can read book metadata (title, chapters, etc.)
       allow read: if true;
       
-      // Only admin can add/update/delete books
+      // Only admin can add/update/delete metadata
       allow write: if isAdmin();
 
       // Sub-collections (chapters, messages)
@@ -29,12 +29,12 @@ service cloud.firestore {
       }
     }
 
-    // USER PROFILES & HISTORY
+    // USER PROFILES
     match /users/{userId} {
-      // Admin only access to user profiles as requested
+      // Admin only access to user profiles
       allow read, write: if isAdmin();
       
-      // Allow users to manage their own history if needed for sync (optional override)
+      // Allow users to manage their own history
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
@@ -46,8 +46,14 @@ service cloud.firestore {
       allow create: if isSignedIn();
     }
     
-    // Fallback for public stats
+    // Global Stats
     match /stats/storageUsage {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Default catch-all
+    match /{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();
     }
