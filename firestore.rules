@@ -8,106 +8,78 @@ service cloud.firestore {
     }
 
     /**
-     * Verifies if the user is the primary system administrator.
-     * Uses both UID and Email for robust recognition.
+     * Verifies if the user is an administrator.
+     * Uses custom claims or email fallback for robustness.
      */
-    function isSuperAdmin() {
+    function isAdmin() {
       return isSignedIn() && (
-        request.auth.uid == "KFRoNNMCn9XBK34tYwLhMHNZSD33" ||
-        request.auth.token.email == "hashamcomp@gmail.com"
+        request.auth.token.admin == true ||
+        request.auth.token.email == "hashamcomp@gmail.com" ||
+        request.auth.uid == "KFRoNNMCn9XBK34tYwLhMHNZSD33"
       );
     }
 
-    /**
-     * Verifies if the user is an authorized contributor.
-     * Admins are automatically contributors.
-     */
-    function isContributor() {
-      if (!isSignedIn()) return false;
-      if (isSuperAdmin()) return true;
+    // BOOKS & MANUSCRIPTS
+    match /books/{bookId} {
+      // Any visitor (including anonymous) can read book metadata and chapters
+      allow read: if isSignedIn();
       
-      // Check approved email list for publishing permissions
-      // Use full path for robustness
-      return exists(/databases/$(database)/documents/settings/approvedEmails) && 
-             request.auth.token.email in get(/databases/$(database)/documents/settings/approvedEmails).data.emails;
+      // Only administrators can add, update, or delete books
+      allow write: if isAdmin();
+
+      // Sub-collections (chapters, messages)
+      match /{allChildren=**} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
+      
+      // Public view counting fallback
+      allow update: if isSignedIn() && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
     }
 
-    // USER PROFILES
+    // USER PROFILES & HISTORY
     match /users/{userId} {
+      // Profiles are publicly viewable for anonymous linking
       allow get: if true;
-      allow list: if isSignedIn();
       
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId;
+      // Admin can manage all users
+      allow list, write: if isAdmin();
+      
+      // Users can manage their own profile and history
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
 
-      // READING HISTORY
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
     }
 
-    // USERNAME MAPPING
+    // SYSTEM STATS & SETTINGS
+    match /stats/storageUsage {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/approvedEmails {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // UPLOAD REQUESTS
+    match /cloudUploadRequests/{requestId} {
+      allow create: if isSignedIn();
+      allow read, list, delete: if isAdmin();
+    }
+
+    // CHATS & MESSAGES
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+    }
+    
     match /usernames/{username} {
       allow get: if true;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
-    }
-
-    // SETTINGS & WHITELIST
-    match /settings/approvedEmails {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
-    }
-    
-    match /stats/storageUsage {
-      allow read: if true;
-      allow write: if isSuperAdmin() || isContributor();
-    }
-
-    // PUBLISH REQUESTS
-    match /publishRequests/{userId} {
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
-      allow list: if isSuperAdmin();
-      allow delete: if isSuperAdmin();
-    }
-
-    // CLOUD UPLOAD REQUESTS (CONTENT)
-    match /cloudUploadRequests/{requestId} {
-      allow create: if isSignedIn();
-      allow read, list, delete: if isSuperAdmin();
-    }
-
-    // BOOKS & MANUSCRIPTS
-    match /books/{bookId} {
-      // PUBLIC ACCESS: Allow anyone to view and list books
-      allow get, list: if true;
-      
-      // Allow contributors/admins to create and delete
-      allow create: if isContributor();
-      allow delete: if isSuperAdmin();
-      
-      // Update allowed for contributors OR for public view counting
-      allow update: if isContributor() || isSuperAdmin() || 
-                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views']));
-
-      // Sub-collections (chapters, metadata, messages)
-      match /{allChildren=**} {
-        allow read: if true;
-        allow write: if isContributor() || isSuperAdmin();
-      }
-      
-      // Ensure messages subcollection is publicly readable
-      match /messages/{messageId} {
-        allow read: if true;
-        allow create: if isSignedIn();
-      }
-    }
-
-    // LEGACY CHATS REDIRECT
-    match /chats/{chatId}/messages/{messageId} {
-      allow read: if true;
-      allow create: if isSignedIn();
     }
   }
 }
