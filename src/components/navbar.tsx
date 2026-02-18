@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from 'next/link';
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebase, useCollection } from '@/firebase';
-import { doc, collection, query } from 'firebase/firestore';
+import { doc, collection } from 'firebase/firestore';
 import { ModeToggle } from '@/components/mode-toggle';
 import {
   DropdownMenu,
@@ -55,7 +56,6 @@ export default function Navbar() {
     checkAdminStatus();
   }, [user, profile, db, isUserLoading, isOfflineMode]);
 
-  // Real-time listener for new cloud requests (notifications for admins)
   const requestsQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
     return collection(db, 'cloudUploadRequests');

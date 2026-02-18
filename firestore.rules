@@ -60,6 +60,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /cloudUploadRequests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
     match /stats/{statId} {
       allow read: if true;
       allow write: if isAdmin();
