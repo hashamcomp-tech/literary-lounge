@@ -14,6 +14,7 @@ service cloud.firestore {
       );
     }
 
+    // Public Library Access
     match /books/{bookId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -22,13 +23,20 @@ service cloud.firestore {
         allow read: if true;
         allow write: if isAdmin();
       }
+      
+      match /metadata/{allPaths=**} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
     }
 
+    // Username mapping for multi-identifier login
     match /usernames/{username} {
       allow read: if true;
       allow write: if isAdmin() || (isSignedIn() && request.resource.data.uid == request.auth.uid);
     }
 
+    // User profiles and private reading history
     match /users/{userId} {
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
@@ -38,13 +46,20 @@ service cloud.firestore {
       }
     }
 
+    // Applications for contributor status
     match /publishRequests/{requestId} {
       allow read: if isAdmin();
       allow create: if isSignedIn();
       allow delete: if isAdmin();
     }
 
+    // Storage and operational stats
     match /stats/{statId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();
     }

@@ -16,12 +16,25 @@
         "requestedAt": { "type": "string", "format": "date-time" },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
       }
+    },
+    "Book": {
+      "description": "A cloud-hosted literary volume.",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "genre": { "type": "array", "items": { "type": "string" } },
+        "views": { "type": "number" },
+        "coverURL": { "type": "string" },
+        "isCloud": { "type": "boolean" }
+      }
     }
   },
+  "auth": {
+    "providers": ["email"]
+  },
   "firestore": {
-    "structure": [
-      { "path": "/usernames/{username}", "entityName": "UsernameMap" },
-      { "path": "/publishRequests/{requestId}", "entityName": "PublishRequest" }
-    ]
+    "/usernames/{username}": { "schema": "#/entities/UsernameMap", "description": "Lookup index for username-based login." },
+    "/publishRequests/{requestId}": { "schema": "#/entities/PublishRequest", "description": "Global queue for contributor vetting." },
+    "/books/{bookId}": { "schema": "#/entities/Book", "description": "Main cloud library storage." }
   }
 }

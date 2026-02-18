@@ -2,8 +2,6 @@
 import { doc, setDoc, serverTimestamp, Firestore, increment, collection, getDocs, writeBatch } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 
 /**
  * Converts Roman numerals to numbers for chapter indexing.

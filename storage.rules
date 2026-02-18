@@ -3,6 +3,7 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
+    // Public access to book covers
     match /bookCovers/{bookId} {
       allow read: if true;
       allow write: if request.auth != null && (
@@ -11,11 +12,13 @@ service firebase.storage {
       );
     }
     
+    // User profile photos
     match /profilePhotos/{userId} {
       allow read: if true;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
+    // Default admin-only write
     match /{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null && (
