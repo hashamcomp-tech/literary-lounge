@@ -1,135 +1,89 @@
-import { NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import JSZip from "jszip";
-import { v4 as uuidv4 } from "uuid";
+import { NextRequest, NextResponse } from "next/server";
+import fs from 'fs';
+import { EPub } from 'epub';
+import { JSDOM } from 'jsdom';
+import path from 'path';
+import os from 'os';
+import { v4 as uuidv4 } from 'uuid';
 
-/* -------------------------------
-  Helper: Split chapters by heading
----------------------------------*/
-function splitChapters(rawText: string) {
-  const chapterRegex = /^(chapter\s+\d+.*)$/gim;
-  const matches = [...rawText.matchAll(chapterRegex)];
-
-  if (!matches.length) return [{ title: "Chapter 1", content: rawText }];
-
-  const chapters = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i].index!;
-    const end = i + 1 < matches.length ? matches[i + 1].index! : rawText.length;
-    const title = matches[i][0].trim();
-    const content = rawText.slice(start, end).trim();
-    chapters.push({ title, content });
-  }
-  return chapters;
-}
-
-/* -------------------------------
-  Helper: Create XHTML per chapter
----------------------------------*/
-function createXHTML(title: string, body: string) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <title>${title}</title>
-  <meta charset="utf-8"/>
-</head>
-<body>
-<h1>${title}</h1>
-${body.split("\n\n").map(p => `<p>${p.trim()}</p>`).join("\n")}
-</body>
-</html>`;
-}
-
-/* -------------------------------
-  API Route
----------------------------------*/
-export async function POST(req: Request) {
+/**
+ * @fileOverview EPUB Ingestion Engine.
+ * Replaced with the requested reader logic to extract chapters from digital volumes.
+ */
+export async function POST(req: NextRequest) {
   try {
-    const data = await req.json();
-    const { title, author, text } = data;
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
+    
+    if (!file) {
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    }
 
-    const zip = new JSZip();
-    const bookId = uuidv4();
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const tempDir = os.tmpdir();
+    const tempFilePath = path.join(tempDir, `${uuidv4()}.epub`);
+    fs.writeFileSync(tempFilePath, buffer);
 
-    // Required: mimetype uncompressed first
-    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+    return new Promise((resolve) => {
+      // Initialize the EPUB reader with the temp file path
+      const epub = new EPub(tempFilePath);
 
-    const metaInf = zip.folder("META-INF");
-    metaInf?.file(
-      "container.xml",
-      `<?xml version="1.0"?>
-<container version="1.0"
- xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
- <rootfiles>
-   <rootfile full-path="OEBPS/content.opf"
-     media-type="application/oebps-package+xml"/>
- </rootfiles>
-</container>`
-    );
+      epub.on('error', (err) => {
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        resolve(NextResponse.json({ error: 'EPUB Error: ' + err.message }, { status: 500 }));
+      });
 
-    const oebps = zip.folder("OEBPS");
+      epub.on('end', async () => {
+        try {
+          const chapters: { title: string; content: string; order: number }[] = [];
 
-    const chapters = splitChapters(text);
+          // Map flow items to chapter content promises
+          const chapterPromises = epub.flow.map((item, i) => {
+            return new Promise<void>((res) => {
+              epub.getChapter(item.id, (err, text) => {
+                if (err) {
+                  console.error('Chapter error:', err);
+                  res();
+                  return;
+                }
 
-    // Add chapter files
-    chapters.forEach((chapter, i) => {
-      const filename = `chapter${i + 1}.xhtml`;
-      oebps?.file(filename, createXHTML(chapter.title, chapter.content));
+                // Parse XHTML properly to get clean text using JSDOM
+                const dom = new JSDOM(text);
+                const chapterText = dom.window.document.body.textContent || '';
+
+                chapters.push({
+                  title: item.title || `Chapter ${i + 1}`,
+                  content: chapterText.trim(),
+                  order: i,
+                });
+                res();
+              });
+            });
+          });
+
+          // Wait for all chapters to be extracted and cleaned
+          await Promise.all(chapterPromises);
+          
+          // Sort chapters to maintain the book's intended order
+          chapters.sort((a, b) => a.order - b.order);
+
+          // Cleanup temporary storage
+          if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+          
+          resolve(NextResponse.json({ 
+            message: 'All chapters extracted successfully!',
+            chapters: chapters.map(({ title, content }) => ({ title, content }))
+          }));
+        } catch (e: any) {
+          if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+          resolve(NextResponse.json({ error: 'Processing error: ' + e.message }, { status: 500 }));
+        }
+      });
+
+      // Execute parsing
+      epub.parse();
     });
-
-    // Create nav.xhtml
-    const navItems = chapters
-      .map((c, i) => `<li><a href="chapter${i + 1}.xhtml">${c.title}</a></li>`)
-      .join("\n");
-
-    const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"
-      xmlns:epub="http://www.idpf.org/2007/ops">
-<head><meta charset="utf-8"/><title>Navigation</title></head>
-<body>
-<nav epub:type="toc"><ol>${navItems}</ol></nav>
-</body>
-</html>`;
-
-    oebps?.file("nav.xhtml", navXhtml);
-
-    // content.opf
-    const manifestItems = chapters
-      .map((_, i) => `<item id="chapter${i + 1}" href="chapter${i + 1}.xhtml" media-type="application/xhtml+xml"/>`)
-      .join("\n");
-
-    const spineItems = chapters.map((_, i) => `<itemref idref="chapter${i + 1}"/>`).join("\n");
-
-    const opf = `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
-<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier id="bookid">${bookId}</dc:identifier>
-<dc:title>${title}</dc:title>
-<dc:creator>${author}</dc:creator>
-<dc:language>en</dc:language>
-</metadata>
-<manifest>
-<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-${manifestItems}
-</manifest>
-<spine>
-${spineItems}
-</spine>
-</package>`;
-
-    oebps?.file("content.opf", opf);
-
-    // Generate EPUB
-    const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
-
-    // Optional: save on server (or return as download)
-    const outputPath = path.join(process.cwd(), "book.epub");
-    fs.writeFileSync(outputPath, buffer);
-
-    return NextResponse.json({ message: "EPUB generated", path: outputPath });
-  } catch (err) {
-    return NextResponse.json({ error: (err as any).message });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

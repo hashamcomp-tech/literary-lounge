@@ -190,25 +190,41 @@ export function UploadNovelForm() {
       );
 
       const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
-      const fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
       
-      setProgress(30);
-      setLoadingMessage('Generating Digital Volume...');
-      
-      // Send exact JSON schema: { title, author, text }
-      const ingestResponse = await fetch('/api/ingest', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: searchTitle,
-          author: searchAuthor,
-          text: fullText
-        })
-      });
-
-      if (!ingestResponse.ok) {
-        throw new Error("EPUB generation failed on server.");
+      let fullText = '';
+      if (sourceMode === 'file' && selectedFile) {
+        if (selectedFile.name.toLowerCase().endsWith('.epub')) {
+          setLoadingMessage('Parsing Digital Volume...');
+          setProgress(20);
+          const parseData = new FormData();
+          parseData.append('file', selectedFile);
+          
+          const parseRes = await fetch('/api/ingest', { 
+            method: 'POST', 
+            body: parseData 
+          });
+          
+          if (!parseRes.ok) {
+            const errJson = await parseRes.json();
+            throw new Error(errJson.error || "EPUB parsing failed.");
+          }
+          
+          const { chapters } = await parseRes.json();
+          if (!chapters || chapters.length === 0) {
+            throw new Error("No readable content found in EPUB.");
+          }
+          
+          // Join extracted chapters into text for ingestion
+          fullText = chapters.map((ch: any, i: number) => `Chapter ${i + 1}: ${ch.title}\n\n${ch.content}`).join('\n\n');
+          setProgress(50);
+        } else {
+          fullText = await selectedFile.text();
+        }
+      } else {
+        fullText = pastedText;
       }
+
+      if (!fullText.trim()) throw new Error("No manuscript content detected.");
 
       setProgress(70);
       setLoadingMessage('Syncing with Library...');
@@ -385,7 +401,7 @@ export function UploadNovelForm() {
                     <FileText className="h-8 w-8 text-primary" />
                   </div>
                   <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
-                  <p className="text-[10px] text-muted-foreground">Standard text files only for now.</p>
+                  <p className="text-[10px] text-muted-foreground">EPUB or Standard text files.</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
