@@ -131,17 +131,13 @@ export function UploadNovelForm() {
     setLoading(true);
     try {
       const bookId = `${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
+      const isEpub = selectedFile?.name.toLowerCase().endsWith('.epub');
 
       if (canUploadCloud && uploadMode === 'cloud') {
-        // --- CLOUD PATH: Use Ingest API for Files ---
+        // --- CLOUD PATH ---
         if (sourceMode === 'file' && selectedFile) {
-          const isEpub = selectedFile.name.toLowerCase().endsWith('.epub');
-          
           if (isEpub) {
-            // 1. Upload EPUB to storage first
             const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
-            
-            // 2. Call Ingest API
             const response = await fetch('/api/ingest', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -160,10 +156,8 @@ export function UploadNovelForm() {
               const errData = await response.json();
               throw new Error(errData.details || "Server-side ingestion failed.");
             }
-            
             toast({ title: 'Cloud Processing Complete', description: 'Volume has been parsed and published.' });
           } else {
-            // Text file path: Read client side and use existing cloud logic
             const text = await selectedFile.text();
             await uploadBookToCloud({
               db: db!, storage: storage!, bookId,
@@ -173,7 +167,6 @@ export function UploadNovelForm() {
             toast({ title: 'Published to Cloud', description: 'Available globally in the Lounge.' });
           }
         } else {
-          // Paste Mode: Preserves text undivided via API or local util
           await uploadBookToCloud({
             db: db!, storage: storage!, bookId,
             title, author, genres: selectedGenres,
@@ -183,14 +176,39 @@ export function UploadNovelForm() {
           toast({ title: 'Published to Cloud', description: 'Available globally in the Lounge.' });
         }
       } else {
-        // --- LOCAL PATH: Private Archive ---
-        let fullText = sourceMode === 'file' && selectedFile 
-          ? await selectedFile.text() 
-          : pastedText;
+        // --- LOCAL PATH ---
+        if (sourceMode === 'file' && selectedFile && isEpub) {
+          // Use Ingest API to parse EPUB but return it instead of saving to Cloud
+          const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
+          const response = await fetch('/api/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileUrl, returnOnly: true, overrideMetadata: { title, author, genres: selectedGenres } })
+          });
 
-        await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true, coverURL: coverPreview });
-        await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
-        toast({ title: 'Saved to Local Archive', description: 'Private to this browser.' });
+          if (!response.ok) throw new Error("Failed to parse EPUB for private archive.");
+          
+          const { book } = await response.json();
+          await saveLocalBook({ id: bookId, title: book.title, author: book.author, genre: book.genres, isLocalOnly: true });
+          
+          for (let i = 0; i < book.chapters.length; i++) {
+            await saveLocalChapter({ 
+              bookId, 
+              chapterNumber: i + 1, 
+              content: book.chapters[i].content, 
+              title: book.chapters[i].title 
+            });
+          }
+          toast({ title: 'Saved to Local Archive', description: 'Volume parsed and archived privately.' });
+        } else {
+          let fullText = sourceMode === 'file' && selectedFile 
+            ? await selectedFile.text() 
+            : pastedText;
+
+          await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true, coverURL: coverPreview });
+          await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
+          toast({ title: 'Saved to Local Archive', description: 'Private to this browser.' });
+        }
       }
       router.push('/');
     } catch (err: any) {
@@ -293,7 +311,7 @@ export function UploadNovelForm() {
                     <FileText className="h-8 w-8 text-primary" />
                   </div>
                   <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
-                  <p className="text-[10px] text-muted-foreground">Chapters will be auto-indexed</p>
+                  <p className="text-[10px] text-muted-foreground">EPUBs are auto-parsed; TXTs are read as single chapters</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">

@@ -17,22 +17,24 @@ function cleanText(text: string) {
   return text
     .replace(/Restore scroll position.*?\n?/gi, "")
     .replace(/\u200B/g, "")
-    // Minimal HTML cleaning to preserve paragraph structure for the reader component
-    .replace(/<head>[\s\S]*?<\/head>/gi, "")
-    .replace(/<style>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script>[\s\S]*?<\/script>/gi, "")
     .trim();
 }
 
 /**
- * Extracts content from within <body> tags if present, otherwise returns full text.
+ * Extracts content from within <body> tags and removes noise like scripts/styles.
  */
 function extractBodyContent(html: string): string {
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  // Remove noise tags entirely
+  let cleaned = html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<head>[\s\S]*?<\/head>/gi, "");
+  
+  const bodyMatch = cleaned.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   if (bodyMatch && bodyMatch[1]) {
     return bodyMatch[1].trim();
   }
-  return html.trim();
+  return cleaned.trim();
 }
 
 /**
@@ -103,6 +105,7 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
     const epub = new EPub(tmpPath);
     
     const timeout = setTimeout(() => {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
       reject(new Error("EPUB parsing timed out after 30 seconds."));
     }, 30000);
 
@@ -113,10 +116,18 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
         for (let item of epub.flow) {
           if (!item.id) continue;
           
-          const rawHtml = await new Promise<string>((res, rej) => {
+          // Skip non-text assets that might be in the flow
+          const manifestItem = epub.manifest[item.id];
+          const mediaType = manifestItem?.['media-type'] || '';
+          if (mediaType && !mediaType.includes('xml') && !mediaType.includes('html') && !mediaType.includes('text')) {
+            continue;
+          }
+
+          const rawHtmlOrBuffer = await new Promise<any>((res, rej) => {
             epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(txt || "")));
           });
           
+          const rawHtml = Buffer.isBuffer(rawHtmlOrBuffer) ? rawHtmlOrBuffer.toString('utf8') : rawHtmlOrBuffer;
           const bodyContent = extractBodyContent(rawHtml);
           const cleanedContent = removeCredits(cleanText(bodyContent));
           
@@ -155,7 +166,7 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
  */
 export async function POST(req: Request) {
   try {
-    const { fileUrl, pastedText, ownerId, overrideMetadata } = await req.json();
+    const { fileUrl, pastedText, ownerId, overrideMetadata, returnOnly } = await req.json();
     let parsedBook;
 
     if (fileUrl) {
@@ -175,6 +186,19 @@ export async function POST(req: Request) {
     const finalTitle = overrideMetadata?.title || parsedBook.title;
     const finalAuthor = overrideMetadata?.author || parsedBook.author;
     const finalGenres = overrideMetadata?.genres || ['Ingested'];
+
+    // If client just wants the parsed data (e.g. for Local storage save)
+    if (returnOnly) {
+      return Response.json({ 
+        success: true, 
+        book: {
+          title: finalTitle,
+          author: finalAuthor,
+          genres: finalGenres,
+          chapters: parsedBook.chapters
+        }
+      });
+    }
 
     // 1. Check if book exists, or create it
     const bookQuery = query(
@@ -222,7 +246,7 @@ export async function POST(req: Request) {
       for (const chunk of chunks) {
         const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
         await setDoc(chRef, {
-          chapterNumber: chapterIndex, // Critical: Reader uses this number
+          chapterNumber: chapterIndex, 
           title: chap.title,
           content: chunk,
           createdAt: serverTimestamp(),
