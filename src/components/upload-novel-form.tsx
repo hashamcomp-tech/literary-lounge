@@ -195,7 +195,7 @@ export function UploadNovelForm() {
       setProgress(30);
       setLoadingMessage('Generating Digital Volume...');
       
-      // Exact POST structure requested: { title, author, text }
+      // Send exact JSON schema: { title, author, text }
       const ingestResponse = await fetch('/api/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
