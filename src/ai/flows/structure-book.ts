@@ -36,6 +36,7 @@ const structurePrompt = ai.definePrompt({
   3. For each chapter listed, locate its actual start in the subsequent text and provide a "startPhrase" consisting of the first 10 to 15 unique words of that chapter's content.
   4. Use the EXACT titles found in the index.
   5. If no index exists, use your best judgment to find logical chapter headers (e.g., "Chapter One", "Introduction") and provide their unique start phrases.
+  6. Return an array of chapter objects with 'title' and 'startPhrase'.
   
   TEXT:
   {{text}}`,
