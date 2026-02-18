@@ -149,8 +149,8 @@ export function UploadNovelForm() {
     setChapterNumber((book.totalChapters + 1).toString());
     setShowSuggestions(false);
     toast({
-      title: "Book Synced",
-      description: `Preparing Chapter ${book.totalChapters + 1} of "${book.title}".`
+      title: "Volume Matched",
+      description: `Preparing next chapter for "${book.title}".`
     });
   };
 
@@ -164,9 +164,9 @@ export function UploadNovelForm() {
         requestedAt: serverTimestamp(),
         status: 'pending'
       });
-      toast({ title: 'Request Sent', description: 'Admins will review your application.' });
+      toast({ title: 'Application Submitted', description: 'Admins will review your request shortly.' });
     } catch (err) {
-      toast({ variant: 'destructive', title: 'Request Failed' });
+      toast({ variant: 'destructive', title: 'Submission Error' });
     } finally {
       setIsRequestingAccess(false);
     }
@@ -191,63 +191,77 @@ export function UploadNovelForm() {
 
       const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
       
-      let fullText = '';
+      let preParsedChapters: { title: string; content: string }[] | undefined = undefined;
+      let manualContent: string | undefined = undefined;
+
       if (sourceMode === 'file' && selectedFile) {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
-          setLoadingMessage('Parsing Digital Volume...');
+          setLoadingMessage('Decompressing Archive...');
           setProgress(20);
-          const parseData = new FormData();
-          parseData.append('file', selectedFile);
+          
+          const formData = new FormData();
+          formData.append('file', selectedFile);
           
           const parseRes = await fetch('/api/ingest', { 
             method: 'POST', 
-            body: parseData 
+            body: formData 
           });
           
           if (!parseRes.ok) {
             const errJson = await parseRes.json();
-            throw new Error(errJson.error || "EPUB parsing failed.");
+            throw new Error(errJson.error || "Digital parsing failed.");
           }
           
-          const { chapters } = await parseRes.json();
-          if (!chapters || chapters.length === 0) {
-            throw new Error("No readable content found in EPUB.");
+          const parseData = await parseRes.json();
+          if (!parseData.chapters || parseData.chapters.length === 0) {
+            throw new Error("The digital volume appears empty.");
           }
           
-          // Join extracted chapters into text for ingestion
-          fullText = chapters.map((ch: any, i: number) => `Chapter ${i + 1}: ${ch.title}\n\n${ch.content}`).join('\n\n');
+          preParsedChapters = parseData.chapters;
+          setLoadingMessage('Content Structured...');
           setProgress(50);
         } else {
-          fullText = await selectedFile.text();
+          manualContent = await selectedFile.text();
         }
       } else {
-        fullText = pastedText;
+        manualContent = pastedText;
       }
 
-      if (!fullText.trim()) throw new Error("No manuscript content detected.");
-
-      setProgress(70);
-      setLoadingMessage('Syncing with Library...');
+      setLoadingMessage('Syncing with Lounge...');
+      setProgress(80);
 
       if (uploadMode === 'cloud') {
         if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
           title: searchTitle, author: searchAuthor, genres: selectedGenres,
-          rawContent: fullText, ownerId: user!.uid,
-          manualChapterInfo: { number: parseInt(chapterNumber), title: chapterTitle }
+          rawContent: manualContent, 
+          preParsedChapters,
+          ownerId: user!.uid,
+          manualChapterInfo: manualContent ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
         });
       } else {
-        const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
+        // Local Archive Path
         await saveLocalBook({ 
           id: bookId, title: searchTitle, author: searchAuthor, genre: selectedGenres, 
-          isLocalOnly: true, totalChapters: finalTotal 
+          isLocalOnly: true, totalChapters: preParsedChapters ? preParsedChapters.length : parseInt(chapterNumber)
         });
-        await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
+
+        if (preParsedChapters) {
+          for (let i = 0; i < preParsedChapters.length; i++) {
+            await saveLocalChapter({ 
+              bookId, chapterNumber: i + 1, content: preParsedChapters[i].content, title: preParsedChapters[i].title 
+            });
+          }
+        } else if (manualContent) {
+          await saveLocalChapter({ 
+            bookId, chapterNumber: parseInt(chapterNumber), content: manualContent, title: chapterTitle 
+          });
+        }
       }
 
       setProgress(100);
-      toast({ title: 'Success', description: 'Volume added to library.' });
+      toast({ title: 'Manuscript Secured', description: 'Volume successfully integrated into the library.' });
       router.push('/');
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });
@@ -264,8 +278,8 @@ export function UploadNovelForm() {
         <Alert className="bg-primary/5 border-primary/20 rounded-2xl p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <AlertTitle className="font-black text-primary">Join the Contributors</AlertTitle>
-              <AlertDescription className="text-xs">Apply for access to publish novels to the global cloud library.</AlertDescription>
+              <AlertTitle className="font-black text-primary">Contribute Globally</AlertTitle>
+              <AlertDescription className="text-xs">Apply for cloud publishing privileges to share your library with everyone.</AlertDescription>
             </div>
             <Button size="sm" variant="outline" onClick={handleRequestAccess} disabled={isRequestingAccess} className="rounded-xl border-primary/30 text-primary hover:bg-primary/10">
               {isRequestingAccess ? <Loader2 className="h-3 w-3 animate-spin" /> : <CloudUpload className="h-3 w-3" />}
@@ -280,7 +294,7 @@ export function UploadNovelForm() {
           <div className="flex justify-between items-center">
             <div>
               <CardTitle className="text-3xl font-headline font-black">Add Volume</CardTitle>
-              <CardDescription>Expand your library shelf.</CardDescription>
+              <CardDescription>Expand your personal or global library.</CardDescription>
             </div>
             <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
               <Button 
@@ -307,7 +321,7 @@ export function UploadNovelForm() {
           <form onSubmit={handleUpload} className="space-y-6">
             <div className="grid gap-4">
               <div className="space-y-2 relative" ref={suggestionRef}>
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Volume Details</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
                 <div className="relative">
                   <Input 
                     value={title} 
@@ -323,8 +337,8 @@ export function UploadNovelForm() {
                 {showSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-2 border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
-                      <span>Existing {uploadMode} Titles</span>
-                      <span>Next Ch</span>
+                      <span>Matches Found</span>
+                      <span>Target Ch</span>
                     </div>
                     <ScrollArea className="max-h-[240px]">
                       {filteredSuggestions.map((book) => (
@@ -352,13 +366,13 @@ export function UploadNovelForm() {
                   </div>
                 )}
 
-                <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author Name" className="h-12 rounded-xl" required />
+                <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author" className="h-12 rounded-xl" required />
               </div>
               
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-between h-12 rounded-xl text-muted-foreground">
-                    <span className="truncate">{selectedGenres.length > 0 ? selectedGenres.join(', ') : 'Select Genres'}</span>
+                    <span className="truncate">{selectedGenres.length > 0 ? selectedGenres.join(', ') : 'Categories'}</span>
                     <ChevronDown className="h-4 w-4 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -383,8 +397,8 @@ export function UploadNovelForm() {
 
             <Tabs value={sourceMode} onValueChange={v => setSourceMode(v as any)}>
               <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1">
-                <TabsTrigger value="file" className="rounded-lg font-bold">EPUB / Text File</TabsTrigger>
-                <TabsTrigger value="text" className="rounded-lg font-bold">Paste Chapter</TabsTrigger>
+                <TabsTrigger value="file" className="rounded-lg font-bold">Manuscript File</TabsTrigger>
+                <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
               </TabsList>
               <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center hover:bg-muted/30 transition-colors">
                 <input 
@@ -400,8 +414,8 @@ export function UploadNovelForm() {
                   <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                     <FileText className="h-8 w-8 text-primary" />
                   </div>
-                  <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
-                  <p className="text-[10px] text-muted-foreground">EPUB or Standard text files.</p>
+                  <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
+                  <p className="text-[10px] text-muted-foreground opacity-60">Digital Volumes or Standard Text.</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
@@ -412,10 +426,10 @@ export function UploadNovelForm() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter Title</Label>
-                    <Input placeholder="Introduction" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
+                    <Input placeholder="Enter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
                   </div>
                 </div>
-                <Textarea value={pastedText} onChange={e => setPastedText(e.target.value)} placeholder="Paste manuscript snippet here..." className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" />
+                <Textarea value={pastedText} onChange={e => setPastedText(e.target.value)} placeholder="Enter manuscript content here..." className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" />
               </TabsContent>
             </Tabs>
 
@@ -443,7 +457,7 @@ export function UploadNovelForm() {
                 ) : (
                   <div className="flex items-center">
                     <CloudUpload className="mr-2" />
-                    {uploadMode === 'cloud' ? 'Publish to Cloud' : 'Save to Archive'}
+                    {uploadMode === 'cloud' ? 'Publish Globally' : 'Secure to Archive'}
                   </div>
                 )}
               </div>

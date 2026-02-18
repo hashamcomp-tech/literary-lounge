@@ -7,8 +7,8 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * @fileOverview EPUB Ingestion Engine.
- * Replaced with the requested reader logic to extract chapters from digital volumes.
+ * @fileOverview Robust EPUB Reader API.
+ * Extracts chapters from digital volumes and returns clean text.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -16,74 +16,72 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File;
     
     if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+      return NextResponse.json({ error: "No manuscript file detected." }, { status: 400 });
     }
 
+    // Prepare temporary storage for the binary archive
     const buffer = Buffer.from(await file.arrayBuffer());
     const tempDir = os.tmpdir();
     const tempFilePath = path.join(tempDir, `${uuidv4()}.epub`);
     fs.writeFileSync(tempFilePath, buffer);
 
     return new Promise((resolve) => {
-      // Initialize the EPUB reader with the temp file path
+      // Initialize the reader with the temporary path
       const epub = new EPub(tempFilePath);
 
       epub.on('error', (err) => {
         if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        resolve(NextResponse.json({ error: 'EPUB Error: ' + err.message }, { status: 500 }));
+        resolve(NextResponse.json({ error: 'Archive Error: ' + err.message }, { status: 500 }));
       });
 
       epub.on('end', async () => {
         try {
-          const chapters: { title: string; content: string; order: number }[] = [];
-
-          // Map flow items to chapter content promises
+          // Wrap chapter extraction in a Promise.all to ensure completion
           const chapterPromises = epub.flow.map((item, i) => {
-            return new Promise<void>((res) => {
+            return new Promise<{ title: string; content: string; order: number }>((res) => {
               epub.getChapter(item.id, (err, text) => {
                 if (err) {
-                  console.error('Chapter error:', err);
-                  res();
+                  res({ title: `Chapter ${i + 1}`, content: '[Extraction Failed]', order: i });
                   return;
                 }
 
-                // Parse XHTML properly to get clean text using JSDOM
+                // Sanitize XHTML content using JSDOM
                 const dom = new JSDOM(text);
                 const chapterText = dom.window.document.body.textContent || '';
 
-                chapters.push({
+                res({
                   title: item.title || `Chapter ${i + 1}`,
                   content: chapterText.trim(),
-                  order: i,
+                  order: i
                 });
-                res();
               });
             });
           });
 
-          // Wait for all chapters to be extracted and cleaned
-          await Promise.all(chapterPromises);
+          const results = await Promise.all(chapterPromises);
           
-          // Sort chapters to maintain the book's intended order
-          chapters.sort((a, b) => a.order - b.order);
+          // Sort results to match the book's intended sequence
+          const sortedChapters = results
+            .sort((a, b) => a.order - b.order)
+            .map(({ title, content }) => ({ title, content }));
 
-          // Cleanup temporary storage
+          // Cleanup temporary files immediately
           if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
           
           resolve(NextResponse.json({ 
-            message: 'All chapters extracted successfully!',
-            chapters: chapters.map(({ title, content }) => ({ title, content }))
+            success: true,
+            chapters: sortedChapters 
           }));
         } catch (e: any) {
           if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-          resolve(NextResponse.json({ error: 'Processing error: ' + e.message }, { status: 500 }));
+          resolve(NextResponse.json({ error: 'Parsing failure: ' + e.message }, { status: 500 }));
         }
       });
 
-      // Execute parsing
+      // Execute parsing sequence
       epub.parse();
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Ingestion pipeline error: ' + err.message }, { status: 500 });
   }
 }
