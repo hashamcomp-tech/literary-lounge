@@ -6,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
-import { Trash2, Loader2, Book } from 'lucide-react';
-import { useState } from 'react';
+import { Trash2, Loader2, Book, Play } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { deleteCloudBook } from '@/lib/cloud-library-utils';
 import { doc } from 'firebase/firestore';
@@ -30,13 +30,22 @@ interface NovelCardProps {
 /**
  * @fileOverview Universal Novel Card.
  * Intelligently routes between Mock, Cloud, and Local library collections.
- * Prioritizes uploaded cover URLs over random fallbacks.
+ * remembers how far the user has read by checking localStorage fallback.
  */
 export default function NovelCard({ novel }: NovelCardProps) {
   const { user } = useUser();
   const db = useFirestore();
   const { toast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [lastReadChapter, setLastReadChapter] = useState<number>(1);
+
+  useEffect(() => {
+    // Check local storage for reading progress
+    const localProgress = localStorage.getItem(`lounge-progress-${novel.id}`);
+    if (localProgress) {
+      setLastReadChapter(parseInt(localProgress));
+    }
+  }, [novel.id]);
 
   // Explicitly determine route type
   const isLocal = !!(novel.isLocalOnly || novel._isLocal);
@@ -50,17 +59,15 @@ export default function NovelCard({ novel }: NovelCardProps) {
   let href = `/novel/${novel.id}`; // Default to Mock
   
   if (isLocal) {
-    href = `/local-pages/${novel.id}/1`;
+    href = `/local-pages/${novel.id}/${lastReadChapter}`;
   } else if (isCloud) {
-    href = `/pages/${novel.id}/1`;
+    href = `/pages/${novel.id}/${lastReadChapter}`;
   }
 
   const authorName = novel.author || 'Unknown Author';
   
-  // Handle genres as array or string, filtering out any empty/null values
   const genres: string[] = (Array.isArray(novel.genre) ? novel.genre : (novel.genre ? [novel.genre] : [])).filter(Boolean);
   
-  // Prioritize uploaded cover URL, then fallback to metadata info, then mock image, finally a stable seeded placeholder
   const displayImage = novel.coverURL || 
                        novel.metadata?.info?.coverURL || 
                        novel.coverImage || 
@@ -77,9 +84,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
           description: `"${novel.title}" has been deleted from the global Lounge.`
         });
       })
-      .catch((err: any) => {
-        // Handled via listener
-      })
+      .catch((err: any) => {})
       .finally(() => {
         setIsDeleting(false);
       });
@@ -104,8 +109,9 @@ export default function NovelCard({ novel }: NovelCardProps) {
                 <Book className="h-12 w-12 text-muted-foreground/20" />
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                <Badge variant="secondary" className="bg-white/95 backdrop-blur-sm text-primary border-none font-bold py-1 px-3">
-                  Read Now
+                <Badge variant="secondary" className="bg-white/95 backdrop-blur-sm text-primary border-none font-bold py-1 px-3 flex items-center gap-1.5">
+                  {lastReadChapter > 1 ? <Play className="h-3 w-3 fill-primary" /> : null}
+                  {lastReadChapter > 1 ? `Resume Ch. ${lastReadChapter}` : 'Read Now'}
                 </Badge>
               </div>
             </div>
@@ -139,7 +145,6 @@ export default function NovelCard({ novel }: NovelCardProps) {
         </Card>
       </Link>
 
-      {/* Admin Deletion Control for Cloud Books */}
       {isAdmin && isCloud && (
         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
           <AlertDialog>

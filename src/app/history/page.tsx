@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useUser, useFirestore, useCollection, useMemoFirebase, useFirebase } from '@/firebase';
@@ -13,8 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 /**
  * @fileOverview Reading History page.
- * Displays a list of novels the user has recently read, with their last progress.
- * Respects uploaded cover URLs.
+ * Displays history for all users, leveraging Firebase Anonymous Auth for unlogged-in users.
  */
 export default function ReadingHistoryPage() {
   const { user, isUserLoading } = useUser();
@@ -23,7 +21,7 @@ export default function ReadingHistoryPage() {
   const router = useRouter();
 
   const historyQuery = useMemoFirebase(() => {
-    if (!db || !user || user.isAnonymous) return null;
+    if (!db || !user) return null;
     return query(
       collection(db, 'users', user.uid, 'history'),
       orderBy('lastReadAt', 'desc'),
@@ -61,7 +59,7 @@ export default function ReadingHistoryPage() {
             </div>
             <h1 className="text-5xl font-headline font-black">Reading History</h1>
             <p className="text-lg text-muted-foreground mt-2 max-w-xl">
-              Jump back into the stories you've started. We remember your progress so you don't have to.
+              Jump back into the stories you've started. We remember your progress across your session.
             </p>
           </header>
 
@@ -71,8 +69,7 @@ export default function ReadingHistoryPage() {
                 <CloudOff className="h-8 w-8 mb-4" />
                 <AlertTitle className="text-2xl font-headline font-black">Cloud Sync Unavailable</AlertTitle>
                 <AlertDescription className="text-base mt-2 max-w-2xl">
-                  The Lounge is currently in <strong>Independent Mode</strong>. Your cloud reading history cannot be retrieved or synced until a connection is established. 
-                  Your <strong>Local Drafts</strong> progress is still saved within your browser.
+                  The Lounge is currently in <strong>Independent Mode</strong>. Your cloud reading history cannot be retrieved or synced until a connection is established.
                 </AlertDescription>
               </Alert>
               
@@ -80,17 +77,6 @@ export default function ReadingHistoryPage() {
                  <Info className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
                  <p className="text-muted-foreground font-medium">Reconnect to see your global bookshelf.</p>
               </div>
-            </div>
-          ) : !user || user.isAnonymous ? (
-            <div className="py-24 text-center border-2 border-dashed rounded-3xl bg-muted/20">
-              <History className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
-              <h1 className="text-3xl font-headline font-black mb-2">Sign in Required</h1>
-              <p className="text-muted-foreground max-w-md mb-8 mx-auto">
-                Please sign in to your account to view and sync your reading history across devices.
-              </p>
-              <Button variant="default" className="rounded-xl px-8" onClick={() => router.push('/login')}>
-                Sign In
-              </Button>
             </div>
           ) : isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center">

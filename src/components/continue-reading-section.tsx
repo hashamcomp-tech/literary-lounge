@@ -1,9 +1,7 @@
-
 'use client';
 
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
-import NovelCard from '@/components/novel-card';
 import { PlayCircle, Clock, ArrowRight, Book } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
@@ -11,8 +9,7 @@ import { Button } from '@/components/ui/button';
 
 /**
  * @fileOverview Continue Reading Section.
- * Fetches and displays the top 3 most recently read books for the current user.
- * Prioritizes uploaded covers.
+ * Displays history for both anonymous and registered users.
  */
 export default function ContinueReadingSection() {
   const { user, isUserLoading } = useUser();
@@ -20,7 +17,7 @@ export default function ContinueReadingSection() {
 
   // Fetch the 3 most recently updated history items
   const historyQuery = useMemoFirebase(() => {
-    if (!db || !user || user.isAnonymous) return null;
+    if (!db || !user) return null;
     return query(
       collection(db, 'users', user.uid, 'history'),
       orderBy('lastReadAt', 'desc'),
@@ -45,13 +42,13 @@ export default function ContinueReadingSection() {
     );
   }
 
-  // Hide the section if no user is logged in or no history exists
-  if (!user || user.isAnonymous || !historyItems || historyItems.length === 0) {
+  // Hide the section if no history exists (even for anonymous users)
+  if (!historyItems || historyItems.length === 0) {
     return null;
   }
 
   return (
-    <section className="py-8 animate-in fade-in slide-in-from-top-4 duration-1000">
+    <section className="py-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <PlayCircle className="h-5 w-5 text-primary" />

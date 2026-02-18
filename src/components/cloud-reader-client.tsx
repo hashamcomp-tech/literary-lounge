@@ -45,7 +45,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Progress } from '@/components/ui/progress';
 
 interface CloudReaderClientProps {
   id: string;
@@ -110,7 +109,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
         });
         setChaptersCache(prev => ({ ...prev, ...newEntries }));
-        // Only return numbers that were actually found/cached
         return targetNumbers.filter(n => newEntries[n] || chaptersCache[n]);
       } catch (err: any) {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
@@ -132,7 +130,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (!firestore || !id) return;
 
     const loadChapter = async () => {
-      // If chapter is already cached, don't show full loader
       if (metadata && chaptersCache[currentChapterNum]) {
         if (viewLoggedRef.current !== id) {
           updateDoc(doc(firestore, 'books', id), { views: increment(1) }).catch(() => {});
@@ -189,9 +186,15 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
 
     const updateHistory = (metaOverride?: any) => {
-      if (user && !user.isAnonymous && firestore) {
-        const meta = metaOverride || metadata;
-        if (!meta) return;
+      const meta = metaOverride || metadata;
+      if (!meta) return;
+
+      // Local storage persistence for all users (including unlogged in)
+      const localKey = `lounge-progress-${id}`;
+      localStorage.setItem(localKey, currentChapterNum.toString());
+
+      // Cloud persistence if signed in (anonymous or registered)
+      if (user && firestore) {
         const historyRef = doc(firestore, 'users', user.uid, 'history', id);
         setDoc(historyRef, {
           bookId: id,
