@@ -40,7 +40,8 @@ export default function NovelCard({ novel }: NovelCardProps) {
   const [lastReadChapter, setLastReadChapter] = useState<number>(1);
 
   useEffect(() => {
-    // Check local storage for reading progress
+    // 1. Source of truth for resume logic: Browser Local Storage
+    // This allows for instant resume even without a network/auth check.
     const localProgress = localStorage.getItem(`lounge-progress-${novel.id}`);
     if (localProgress) {
       setLastReadChapter(parseInt(localProgress));
@@ -51,7 +52,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
   const isLocal = !!(novel.isLocalOnly || novel._isLocal);
   const isCloud = !!(novel.isCloud && !isLocal);
   
-  // Check admin status
+  // Check admin status (for global deletion privileges)
   const profileRef = useMemoFirebase(() => (db && user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
   const { data: profile } = useDoc(profileRef);
   const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';

@@ -21,6 +21,7 @@ export default function ReadingHistoryPage() {
   const router = useRouter();
 
   const historyQuery = useMemoFirebase(() => {
+    // If we have a user (Anonymous or Registered), we can fetch their cloud history.
     if (!db || !user) return null;
     return query(
       collection(db, 'users', user.uid, 'history'),

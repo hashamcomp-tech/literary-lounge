@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { doc, getDoc, collection, getDocs, setDoc, updateDoc, increment, serverTimestamp, query, where, limit, orderBy } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, updateDoc, increment, serverTimestamp, query, where, limit } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Sparkles, Image as ImageIcon, Upload, X } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -185,33 +184,33 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       }
     };
 
-    const updateHistory = (metaOverride?: any) => {
-      const meta = metaOverride || metadata;
-      if (!meta) return;
-
-      // Local storage persistence for all users (including unlogged in)
-      const localKey = `lounge-progress-${id}`;
-      localStorage.setItem(localKey, currentChapterNum.toString());
-
-      // Cloud persistence if signed in (anonymous or registered)
-      if (user && firestore) {
-        const historyRef = doc(firestore, 'users', user.uid, 'history', id);
-        setDoc(historyRef, {
-          bookId: id,
-          title: meta.bookTitle || meta.title || 'Untitled',
-          author: meta.author || 'Unknown',
-          coverURL: meta.coverURL || null,
-          genre: meta.genre || 'Novel',
-          lastReadChapter: currentChapterNum,
-          lastReadAt: serverTimestamp(),
-          isCloud: true
-        }, { merge: true }).catch(() => {});
-      }
-    };
-
     loadChapter();
     stopTextToSpeech();
   }, [firestore, id, currentChapterNum, isOfflineMode, user]);
+
+  const updateHistory = (metaOverride?: any) => {
+    const meta = metaOverride || metadata;
+    if (!meta || !firestore) return;
+
+    // 1. Local storage persistence for all users (including unlogged in)
+    const localKey = `lounge-progress-${id}`;
+    localStorage.setItem(localKey, currentChapterNum.toString());
+
+    // 2. Cloud persistence if authenticated (Anonymous or Registered)
+    if (user) {
+      const historyRef = doc(firestore, 'users', user.uid, 'history', id);
+      setDoc(historyRef, {
+        bookId: id,
+        title: meta.bookTitle || meta.title || 'Untitled',
+        author: meta.author || 'Unknown',
+        coverURL: meta.coverURL || null,
+        genre: meta.genre || 'Novel',
+        lastReadChapter: currentChapterNum,
+        lastReadAt: serverTimestamp(),
+        isCloud: true
+      }, { merge: true }).catch(() => {});
+    }
+  };
 
   const handleUpdateCover = async (file: File) => {
     if (!firestore || !storage || !id) return;
