@@ -11,7 +11,7 @@ import { useAuth, useUser, useFirestore, useDoc, useMemoFirebase, useStorage } f
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight, Camera, AlertCircle } from 'lucide-react';
+import { Loader2, LogIn, UserPlus, LogOut, User as UserIcon, Check, X, KeyRound, Pencil, Clock, Shield, History, ChevronRight, Camera } from 'lucide-react';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -66,6 +66,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const checkUsername = async () => {
+      if (!db) return;
       const clean = registerUsername.trim().toLowerCase();
       if (clean.length < 3) {
         setUsernameStatus('idle');
@@ -74,7 +75,7 @@ export default function LoginPage() {
 
       setUsernameStatus('checking');
       try {
-        const usernameRef = doc(db!, 'usernames', clean);
+        const usernameRef = doc(db, 'usernames', clean);
         const snapshot = await getDoc(usernameRef);
         setUsernameStatus(snapshot.exists() ? 'taken' : 'available');
       } catch (err) {
@@ -96,6 +97,7 @@ export default function LoginPage() {
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailToUse);
       
       if (!isEmail) {
+        // Resolve username to email via Firestore index
         const usernameRef = doc(db, 'usernames', emailToUse.toLowerCase());
         const usernameSnap = await getDoc(usernameRef);
         
@@ -103,15 +105,12 @@ export default function LoginPage() {
           throw new Error("Username not found. Please use your registered email or correct username.");
         }
         
-        const { uid } = usernameSnap.data();
-        const userDocRef = doc(db, 'users', uid);
-        const userDocSnap = await getDoc(userDocRef);
-        
-        if (!userDocSnap.exists() || !userDocSnap.data()?.email) {
-          throw new Error("Could not find account details for this username.");
+        const data = usernameSnap.data();
+        if (!data?.email) {
+          throw new Error("Login mapping incomplete for this username.");
         }
         
-        emailToUse = userDocSnap.data()!.email;
+        emailToUse = data.email;
       }
 
       await signInWithEmailAndPassword(auth, emailToUse, loginPassword);
@@ -141,8 +140,13 @@ export default function LoginPage() {
       const userCredential = await createUserWithEmailAndPassword(auth!, registerEmail, registerPassword);
       const newUser = userCredential.user;
       
-      const mapData = { uid: newUser.uid };
-      setDoc(usernameRef, mapData).catch(async (err) => {
+      // Store UID and Email in username map for dual login support
+      const mapData = { 
+        uid: newUser.uid,
+        email: registerEmail.toLowerCase()
+      };
+      
+      await setDoc(usernameRef, mapData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: usernameRef.path,
           operation: 'create',
@@ -160,7 +164,7 @@ export default function LoginPage() {
         lastUsernameChange: serverTimestamp()
       };
 
-      setDoc(userRef, profileData).catch(async (err) => {
+      await setDoc(userRef, profileData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'create',
@@ -216,8 +220,12 @@ export default function LoginPage() {
         return;
       }
 
-      const mapData = { uid: user!.uid };
-      setDoc(usernameRef, mapData).catch(async (err) => {
+      const mapData = { 
+        uid: user!.uid,
+        email: user!.email?.toLowerCase() || profile?.email?.toLowerCase() 
+      };
+      
+      await setDoc(usernameRef, mapData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: usernameRef.path,
           operation: 'create',
@@ -233,7 +241,7 @@ export default function LoginPage() {
         updatedAt: serverTimestamp()
       };
 
-      updateDoc(userRef, updateData).catch(async (err) => {
+      await updateDoc(userRef, updateData).catch(async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: userRef.path,
           operation: 'update',
@@ -242,7 +250,7 @@ export default function LoginPage() {
       });
 
       if (oldUsername) {
-        deleteDoc(doc(db!, 'usernames', oldUsername)).catch(() => {});
+        deleteDoc(doc(db!, 'usernames', oldUsername.toLowerCase())).catch(() => {});
       }
 
       toast({ title: "Success", description: "Your username has been updated." });
@@ -263,7 +271,7 @@ export default function LoginPage() {
       toast({
         variant: "destructive",
         title: "Cloud Disconnected",
-        description: "Firebase Storage is not initialized. If you're the owner, please enable Storage in your Firebase Console."
+        description: "Firebase Storage is not initialized."
       });
       return;
     }
@@ -290,7 +298,7 @@ export default function LoginPage() {
       toast({ 
         variant: "destructive", 
         title: "Upload Blocked", 
-        description: error.message || "Failed to reach the storage bucket. Check your internet or Firebase console settings." 
+        description: error.message || "Failed to reach the storage bucket." 
       });
     } finally {
       setIsUploadingPhoto(false);
@@ -343,7 +351,7 @@ export default function LoginPage() {
             <Card className="border-none shadow-xl bg-card/80 backdrop-blur">
               <CardHeader className="text-center">
                 <CardTitle className="text-3xl font-headline font-black">Welcome</CardTitle>
-                <CardDescription>Sign in to sync your library across devices.</CardDescription>
+                <CardDescription>Sign in with email or username.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="login" className="w-full">
@@ -434,12 +442,6 @@ export default function LoginPage() {
                     </div>
                   )}
                 </div>
-                
-                {isUploadingPhoto && (
-                  <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-primary animate-pulse mb-4 uppercase tracking-widest">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Securing Image...
-                  </div>
-                )}
                 
                 <CardTitle className="text-2xl font-headline font-bold flex flex-col items-center justify-center gap-2">
                   <span>{isProfileLoading ? "Loading..." : (profile?.username || "Your Account")}</span>

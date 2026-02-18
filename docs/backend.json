@@ -47,6 +47,17 @@
         "createdAt"
       ]
     },
+    "UsernameMap": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UsernameMap",
+      "type": "object",
+      "description": "Mapping of username to email/uid for login lookup.",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" }
+      },
+      "required": ["uid", "email"]
+    },
     "PublishRequest": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "PublishRequest",
@@ -138,6 +149,14 @@
           "entityName": "UserProfile",
           "schema": { "$ref": "#/backend/entities/UserProfile" },
           "description": "Stores individual user profiles."
+        }
+      },
+      {
+        "path": "/usernames/{username}",
+        "definition": {
+          "entityName": "UsernameMap",
+          "schema": { "$ref": "#/backend/entities/UsernameMap" },
+          "description": "Mapping for username login lookup."
         }
       },
       {

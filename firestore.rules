@@ -47,6 +47,14 @@ service cloud.firestore {
       }
     }
 
+    // USERNAMES (Login Lookup)
+    match /usernames/{username} {
+      // Allow public read for login by username lookup
+      allow read: if true;
+      // Only the owner (after registration) or admin can write
+      allow write: if isAdmin() || (isSignedIn() && request.resource.data.uid == request.auth.uid);
+    }
+
     // PUBLISH REQUESTS
     match /publishRequests/{requestId} {
       // Admins can manage all requests
