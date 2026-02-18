@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, X, ChevronDown, Check, FileText } from 'lucide-react';
+import { Upload, BookPlus, Loader2, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, X, ChevronDown, Check, FileText, ClipboardList } from 'lucide-react';
 import ePub from 'epubjs';
 import { doc, getDoc } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
@@ -26,6 +26,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 
 export function UploadNovelForm() {
   const router = useRouter();
@@ -36,6 +38,8 @@ export function UploadNovelForm() {
   const [author, setAuthor] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pastedText, setPastedText] = useState('');
+  const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   
@@ -70,18 +74,19 @@ export function UploadNovelForm() {
   }, [user, db, isOfflineMode, isSuperAdmin]);
 
   const handleAiAutoFill = async () => {
-    if (!selectedFile) return;
-    setIsIdentifying(true);
-    try {
-      const result = await identifyBookFromFilename(selectedFile.name);
-      if (result.title) setTitle(result.title);
-      if (result.author) setAuthor(result.author);
-      if (result.genres) setSelectedGenres(result.genres.filter(g => GENRES.includes(g)));
-      toast({ title: "Identity Matched", description: `Parsed as: ${result.title}` });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "AI Search Failed" });
-    } finally {
-      setIsIdentifying(false);
+    if (sourceMode === 'file' && selectedFile) {
+      setIsIdentifying(true);
+      try {
+        const result = await identifyBookFromFilename(selectedFile.name);
+        if (result.title) setTitle(result.title);
+        if (result.author) setAuthor(result.author);
+        if (result.genres) setSelectedGenres(result.genres.filter(g => GENRES.includes(g)));
+        toast({ title: "Identity Matched", description: `Parsed as: ${result.title}` });
+      } catch (err: any) {
+        toast({ variant: "destructive", title: "AI Search Failed" });
+      } finally {
+        setIsIdentifying(false);
+      }
     }
   };
 
@@ -110,7 +115,8 @@ export function UploadNovelForm() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedFile) return toast({ variant: 'destructive', title: 'Attach Manuscript' });
+    if (sourceMode === 'file' && !selectedFile) return toast({ variant: 'destructive', title: 'Attach Manuscript' });
+    if (sourceMode === 'text' && !pastedText.trim()) return toast({ variant: 'destructive', title: 'Paste Manuscript' });
     if (selectedGenres.length === 0) return toast({ variant: 'destructive', title: 'Select Genres' });
     if (!db) return;
 
@@ -119,24 +125,28 @@ export function UploadNovelForm() {
       setLoadingStatus('Parsing Manuscript...');
       let fullText = "";
       
-      if (selectedFile.name.endsWith('.epub')) {
-        const arrayBuffer = await selectedFile.arrayBuffer();
-        const book = ePub(arrayBuffer);
-        await book.ready;
-        const spine = book.spine;
-        const textParts = [];
-        // @ts-ignore
-        for (const item of spine.items) {
-          const chapterDoc = await book.load(item.href);
+      if (sourceMode === 'file' && selectedFile) {
+        if (selectedFile.name.endsWith('.epub')) {
+          const arrayBuffer = await selectedFile.arrayBuffer();
+          const book = ePub(arrayBuffer);
+          await book.ready;
+          const spine = book.spine;
+          const textParts = [];
           // @ts-ignore
-          textParts.push(chapterDoc.querySelector('body')?.innerText || "");
+          for (const item of spine.items) {
+            const chapterDoc = await book.load(item.href);
+            // @ts-ignore
+            textParts.push(chapterDoc.querySelector('body')?.innerText || "");
+          }
+          fullText = textParts.join('\n\n');
+        } else {
+          fullText = await selectedFile.text();
         }
-        fullText = textParts.join('\n\n');
       } else {
-        fullText = await selectedFile.text();
+        fullText = pastedText;
       }
 
-      if (fullText.length < 500) throw new Error("Manuscript appears to be empty or corrupted.");
+      if (fullText.length < 100) throw new Error("Manuscript appears to be too short or empty.");
 
       setLoadingStatus('Optimizing Assets...');
       let optimizedCover = null;
@@ -154,7 +164,7 @@ export function UploadNovelForm() {
           db, 
           storage: storage!, 
           bookId: docId,
-          title: title || selectedFile.name.replace(/\.[^/.]+$/, ""), 
+          title: title || (sourceMode === 'file' ? selectedFile!.name.replace(/\.[^/.]+$/, "") : "Untitled"), 
           author: author || 'Anonymous', 
           genres: selectedGenres, 
           rawContent: fullText, 
@@ -164,7 +174,13 @@ export function UploadNovelForm() {
         toast({ title: "Published to Cloud", description: "Manuscript divided and secured." });
       } else {
         setLoadingStatus('Archiving Locally...');
-        const bookData = { id: docId, title: title || selectedFile.name, author: author || 'Anonymous', genre: selectedGenres, isLocalOnly: true };
+        const bookData = { 
+          id: docId, 
+          title: title || (sourceMode === 'file' ? selectedFile!.name : "Pasted Volume"), 
+          author: author || 'Anonymous', 
+          genre: selectedGenres, 
+          isLocalOnly: true 
+        };
         await saveLocalBook(bookData);
         await saveLocalChapter({ bookId: docId, chapterNumber: 1, content: fullText, title: "Private Archive" });
         toast({ title: "Local Archive Saved" });
@@ -201,7 +217,7 @@ export function UploadNovelForm() {
               <CardTitle className="text-2xl font-headline font-black">Publish Volume</CardTitle>
               <CardDescription className="text-xs uppercase tracking-widest font-bold text-muted-foreground mt-1">Lounge Submission Portal</CardDescription>
             </div>
-            {selectedFile && (
+            {sourceMode === 'file' && selectedFile && (
               <Button size="sm" variant="outline" className="h-8 gap-2 bg-primary/5 text-primary border-primary/20 hover:bg-primary/10 transition-all" onClick={handleAiAutoFill} disabled={isIdentifying}>
                 {isIdentifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                 <span className="text-[10px] font-black uppercase">AI Auto-Fill</span>
@@ -273,29 +289,58 @@ export function UploadNovelForm() {
 
             <div className="pt-2">
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground block mb-3 ml-1">Manuscript Source</Label>
-              <div className={`relative border-2 border-dashed rounded-[1.5rem] p-10 transition-all text-center group cursor-pointer ${selectedFile ? 'border-primary bg-primary/5' : 'border-muted-foreground/20 hover:border-primary/50 hover:bg-primary/5'}`}>
-                <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub,.txt" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
-                {selectedFile ? (
-                  <div className="flex flex-col items-center gap-3 animate-in zoom-in duration-300">
-                    <div className="bg-primary/10 p-3 rounded-full"><FileText className="h-8 w-8 text-primary" /></div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-black truncate max-w-[300px]">{selectedFile.name}</p>
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase">{(selectedFile.size / 1024).toFixed(1)} KB Ready</p>
+              <Tabs defaultValue="file" value={sourceMode} onValueChange={(v) => setSourceMode(v as any)}>
+                <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/30 p-1 rounded-xl">
+                  <TabsTrigger value="file" className="rounded-lg gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                    <FileType className="h-3.5 w-3.5" /> 
+                    <span className="text-[10px] font-black uppercase tracking-widest">File Upload</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="text" className="rounded-lg gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                    <ClipboardList className="h-3.5 w-3.5" /> 
+                    <span className="text-[10px] font-black uppercase tracking-widest">Paste Text</span>
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="file" className="mt-0">
+                  <div className={`relative border-2 border-dashed rounded-[1.5rem] p-10 transition-all text-center group cursor-pointer ${selectedFile ? 'border-primary bg-primary/5' : 'border-muted-foreground/20 hover:border-primary/50 hover:bg-primary/5'}`}>
+                    <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub,.txt" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                    {selectedFile ? (
+                      <div className="flex flex-col items-center gap-3 animate-in zoom-in duration-300">
+                        <div className="bg-primary/10 p-3 rounded-full"><FileText className="h-8 w-8 text-primary" /></div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-black truncate max-w-[300px]">{selectedFile.name}</p>
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase">{(selectedFile.size / 1024).toFixed(1)} KB Ready</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center opacity-40 gap-3 group-hover:opacity-100 transition-opacity">
+                        <BookPlus className="h-10 w-10 text-primary" />
+                        <div className="space-y-1">
+                          <p className="text-xs font-black uppercase tracking-widest">Attach EPUB or Text</p>
+                          <p className="text-[10px] font-medium">Direct ingestion enabled</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+                
+                <TabsContent value="text" className="mt-0">
+                  <div className="relative group">
+                    <Textarea 
+                      value={pastedText}
+                      onChange={(e) => setPastedText(e.target.value)}
+                      placeholder="Paste your manuscript content here..."
+                      className="min-h-[250px] rounded-[1.5rem] bg-background/50 border-2 border-muted-foreground/10 focus:border-primary/30 transition-all p-6 text-sm leading-relaxed"
+                    />
+                    <div className="absolute top-4 right-4 opacity-20 group-focus-within:opacity-100 transition-opacity">
+                      <FileText className="h-5 w-5 text-primary" />
                     </div>
                   </div>
-                ) : (
-                  <div className="flex flex-col items-center opacity-40 gap-3 group-hover:opacity-100 transition-opacity">
-                    <BookPlus className="h-10 w-10 text-primary" />
-                    <div className="space-y-1">
-                      <p className="text-xs font-black uppercase tracking-widest">Attach EPUB or Text</p>
-                      <p className="text-[10px] font-medium">Direct ingestion enabled</p>
-                    </div>
-                  </div>
-                )}
-              </div>
+                </TabsContent>
+              </Tabs>
             </div>
 
-            <Button type="submit" className="w-full h-16 text-lg font-headline font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all active:scale-95" disabled={loading || !selectedFile}>
+            <Button type="submit" className="w-full h-16 text-lg font-headline font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all active:scale-95" disabled={loading || (sourceMode === 'file' ? !selectedFile : !pastedText.trim())}>
               {loading ? <><Loader2 className="mr-3 h-5 w-5 animate-spin" /> {loadingStatus}</> : (
                 <span className="flex items-center gap-2">
                   <CloudUpload className="h-5 w-5" />
