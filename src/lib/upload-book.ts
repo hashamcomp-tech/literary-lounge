@@ -11,6 +11,30 @@ interface Chapter {
 }
 
 /**
+ * Hardened regex patterns to strip index entries, watermarks, and legal boilerplate.
+ */
+function cleanManuscriptContent(text: string): string {
+  if (!text) return "";
+  
+  return text
+    // 1. Strip common index patterns (e.g., "About.com, 286")
+    .replace(/^[A-Z][a-zA-Z0-9\s.-]+,\s\d+(?:–\d+)?\s*$/gm, "")
+    // 2. Strip ISBN and technical metadata
+    .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
+    // 3. Strip publisher address blocks
+    .replace(/^[0-9]+\s+[A-Z][a-zA-Z\s.-]+,\s*[A-Z]{2}\s*\d{5}.*$/gm, "")
+    // 4. Strip legal assertions
+    .replace(/.*asserted (his|her|their) right to be identified.*/gi, "")
+    .replace(/All rights reserved\. No part of this (book|work|text).*/gi, "")
+    // 5. Strip digital distribution signatures
+    .replace(/Published by .* imprint of .*/gi, "")
+    .replace(/A CIP catalogue record for this book is available from .*/gi, "")
+    // 6. Cleanup empty lines left by removal
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
  * @fileOverview Refined multi-step process for publishing novels.
  * Prevents Firestore size limit errors and implements resilient image uploading.
  */
@@ -66,7 +90,7 @@ export async function uploadBookToCloud({
     coverSize,
   };
 
-  // 3. Set Root Document
+  // 3. Set Root Document (Non-blocking)
   const bookRef = doc(db, 'books', bookId);
   const rootPayload = {
     title,
@@ -88,14 +112,13 @@ export async function uploadBookToCloud({
     }))
   };
 
-  await setDoc(bookRef, rootPayload, { merge: true }).catch(async (serverError) => {
+  setDoc(bookRef, rootPayload, { merge: true }).catch(async (serverError) => {
     const permissionError = new FirestorePermissionError({
       path: bookRef.path,
       operation: 'write',
       requestResourceData: rootPayload,
     });
     errorEmitter.emit('permission-error', permissionError);
-    throw serverError;
   });
 
   // 4. Global Stats Update: Accumulate the exact bytes used
@@ -106,18 +129,21 @@ export async function uploadBookToCloud({
     }, { merge: true }).catch(() => {});
   }
 
-  // 5. Parallel Chapter Uploads
-  const chapterPromises = chapters.map(async (ch) => {
+  // 5. Parallel Non-Blocking Chapter Uploads
+  chapters.forEach((ch) => {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
+    const cleanedContent = cleanManuscriptContent(ch.content);
+    
     const chData = {
-      ...ch,
+      chapterNumber: ch.chapterNumber,
+      content: cleanedContent,
       title: ch.title || `Chapter ${ch.chapterNumber}`,
       ownerId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
     
-    return setDoc(chRef, chData, { merge: true }).catch(async (serverError) => {
+    setDoc(chRef, chData, { merge: true }).catch(async (serverError) => {
       const permissionError = new FirestorePermissionError({
         path: chRef.path,
         operation: 'write',
@@ -126,8 +152,6 @@ export async function uploadBookToCloud({
       errorEmitter.emit('permission-error', permissionError);
     });
   });
-
-  await Promise.all(chapterPromises);
 
   return { bookId, coverURL };
 }

@@ -2,20 +2,28 @@
 
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
-import { PlayCircle, Clock, ArrowRight, Book } from 'lucide-react';
+import { PlayCircle, Clock, ArrowRight, Book, History } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { getLocalHistory, LocalHistoryItem } from '@/lib/local-history-utils';
+import { useEffect, useState } from 'react';
 
 /**
  * @fileOverview Continue Reading Section.
- * Displays history for both anonymous and registered users.
+ * Intelligently merges cloud history with local browser history for an unauthenticated-first experience.
  */
 export default function ContinueReadingSection() {
   const { user, isUserLoading } = useUser();
   const db = useFirestore();
+  const [localItems, setLocalItems] = useState<LocalHistoryItem[]>([]);
 
-  // Fetch the 3 most recently updated history items
+  // Load local items on mount
+  useEffect(() => {
+    setLocalItems(getLocalHistory().slice(0, 3));
+  }, []);
+
+  // Fetch cloud items
   const historyQuery = useMemoFirebase(() => {
     if (!db || !user) return null;
     return query(
@@ -25,9 +33,9 @@ export default function ContinueReadingSection() {
     );
   }, [db, user]);
 
-  const { data: historyItems, isLoading } = useCollection(historyQuery);
+  const { data: cloudItems, isLoading: isCloudLoading } = useCollection(historyQuery);
 
-  if (isUserLoading || isLoading) {
+  if (isUserLoading || (isCloudLoading && user)) {
     return (
       <div className="py-8 space-y-6">
         <div className="flex items-center justify-between">
@@ -42,8 +50,10 @@ export default function ContinueReadingSection() {
     );
   }
 
-  // Hide the section if no history exists (even for anonymous users)
-  if (!historyItems || historyItems.length === 0) {
+  // Merge items: prefer cloud but show local if user is anonymous or just started
+  const mergedItems = cloudItems && cloudItems.length > 0 ? cloudItems : localItems;
+
+  if (mergedItems.length === 0) {
     return null;
   }
 
@@ -62,11 +72,13 @@ export default function ContinueReadingSection() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {historyItems.map((item) => {
-          const coverURL = item.coverURL || `https://picsum.photos/seed/${item.bookId}/200/300`;
+        {mergedItems.map((item: any) => {
+          const id = item.bookId || item.id;
+          const coverURL = item.coverURL || `https://picsum.photos/seed/${id}/200/300`;
+          const href = item.isCloud ? `/pages/${id}/${item.lastReadChapter}` : `/novel/${id}`;
           
           return (
-            <Link key={item.id} href={item.isCloud ? `/pages/${item.bookId}/${item.lastReadChapter}` : `/novel/${item.bookId}`}>
+            <Link key={id} href={href}>
               <div className="group bg-card/40 backdrop-blur-xl border border-border/50 rounded-2xl p-4 flex items-center gap-4 transition-all hover:shadow-xl hover:bg-card/60 hover:-translate-y-1">
                 <div className="relative h-20 w-14 shrink-0 rounded-md overflow-hidden shadow-md bg-muted/20 flex items-center justify-center">
                   {coverURL ? (
