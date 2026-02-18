@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -49,6 +48,7 @@ export function UploadNovelForm() {
   
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
+  const [progress, setProgress] = useState(0);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
@@ -179,6 +179,7 @@ export function UploadNovelForm() {
     if (!title.trim() || !author.trim()) return;
     
     setLoading(true);
+    setProgress(5);
     setLoadingMessage('Initializing...');
     
     try {
@@ -197,9 +198,11 @@ export function UploadNovelForm() {
         if (!canUploadCloud) throw new Error("You don't have permission to publish to the cloud.");
         
         if (sourceMode === 'file' && selectedFile && isEpub) {
+          setProgress(20);
           setLoadingMessage('Uploading manuscript...');
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
           
+          setProgress(60);
           setLoadingMessage('Cloud processing...');
           const response = await fetch('/api/ingest', {
             method: 'POST',
@@ -219,11 +222,14 @@ export function UploadNovelForm() {
             const errData = await response.json();
             throw new Error(errData.details || "Cloud ingestion engine error.");
           }
+          setProgress(100);
           toast({ title: 'Success', description: 'Manuscript published to global library.' });
         } else {
+          setProgress(30);
           setLoadingMessage('Preparing content...');
           const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           
+          setProgress(70);
           setLoadingMessage('Syncing with Cloud...');
           await uploadBookToCloud({
             db: db!, storage: storage!, bookId,
@@ -231,14 +237,17 @@ export function UploadNovelForm() {
             rawContent: text, ownerId: user!.uid,
             manualChapterInfo: sourceMode === 'text' ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
           });
+          setProgress(100);
           toast({ title: 'Success', description: 'Available globally in the Lounge.' });
         }
       } else {
         // Local Mode
         if (sourceMode === 'file' && selectedFile && isEpub) {
+          setProgress(20);
           setLoadingMessage('Uploading manuscript...');
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
           
+          setProgress(60);
           setLoadingMessage('Parsing EPUB locally...');
           const response = await fetch('/api/ingest', {
             method: 'POST',
@@ -253,6 +262,7 @@ export function UploadNovelForm() {
           if (!response.ok) throw new Error("Private archive engine failed.");
           
           const { book } = await response.json();
+          setProgress(80);
           setLoadingMessage('Archiving...');
           
           await saveLocalBook({ 
@@ -272,8 +282,10 @@ export function UploadNovelForm() {
               title: book.chapters[i].title 
             });
           }
+          setProgress(100);
           toast({ title: 'Success', description: 'Manuscript added to Private Archive.' });
         } else {
+          setProgress(50);
           setLoadingMessage('Archiving content...');
           let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
@@ -287,6 +299,7 @@ export function UploadNovelForm() {
             totalChapters: finalTotal
           });
           await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
+          setProgress(100);
           toast({ title: 'Success', description: 'Stored in Private Archive.' });
         }
       }
@@ -295,6 +308,7 @@ export function UploadNovelForm() {
       toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });
     } finally {
       setLoading(false);
+      setProgress(0);
       setLoadingMessage('');
     }
   };
@@ -461,18 +475,37 @@ export function UploadNovelForm() {
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all" disabled={loading}>
-              {loading ? (
-                <div className="flex flex-col items-center">
-                  <Loader2 className="animate-spin h-5 w-5 mb-1" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">{loadingMessage}</span>
+            <Button 
+              type="submit" 
+              className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" 
+              disabled={loading}
+            >
+              {/* Liquid Wave Animation Background */}
+              {loading && (
+                <div 
+                  className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0"
+                  style={{ height: `${progress}%` }}
+                >
+                  {/* Rotating wave shapes to create the surface effect */}
+                  <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-[#1e293b] animate-liquid-wave opacity-80" />
+                  <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[88%] rounded-[38%] bg-[#334155] animate-liquid-wave-fast opacity-40" />
                 </div>
-              ) : (
-                <>
-                  <CloudUpload className="mr-2" />
-                  {uploadMode === 'cloud' ? 'Publish to Cloud' : 'Save to Archive'}
-                </>
               )}
+
+              {/* Button Content */}
+              <div className="relative z-10 flex flex-col items-center justify-center">
+                {loading ? (
+                  <>
+                    <Loader2 className="animate-spin h-5 w-5 mb-1" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">{loadingMessage}</span>
+                  </>
+                ) : (
+                  <div className="flex items-center">
+                    <CloudUpload className="mr-2" />
+                    {uploadMode === 'cloud' ? 'Publish to Cloud' : 'Save to Archive'}
+                  </div>
+                )}
+              </div>
             </Button>
           </form>
         </CardContent>

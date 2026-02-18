@@ -82,6 +82,21 @@
   }
 }
 
+@layer utilities {
+  @keyframes liquid-wave {
+    from { transform: translate(-50%, -75%) rotate(0deg); }
+    to { transform: translate(-50%, -75%) rotate(360deg); }
+  }
+  
+  .animate-liquid-wave {
+    animation: liquid-wave 10s infinite linear;
+  }
+  
+  .animate-liquid-wave-fast {
+    animation: liquid-wave 7s infinite linear;
+  }
+}
+
 @layer components {
   .admin-badge {
     background: #ef4444;
