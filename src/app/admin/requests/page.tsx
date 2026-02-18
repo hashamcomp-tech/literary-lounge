@@ -20,7 +20,6 @@ import {
   Sparkles, 
   BrainCircuit, 
   ShieldCheck, 
-  Info 
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';

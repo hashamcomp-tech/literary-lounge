@@ -1,17 +1,10 @@
 import Link from 'next/link';
 import Navbar from '@/components/navbar';
-import NovelCard from '@/components/novel-card';
 import RecommendationsSection from '@/components/recommendations-section';
 import LocalLibrarySection from '@/components/local-library-section';
 import ContinueReadingSection from '@/components/continue-reading-section';
-import { MOCK_NOVELS } from '@/lib/mock-data';
-import { GENRES } from '@/lib/genres';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 
 export default function Home() {
-  const mockGenres = Array.from(new Set(MOCK_NOVELS.map(n => n.genre)));
-
   return (
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
@@ -65,29 +58,6 @@ export default function Home() {
           limitCount={6} 
         />
 
-        {/* Browse by Genre Section */}
-        <section className="my-20">
-          <div className="flex flex-col items-center text-center mb-12">
-            <h2 className="text-4xl font-headline font-black mb-4">The Genre Shelf</h2>
-            <p className="text-muted-foreground max-w-md">Discovery through diverse perspectives and timeless themes.</p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-4">
-            {GENRES.map((genre) => (
-              <Link 
-                key={genre} 
-                href={`/explore?genre=${encodeURIComponent(genre)}`}
-                className="group"
-              >
-                <div className="h-full px-4 py-8 bg-card border border-transparent hover:border-primary/20 hover:bg-primary/5 rounded-3xl transition-all duration-500 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-xl">
-                  <span className="font-headline font-bold text-sm group-hover:text-primary transition-colors">
-                    {genre}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-
         {/* Your Private Browser Library */}
         <LocalLibrarySection />
 
@@ -96,29 +66,6 @@ export default function Home() {
           genre="Fantasy" 
           limitCount={3} 
         />
-
-        {/* Curated Library */}
-        <section className="space-y-12 mt-20 pt-20 border-t">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-            <h2 className="text-3xl font-headline font-black">Mock Collection</h2>
-            <Tabs defaultValue="all" className="w-full sm:w-auto">
-              <TabsList className="bg-muted/50 w-full sm:w-auto overflow-x-auto p-1 rounded-2xl">
-                <TabsTrigger value="all" className="rounded-xl px-6">All</TabsTrigger>
-                {mockGenres.map(genre => (
-                  <TabsTrigger key={genre} value={genre.toLowerCase()} className="rounded-xl px-6">
-                    {genre}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
-            {MOCK_NOVELS.map((novel) => (
-              <NovelCard key={novel.id} novel={novel} />
-            ))}
-          </div>
-        </section>
       </main>
     </div>
   );
