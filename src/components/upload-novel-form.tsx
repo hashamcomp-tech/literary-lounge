@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, Globe, HardDrive, Sparkles, Send, FileText, ChevronDown, Check, ImageIcon, CloudUpload } from 'lucide-react';
+import { Upload, BookPlus, Loader2, Globe, HardDrive, Sparkles, Send, FileText, ChevronDown, Check, ImageIcon, CloudUpload, BrainCircuit } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,7 @@ import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
 import { uploadManuscriptFile } from '@/lib/upload-cover';
 import { parsePastedChapter } from '@/ai/flows/parse-pasted-chapter';
+import { identifyBookFromFilename } from '@/ai/flows/identify-book';
 import {
   Popover,
   PopoverContent,
@@ -42,6 +43,7 @@ export function UploadNovelForm() {
   
   const [loading, setLoading] = useState(false);
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  const [isIdentifying, setIsIdentifying] = useState(false);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
@@ -86,6 +88,30 @@ export function UploadNovelForm() {
     };
     checkPermissions();
   }, [user, db, isOfflineMode, uploadMode]);
+
+  const handleFileChange = async (file: File) => {
+    setSelectedFile(file);
+    setIsIdentifying(true);
+    try {
+      // Trigger AI identification based on filename
+      const result = await identifyBookFromFilename(file.name);
+      if (result.title) setTitle(result.title);
+      if (result.author) setAuthor(result.author);
+      if (result.genres && result.genres.length > 0) {
+        // Intersect identified genres with our supported list
+        const validGenres = result.genres.filter(g => GENRES.includes(g));
+        if (validGenres.length > 0) setSelectedGenres(validGenres);
+      }
+      toast({ 
+        title: 'AI Librarian Active', 
+        description: `Identified: ${result.title || 'Unknown Title'} by ${result.author || 'Unknown Author'}` 
+      });
+    } catch (err) {
+      console.warn("AI Identification failed, proceeding with manual entry.");
+    } finally {
+      setIsIdentifying(false);
+    }
+  };
 
   const handleMagicAutoFill = async () => {
     if (!pastedText.trim()) return toast({ variant: 'destructive', title: 'Empty Content', description: 'Paste some text first.' });
@@ -304,13 +330,33 @@ export function UploadNovelForm() {
                 <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
               </TabsList>
               <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center hover:bg-muted/30 transition-colors">
-                <input type="file" className="hidden" id="file-upload" onChange={e => setSelectedFile(e.target.files?.[0] || null)} />
+                <input 
+                  type="file" 
+                  className="hidden" 
+                  id="file-upload" 
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileChange(file);
+                  }} 
+                />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
-                  <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <FileText className="h-8 w-8 text-primary" />
-                  </div>
-                  <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
-                  <p className="text-[10px] text-muted-foreground">EPUBs are auto-parsed; TXTs are read as single chapters</p>
+                  {isIdentifying ? (
+                    <div className="py-4 space-y-4">
+                      <div className="relative mx-auto w-16 h-16">
+                        <Loader2 className="h-16 w-16 animate-spin text-primary opacity-20 absolute inset-0" />
+                        <BrainCircuit className="h-10 w-10 text-primary absolute inset-3 animate-pulse" />
+                      </div>
+                      <p className="text-sm font-black uppercase tracking-widest text-primary animate-pulse">AI Examining Manuscript...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <FileText className="h-8 w-8 text-primary" />
+                      </div>
+                      <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
+                      <p className="text-[10px] text-muted-foreground">EPUBs are auto-parsed; TXTs are read as single chapters</p>
+                    </>
+                  )}
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
@@ -336,7 +382,7 @@ export function UploadNovelForm() {
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all" disabled={loading}>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all" disabled={loading || isIdentifying}>
               {loading ? <Loader2 className="animate-spin mr-2" /> : <CloudUpload className="mr-2" />}
               {uploadMode === 'cloud' ? 'Publish to Global Cloud' : 'Save to Private Archive'}
             </Button>
