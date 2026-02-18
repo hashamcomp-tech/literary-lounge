@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -46,6 +46,7 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [bookSearch, setBookSearch] = useState('');
+  const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
   
   // Library Stats
   const [bookCount, setBookCount] = useState<number>(0);
@@ -108,6 +109,18 @@ export default function AdminPage() {
 
     checkAdminStatus();
   }, [user, isUserLoading, profile, db, isOfflineMode]);
+
+  // Fetch whitelist real-time
+  useEffect(() => {
+    if (!isAdmin || isOfflineMode || !db) return;
+    const settingsRef = doc(db, 'settings', 'approvedEmails');
+    const unsubscribe = onSnapshot(settingsRef, (snap) => {
+      if (snap.exists()) {
+        setApprovedEmails(snap.data().emails || []);
+      }
+    });
+    return () => unsubscribe();
+  }, [db, isAdmin, isOfflineMode]);
 
   // Redirect if unauthorized
   useEffect(() => {
@@ -206,6 +219,24 @@ export default function AdminPage() {
         }));
       })
       .finally(() => setProcessingId(null));
+  };
+
+  const handleRemoveContributor = async (email: string) => {
+    if (!db) return;
+    const settingsRef = doc(db, 'settings', 'approvedEmails');
+    const payload = { emails: arrayRemove(email) };
+    
+    setDoc(settingsRef, payload, { merge: true })
+      .then(() => {
+        toast({ title: "Contributor Removed", description: `${email} no longer has cloud privileges.` });
+      })
+      .catch(async (err) => {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: settingsRef.path,
+          operation: 'write',
+          requestResourceData: payload,
+        }));
+      });
   };
 
   const handleDeleteBook = async (bookId: string) => {
@@ -431,6 +462,62 @@ export default function AdminPage() {
                       <div className="p-12 text-center opacity-50 flex flex-col items-center">
                         <BookOpen className="h-10 w-10 mb-2 text-primary" />
                         <p className="text-sm font-headline font-bold">No Manuscripts Found</p>
+                      </div>
+                    )}
+                  </div>
+                </AccordionContent>
+              </Card>
+            </AccordionItem>
+          </Accordion>
+
+          <Accordion type="single" collapsible className="mb-6">
+            <AccordionItem value="contributors" className="border-none">
+              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
+                <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
+                  <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 w-full text-left cursor-pointer group">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <CardTitle className="text-xl font-headline font-black">Approved Contributors</CardTitle>
+                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                      </div>
+                      <CardDescription className="text-xs">Users permitted to publish directly to the global cloud library.</CardDescription>
+                    </div>
+                  </CardHeader>
+                </AccordionTrigger>
+                <AccordionContent className="p-0 border-t border-border/50">
+                  <div className="p-0">
+                    {approvedEmails.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/10 border-none">
+                            <TableHead className="pl-6 font-black uppercase tracking-widest text-[9px]">Email Address</TableHead>
+                            <TableHead className="text-right pr-6 font-black uppercase tracking-widest text-[9px]">Manage</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {approvedEmails.map((email) => (
+                            <TableRow key={email} className="border-border/50 hover:bg-primary/5 transition-colors h-14">
+                              <TableCell className="pl-6 font-bold text-sm">
+                                {email}
+                              </TableCell>
+                              <TableCell className="text-right pr-6">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-8 text-destructive hover:bg-destructive/10 rounded-lg font-bold text-[10px]"
+                                  onClick={() => handleRemoveContributor(email)}
+                                >
+                                  <UserMinus className="h-3 w-3 mr-1.5" /> Revoke Access
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <div className="p-12 text-center opacity-50 flex flex-col items-center">
+                        <ShieldCheck className="h-10 w-10 mb-2 text-primary opacity-20" />
+                        <p className="text-sm font-headline font-bold">No whitelisted contributors.</p>
                       </div>
                     )}
                   </div>

@@ -1,5 +1,4 @@
-
-'use client';
+"use client";
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -46,21 +45,33 @@ export function UploadNovelForm() {
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) return;
-    const checkAdmin = async () => {
+    const checkPermissions = async () => {
       const pRef = doc(db, 'users', user.uid);
       const snap = await getDoc(pRef);
-      const isSystemAdmin = user.email === 'hashamcomp@gmail.com' || snap.data()?.role === 'admin';
-      setIsAdmin(isSystemAdmin);
-      setUploadMode(isSystemAdmin ? 'cloud' : 'local');
+      const userRole = snap.data()?.role;
+      
+      let isWhitelisted = false;
+      if (user.email) {
+        const settingsRef = doc(db, 'settings', 'approvedEmails');
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const emails = settingsSnap.data().emails || [];
+          isWhitelisted = emails.includes(user.email);
+        }
+      }
+
+      const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
+      setCanUploadCloud(permitted);
+      setUploadMode(permitted ? 'cloud' : 'local');
     };
-    checkAdmin();
+    checkPermissions();
   }, [user, db, isOfflineMode]);
 
   const handleMagicAutoFill = async () => {
@@ -114,7 +125,7 @@ export function UploadNovelForm() {
 
       const bookId = `${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
 
-      if (isAdmin && uploadMode === 'cloud') {
+      if (canUploadCloud && uploadMode === 'cloud') {
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
           title, author, genres: selectedGenres,
@@ -138,7 +149,7 @@ export function UploadNovelForm() {
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
-      {!isAdmin && !user?.isAnonymous && !isOfflineMode && (
+      {!canUploadCloud && !user?.isAnonymous && !isOfflineMode && (
         <Alert className="bg-primary/5 border-primary/20 rounded-2xl p-6">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
@@ -160,7 +171,7 @@ export function UploadNovelForm() {
               <CardTitle className="text-3xl font-headline font-black">Add Volume</CardTitle>
               <CardDescription>Upload files or paste text snippets.</CardDescription>
             </div>
-            {isAdmin && (
+            {canUploadCloud && (
               <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
                 <Button 
                   size="sm" 
@@ -257,7 +268,7 @@ export function UploadNovelForm() {
 
             <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all" disabled={loading}>
               {loading ? <Loader2 className="animate-spin mr-2" /> : <CloudUpload className="mr-2" />}
-              {isAdmin && uploadMode === 'cloud' ? 'Publish to Global Cloud' : 'Save to Private Archive'}
+              {canUploadCloud && uploadMode === 'cloud' ? 'Publish to Global Cloud' : 'Save to Private Archive'}
             </Button>
           </form>
         </CardContent>
