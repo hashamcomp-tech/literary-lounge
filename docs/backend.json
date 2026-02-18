@@ -1,204 +1,27 @@
 
 {
   "entities": {
-    "UserProfile": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "UserProfile",
-      "type": "object",
-      "description": "Represents a user's profile information, stored in Firestore.",
-      "properties": {
-        "uid": {
-          "type": "string",
-          "description": "The unique Firebase Authentication UID."
-        },
-        "username": {
-          "type": "string",
-          "description": "The chosen public username of the user."
-        },
-        "email": {
-          "type": "string",
-          "description": "The user's registered email address.",
-          "format": "email"
-        },
-        "photoURL": {
-          "type": "string",
-          "description": "The URL of the user's profile photo."
-        },
-        "role": {
-          "type": "string",
-          "enum": ["user", "admin", "reader"],
-          "description": "The user's access role."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp when the user account and profile were created.",
-          "format": "date-time"
-        },
-        "lastUsernameChange": {
-          "type": "string",
-          "description": "Timestamp of the last username change for rate limiting.",
-          "format": "date-time"
-        }
-      },
-      "required": [
-        "uid",
-        "username",
-        "email",
-        "createdAt"
-      ]
-    },
     "UsernameMap": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "UsernameMap",
-      "type": "object",
-      "description": "Mapping of username to email/uid for login lookup.",
+      "description": "Mapping of username to email/uid for multi-identifier login.",
       "properties": {
         "uid": { "type": "string" },
-        "email": { "type": "string", "format": "email" }
-      },
-      "required": ["uid", "email"]
+        "email": { "type": "string" }
+      }
     },
     "PublishRequest": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "PublishRequest",
-      "type": "object",
-      "description": "A request from a reader to become a cloud contributor.",
+      "description": "Reader application for cloud contributor status.",
       "properties": {
         "uid": { "type": "string" },
-        "email": { "type": "string", "format": "email" },
+        "email": { "type": "string" },
         "requestedAt": { "type": "string", "format": "date-time" },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
-      },
-      "required": ["uid", "email", "requestedAt"]
-    },
-    "ChatMessage": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "ChatMessage",
-      "type": "object",
-      "description": "A message sent within a chat room.",
-      "properties": {
-        "senderId": { "type": "string" },
-        "senderName": { "type": "string" },
-        "text": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
-      },
-      "required": ["senderId", "text", "timestamp"]
-    },
-    "NovelMetadata": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "NovelMetadata",
-      "type": "object",
-      "description": "Metadata for a novel.",
-      "properties": {
-        "author": { "type": "string" },
-        "bookTitle": { "type": "string" },
-        "ownerId": { "type": "string" },
-        "genre": { 
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "The list of genres associated with this book."
-        },
-        "views": { "type": "number" },
-        "coverURL": { "type": "string" },
-        "coverSize": { "type": "number" },
-        "lastUpdated": { "type": "string", "format": "date-time" }
-      },
-      "required": ["author", "bookTitle", "ownerId", "lastUpdated"]
-    },
-    "ReadingHistory": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "ReadingHistory",
-      "type": "object",
-      "description": "Tracks a user's reading progress for a specific book.",
-      "properties": {
-        "bookId": { "type": "string" },
-        "title": { "type": "string" },
-        "author": { "type": "string" },
-        "coverURL": { "type": "string" },
-        "lastReadChapter": { "type": "number" },
-        "lastReadAt": { "type": "string", "format": "date-time" },
-        "isCloud": { "type": "boolean" },
-        "genre": { 
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      },
-      "required": ["bookId", "lastReadChapter", "lastReadAt"]
-    },
-    "GlobalStats": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "GlobalStats",
-      "type": "object",
-      "description": "System-wide aggregated metrics.",
-      "properties": {
-        "storageBytesUsed": { "type": "number" }
       }
     }
   },
-  "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
-  },
   "firestore": {
     "structure": [
-      {
-        "path": "/users/{userId}",
-        "definition": {
-          "entityName": "UserProfile",
-          "schema": { "$ref": "#/backend/entities/UserProfile" },
-          "description": "Stores individual user profiles."
-        }
-      },
-      {
-        "path": "/usernames/{username}",
-        "definition": {
-          "entityName": "UsernameMap",
-          "schema": { "$ref": "#/backend/entities/UsernameMap" },
-          "description": "Mapping for username login lookup."
-        }
-      },
-      {
-        "path": "/publishRequests/{requestId}",
-        "definition": {
-          "entityName": "PublishRequest",
-          "schema": { "$ref": "#/backend/entities/PublishRequest" },
-          "description": "Requests for cloud publishing access."
-        }
-      },
-      {
-        "path": "/users/{userId}/history/{bookId}",
-        "definition": {
-          "entityName": "ReadingHistory",
-          "schema": { "$ref": "#/backend/entities/ReadingHistory" },
-          "description": "Stores user reading progress for specific books."
-        }
-      },
-      {
-        "path": "/books/{bookId}",
-        "definition": {
-          "entityName": "NovelMetadata",
-          "schema": { "$ref": "#/backend/entities/NovelMetadata" },
-          "description": "Stores novel data and metadata."
-        }
-      },
-      {
-        "path": "/stats/storageUsage",
-        "definition": {
-          "entityName": "GlobalStats",
-          "schema": { "$ref": "#/backend/entities/GlobalStats" },
-          "description": "Aggregated storage metrics for the Firebase 5GB free tier."
-        }
-      },
-      {
-        "path": "/chats/{chatId}/messages/{messageId}",
-        "definition": {
-          "entityName": "ChatMessage",
-          "schema": { "$ref": "#/backend/entities/ChatMessage" },
-          "description": "Stores real-time chat messages for a room (chatId corresponds to bookId)."
-        }
-      }
+      { "path": "/usernames/{username}", "entityName": "UsernameMap" },
+      { "path": "/publishRequests/{requestId}", "entityName": "PublishRequest" }
     ]
   }
 }

@@ -3,7 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // HELPER FUNCTIONS
     function isSignedIn() {
       return request.auth != null;
     }
@@ -15,67 +14,41 @@ service cloud.firestore {
       );
     }
 
-    // BOOKS & MANUSCRIPTS
     match /books/{bookId} {
-      // Anyone can read book metadata (title, chapters, etc.)
       allow read: if true;
-      
-      // Only admin can add/update/delete metadata
       allow write: if isAdmin();
-
-      // Sub-collections (chapters)
-      match /chapters/{chapterId} {
-        allow read: if true;
-        allow write: if isAdmin();
-      }
       
-      // Metadata sub-collection
-      match /metadata/{metaId} {
+      match /chapters/{chapterId} {
         allow read: if true;
         allow write: if isAdmin();
       }
     }
 
-    // USER PROFILES
+    match /usernames/{username} {
+      allow read: if true;
+      allow write: if isAdmin() || (isSignedIn() && request.resource.data.uid == request.auth.uid);
+    }
+
     match /users/{userId} {
-      // Admin only access to general user profiles
-      allow read, write: if isAdmin();
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       
-      // Allow users to manage their own history (even anonymous users have a UID)
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
     }
 
-    // USERNAMES (Login Lookup)
-    match /usernames/{username} {
-      // Allow public read for login by username lookup
-      allow read: if true;
-      // Only the owner (after registration) or admin can write
-      allow write: if isAdmin() || (isSignedIn() && request.resource.data.uid == request.auth.uid);
-    }
-
-    // PUBLISH REQUESTS
     match /publishRequests/{requestId} {
-      // Admins can manage all requests
-      allow read, write: if isAdmin();
-      // Signed-in users can create requests for themselves
+      allow read: if isAdmin();
       allow create: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
-    // CHATS & MESSAGES
-    match /chats/{chatId}/messages/{messageId} {
-      allow read: if true;
-      allow create: if isSignedIn();
-    }
-    
-    // Global Stats
-    match /stats/storageUsage {
+    match /stats/{statId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Default catch-all
     match /{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();
