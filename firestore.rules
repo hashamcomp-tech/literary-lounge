@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -14,7 +13,7 @@ service cloud.firestore {
       );
     }
 
-    // Public Library Access
+    // Public Library Access: Anyone can browse the shelf
     match /books/{bookId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -30,7 +29,7 @@ service cloud.firestore {
       }
     }
 
-    // Username mapping for multi-identifier login
+    // Username mapping for multi-identifier login: Publicly readable for auth resolution
     match /usernames/{username} {
       allow read: if true;
       allow write: if isAdmin() || (isSignedIn() && request.resource.data.uid == request.auth.uid);
@@ -46,7 +45,7 @@ service cloud.firestore {
       }
     }
 
-    // Applications for contributor status
+    // Applications for contributor status: Users can create, admins manage
     match /publishRequests/{requestId} {
       allow read: if isAdmin();
       allow create: if isSignedIn();
@@ -62,6 +61,11 @@ service cloud.firestore {
     match /settings/{allPaths=**} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    match /chats/{chatId}/messages/{messageId} {
+      allow read: if true;
+      allow create: if isSignedIn();
     }
 
     match /{allPaths=**} {

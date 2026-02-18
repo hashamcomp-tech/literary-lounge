@@ -1,4 +1,3 @@
-
 import { doc, setDoc, serverTimestamp, Firestore, increment, collection, getDocs, writeBatch } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
@@ -20,9 +19,14 @@ function romanToInt(roman: string): number {
 
 /**
  * Parses full manuscript text into chapters using regex.
+ * Also detects book title from the first non-empty line.
  */
-function parseChaptersFromText(text: string): { number: number; title: string; content: string }[] {
+function parseBookWithChapters(text: string): { title: string; chapters: { number: number; title: string; content: string }[] } {
   const lines = text.split(/\r?\n/);
+  
+  // 1. Detect book title: first non-empty line
+  const bookTitle = lines.find(line => line.trim().length > 0)?.trim() || 'Untitled Manuscript';
+
   const chapterRegex = /^(Chapter|CHAPTER)[\s]*([0-9IVXLCDM]+)\s*(?:[:-]\s*(.*))?$/i;
 
   let chapters: any[] = [];
@@ -41,7 +45,13 @@ function parseChaptersFromText(text: string): { number: number; title: string; c
     }
   }
   if (currentChapter) chapters.push(currentChapter);
-  return chapters;
+  
+  // Fallback if no chapters detected
+  if (chapters.length === 0) {
+    chapters = [{ number: 1, title: 'Full Volume', content: text }];
+  }
+
+  return { title: bookTitle, chapters };
 }
 
 /**
@@ -65,7 +75,7 @@ export async function uploadBookToCloud({
   rawContent,
   coverFile,
   ownerId,
-  manualChapterInfo // If present, preserves as single undivided chapter
+  manualChapterInfo 
 }: {
   db: Firestore;
   storage: FirebaseStorage;
@@ -79,20 +89,25 @@ export async function uploadBookToCloud({
   manualChapterInfo?: { number: number; title: string };
 }) {
   let chapters: any[] = [];
+  let detectedTitle = title;
 
   if (manualChapterInfo) {
-    // Paste Mode: Preserves as single undivided chapter
+    // Paste Mode: Preserves as single undivided chapter exactly as requested
     chapters = [{
       chapterNumber: manualChapterInfo.number,
       title: manualChapterInfo.title,
       content: cleanContent(rawContent)
     }];
   } else {
-    // File Mode: Regex segmentation
-    chapters = parseChaptersFromText(rawContent);
-    if (chapters.length === 0) {
-      chapters = [{ chapterNumber: 1, title: 'Full Volume', content: cleanContent(rawContent) }];
-    }
+    // File Mode: Regex segmentation + title detection
+    const parsed = parseBookWithChapters(rawContent);
+    chapters = parsed.chapters.map(ch => ({
+      ...ch,
+      chapterNumber: ch.number,
+      content: cleanContent(ch.content)
+    }));
+    // Use manually entered title if provided, otherwise fallback to detected
+    detectedTitle = title || parsed.title;
   }
 
   // Cover Upload
@@ -106,7 +121,7 @@ export async function uploadBookToCloud({
   const bookRef = doc(db, 'books', bookId);
   const metadataInfo = {
     author,
-    bookTitle: title,
+    bookTitle: detectedTitle,
     totalChapters: chapters.length,
     genre: genres,
     coverURL,
@@ -115,8 +130,8 @@ export async function uploadBookToCloud({
   };
 
   const rootPayload = {
-    title,
-    titleLower: title.toLowerCase(),
+    title: detectedTitle,
+    titleLower: detectedTitle.toLowerCase(),
     author,
     authorLower: author.toLowerCase(),
     genre: genres,

@@ -7,7 +7,21 @@ import { collection, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, BookOpen, Clock, Trash2, CheckCircle2, ArrowLeft, MessageSquareQuote, User, FileText, Sparkles, BrainCircuit, ShieldCheck, Info } from 'lucide-react';
+import { 
+  Loader2, 
+  BookOpen, 
+  Clock, 
+  Trash2, 
+  CheckCircle2, 
+  ArrowLeft, 
+  MessageSquareQuote, 
+  User, 
+  FileText, 
+  Sparkles, 
+  BrainCircuit, 
+  ShieldCheck, 
+  Info 
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -37,7 +51,6 @@ export default function AdminRequestsDashboard() {
     if (!isSuperAdmin) return;
     setAnalyzingId(req.id);
     try {
-      // Use identifying metadata and a slice of content for AI context
       const result = await analyzeManuscript({
         title: req.title,
         author: req.author || 'Anonymous',
@@ -145,7 +158,6 @@ export default function AdminRequestsDashboard() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* AI Insights Panel */}
                     {aiInsights[req.id] && (
                       <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10 animate-in zoom-in duration-300">
                         <div className="flex items-center gap-2 mb-4 text-primary">
@@ -241,5 +253,3 @@ export default function AdminRequestsDashboard() {
     </div>
   );
 }
-
-import { MessageSquareQuote } from 'lucide-react';
