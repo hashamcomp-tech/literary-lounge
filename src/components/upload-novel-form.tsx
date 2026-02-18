@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2 } from 'lucide-react';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search } from 'lucide-react';
+import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
-import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
+import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
@@ -23,6 +23,14 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+
+interface Suggestion {
+  id: string;
+  title: string;
+  author: string;
+  totalChapters: number;
+  genre: string[];
+}
 
 export function UploadNovelForm() {
   const router = useRouter();
@@ -44,6 +52,12 @@ export function UploadNovelForm() {
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
+  // Suggestion States
+  const [allBooks, setAllBooks] = useState<Suggestion[]>([]);
+  const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
     if (savedMode === 'cloud' || savedMode === 'local') {
@@ -53,7 +67,38 @@ export function UploadNovelForm() {
 
   useEffect(() => {
     localStorage.setItem("lounge-upload-mode", uploadMode);
+    fetchLibraryIndex();
   }, [uploadMode]);
+
+  const fetchLibraryIndex = async () => {
+    try {
+      if (uploadMode === 'cloud' && db) {
+        const snap = await getDocs(collection(db, 'books'));
+        const books = snap.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title || data.metadata?.info?.bookTitle || '',
+            author: data.author || data.metadata?.info?.author || '',
+            totalChapters: data.metadata?.info?.totalChapters || 0,
+            genre: data.genre || data.metadata?.info?.genre || []
+          };
+        });
+        setAllBooks(books);
+      } else {
+        const local = await getAllLocalBooks();
+        setAllBooks(local.map(b => ({
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          totalChapters: b.totalChapters || 0,
+          genre: Array.isArray(b.genre) ? b.genre : [b.genre]
+        })));
+      }
+    } catch (e) {
+      console.warn("Library index fetch failed");
+    }
+  };
 
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) return;
@@ -82,9 +127,30 @@ export function UploadNovelForm() {
     checkPermissions();
   }, [user, db, isOfflineMode, uploadMode]);
 
-  const handleFileChange = (file: File) => {
-    setSelectedFile(file);
-    // AI Identification paused
+  // Filter logic for suggestions
+  useEffect(() => {
+    if (title.length < 2) {
+      setFilteredSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    const filtered = allBooks.filter(b => 
+      b.title.toLowerCase().includes(title.toLowerCase())
+    );
+    setFilteredSuggestions(filtered);
+    setShowSuggestions(filtered.length > 0);
+  }, [title, allBooks]);
+
+  const handleSelectBook = (book: Suggestion) => {
+    setTitle(book.title);
+    setAuthor(book.author);
+    setSelectedGenres(book.genre);
+    setChapterNumber((book.totalChapters + 1).toString());
+    setShowSuggestions(false);
+    toast({
+      title: "Book Synced",
+      description: `Preparing to upload Chapter ${book.totalChapters + 1} of "${book.title}".`
+    });
   };
 
   const handleRequestAccess = async () => {
@@ -109,7 +175,13 @@ export function UploadNovelForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      const bookId = `${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
+      // Check if title/author combo matches an existing book to get its ID
+      const existingBook = allBooks.find(b => 
+        b.title.toLowerCase() === title.toLowerCase() && 
+        b.author.toLowerCase() === author.toLowerCase()
+      );
+
+      const bookId = existingBook?.id || `${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
       const isEpub = selectedFile?.name.toLowerCase().endsWith('.epub');
 
       if (uploadMode === 'cloud') {
@@ -182,7 +254,14 @@ export function UploadNovelForm() {
           toast({ title: 'Saved to Local Archive', description: `Volume parsed (${book.chapters.length} chapters) and archived privately.` });
         } else {
           let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
-          await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true });
+          await saveLocalBook({ 
+            id: bookId, 
+            title, 
+            author, 
+            genre: selectedGenres, 
+            isLocalOnly: true,
+            totalChapters: Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0)
+          });
           await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
           toast({ title: 'Saved to Local Archive', description: 'Private to this browser.' });
         }
@@ -243,9 +322,53 @@ export function UploadNovelForm() {
         <CardContent className="space-y-6">
           <form onSubmit={handleUpload} className="space-y-6">
             <div className="grid gap-4">
-              <div className="space-y-2">
+              <div className="space-y-2 relative" ref={suggestionRef}>
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Novel Title" className="h-12 rounded-xl" required />
+                <div className="relative">
+                  <Input 
+                    value={title} 
+                    onChange={(e) => setTitle(e.target.value)} 
+                    onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)}
+                    placeholder="Novel Title" 
+                    className="h-12 rounded-xl pl-10" 
+                    required 
+                  />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
+                </div>
+
+                {/* Autocomplete Dropdown */}
+                {showSuggestions && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-2 border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+                      <span>Existing {uploadMode} Volumes</span>
+                      <span>Next Ch #</span>
+                    </div>
+                    <ScrollArea className="max-h-[240px]">
+                      {filteredSuggestions.map((book) => (
+                        <button
+                          key={book.id}
+                          type="button"
+                          onClick={() => handleSelectBook(book)}
+                          className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none"
+                        >
+                          <div className="bg-primary/10 p-2 rounded-lg">
+                            <Book className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold truncate">{book.title}</p>
+                            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                              <User className="h-3 w-3" /> {book.author}
+                            </p>
+                          </div>
+                          <div className="text-primary font-black text-sm pr-2">
+                            {book.totalChapters + 1}
+                          </div>
+                        </button>
+                      ))}
+                    </ScrollArea>
+                  </div>
+                )}
+
                 <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author Name" className="h-12 rounded-xl" required />
               </div>
               
@@ -287,7 +410,7 @@ export function UploadNovelForm() {
                   id="file-upload" 
                   onChange={e => {
                     const file = e.target.files?.[0];
-                    if (file) handleFileChange(file);
+                    if (file) setSelectedFile(file);
                   }} 
                 />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
