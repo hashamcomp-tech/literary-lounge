@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -48,13 +49,10 @@ export default function AdminPage() {
   const [bookSearch, setBookSearch] = useState('');
   const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
   
-  // Library Stats
   const [bookCount, setBookCount] = useState<number>(0);
   const [chapterCount, setChapterCount] = useState<number>(0);
   const [totalUsers, setTotalUsers] = useState<number>(0);
-  const [isStatsLoading, setIsStatsLoading] = useState(false);
 
-  // Guard the profile reference
   const profileRef = useMemoFirebase(() => {
     if (!db || !user || user.isAnonymous || isUserLoading) return null;
     return doc(db, 'users', user.uid);
@@ -62,107 +60,57 @@ export default function AdminPage() {
   
   const { data: profile } = useDoc(profileRef);
 
-  // Robust Admin Verification Logic
   useEffect(() => {
     const checkAdminStatus = async () => {
-      if (isOfflineMode) {
-        setIsAdmin(false);
-        return;
-      }
-      
+      if (isOfflineMode) { setIsAdmin(false); return; }
       if (isUserLoading || !db) return;
-
-      if (!user || user.isAnonymous) {
-        setIsAdmin(false);
-        return;
-      }
+      if (!user || user.isAnonymous) { setIsAdmin(false); return; }
 
       const superAdmins = ['hashamcomp@gmail.com'];
-      if (user.email && superAdmins.includes(user.email)) {
-        setIsAdmin(true);
-        return;
-      }
-
-      if (profile?.role === 'admin') {
-        setIsAdmin(true);
-        return;
-      }
+      if (user.email && superAdmins.includes(user.email)) { setIsAdmin(true); return; }
+      if (profile?.role === 'admin') { setIsAdmin(true); return; }
 
       if (user.email) {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
-        getDoc(settingsRef)
-          .then((snap) => {
-            if (snap.exists()) {
-              const emails = snap.data().emails || [];
-              setIsAdmin(emails.includes(user.email!));
-            } else {
-              setIsAdmin(false);
-            }
-          })
-          .catch(() => {
-            setIsAdmin(false);
-          });
-      } else {
-        setIsAdmin(false);
-      }
+        getDoc(settingsRef).then((snap) => {
+          if (snap.exists()) {
+            const emails = snap.data().emails || [];
+            setIsAdmin(emails.includes(user.email!));
+          } else { setIsAdmin(false); }
+        }).catch(() => setIsAdmin(false));
+      } else { setIsAdmin(false); }
     };
-
     checkAdminStatus();
   }, [user, isUserLoading, profile, db, isOfflineMode]);
 
-  // Fetch whitelist real-time
   useEffect(() => {
     if (!isAdmin || isOfflineMode || !db) return;
     const settingsRef = doc(db, 'settings', 'approvedEmails');
     const unsubscribe = onSnapshot(settingsRef, (snap) => {
-      if (snap.exists()) {
-        setApprovedEmails(snap.data().emails || []);
-      }
+      if (snap.exists()) setApprovedEmails(snap.data().emails || []);
     });
     return () => unsubscribe();
   }, [db, isAdmin, isOfflineMode]);
 
-  // Redirect if unauthorized
   useEffect(() => {
-    if (isAdmin === false) {
-      toast({
-        variant: "destructive",
-        title: "Access Denied",
-        description: "Redirecting to safety."
-      });
-      router.push('/');
-    }
-  }, [isAdmin, router, toast]);
+    if (isAdmin === false) { router.push('/'); }
+  }, [isAdmin, router]);
 
-  // Fetch Library Statistics
   useEffect(() => {
     if (!isAdmin || isOfflineMode || !db) return;
-
     const fetchStats = async () => {
-      setIsStatsLoading(true);
       try {
         const booksSnap = await getDocs(collection(db, 'books'));
         setBookCount(booksSnap.size);
-
         const usersSnap = await getDocs(collection(db, 'users'));
         setTotalUsers(usersSnap.size);
-
         let total = 0;
         const chapterPromises = booksSnap.docs.map(b => getDocs(collection(db, 'books', b.id, 'chapters')));
         const chapterSnaps = await Promise.all(chapterPromises);
         chapterSnaps.forEach(snap => total += snap.size);
-        
         setChapterCount(total);
-      } catch (err) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: 'books',
-          operation: 'list',
-        }));
-      } finally {
-        setIsStatsLoading(false);
-      }
+      } catch (err) {}
     };
-
     fetchStats();
   }, [db, isAdmin, isOfflineMode]);
 
@@ -183,41 +131,12 @@ export default function AdminPage() {
   const handleApprove = async (requestId: string, email: string) => {
     if (!db) return;
     setProcessingId(requestId);
-    
     const approvedRef = doc(db, 'settings', 'approvedEmails');
     const deleteReqRef = doc(db, 'publishRequests', requestId);
-
-    const approvalPayload = { emails: arrayUnion(email) };
-    setDoc(approvedRef, approvalPayload, { merge: true })
+    const payload = { emails: arrayUnion(email) };
+    setDoc(approvedRef, payload, { merge: true })
       .then(() => deleteDoc(deleteReqRef))
-      .then(() => {
-        toast({ title: "User Approved", description: `${email} has been added to the cloud contributors.` });
-      })
-      .catch(async (err) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: approvedRef.path,
-          operation: 'write',
-          requestResourceData: approvalPayload,
-        }));
-      })
-      .finally(() => setProcessingId(null));
-  };
-
-  const handleReject = async (requestId: string) => {
-    if (!db) return;
-    setProcessingId(requestId);
-    const docRef = doc(db, 'publishRequests', requestId);
-    
-    deleteDoc(docRef)
-      .then(() => {
-        toast({ title: "Request Rejected", description: "The request has been removed." });
-      })
-      .catch(async (err) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: docRef.path,
-          operation: 'delete',
-        }));
-      })
+      .then(() => toast({ title: "User Approved", description: `${email} is now a contributor.` }))
       .finally(() => setProcessingId(null));
   };
 
@@ -225,74 +144,26 @@ export default function AdminPage() {
     if (!db) return;
     const settingsRef = doc(db, 'settings', 'approvedEmails');
     const payload = { emails: arrayRemove(email) };
-    
     setDoc(settingsRef, payload, { merge: true })
-      .then(() => {
-        toast({ title: "Contributor Removed", description: `${email} no longer has cloud privileges.` });
-      })
-      .catch(async (err) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: settingsRef.path,
-          operation: 'write',
-          requestResourceData: payload,
-        }));
-      });
+      .then(() => toast({ title: "Contributor Removed", description: `${email} access revoked.` }));
   };
 
   const handleDeleteBook = async (bookId: string) => {
     if (!db) return;
     setProcessingId(bookId);
-    
-    deleteCloudBook(db, bookId)
-      .then(() => {
-        toast({ title: "Book Deleted", description: "The novel has been removed from the global library." });
-      })
-      .catch(() => {})
-      .finally(() => setProcessingId(null));
+    deleteCloudBook(db, bookId).then(() => {
+      toast({ title: "Book Deleted", description: "Manuscript purged from the Lounge." });
+    }).finally(() => setProcessingId(null));
   };
 
   if (isUserLoading || (isAdmin === null && !isOfflineMode)) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Navbar />
-        <div className="flex-1 flex items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-        </div>
-      </div>
-    );
-  }
-
-  if (isOfflineMode) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-2xl mx-auto">
-          <Alert className="bg-amber-500/10 border-amber-500/20 text-amber-800 rounded-[2.5rem] p-10 shadow-xl border-none">
-            <CloudOff className="h-16 w-16 mb-6 mx-auto opacity-30" />
-            <AlertTitle className="text-4xl font-headline font-black mb-4">Lounge Control Offline</AlertTitle>
-            <AlertDescription className="text-lg opacity-80 leading-relaxed">
-              The Admin Panel requires an active connection to Firebase services to manage cloud manuscripts and contributor credentials.
-            </AlertDescription>
-            <div className="mt-10">
-              <Button variant="outline" className="rounded-2xl h-14 px-10 font-bold border-amber-500/30 text-amber-900 bg-amber-500/5 hover:bg-amber-500/10" onClick={() => router.push('/')}>
-                Back to Library
-              </Button>
-            </div>
-          </Alert>
-        </div>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>;
   }
 
   if (isAdmin === false) return null;
 
-  const filteredBooks = allBooks?.filter(b => 
-    b.title?.toLowerCase().includes(bookSearch.toLowerCase()) || 
-    b.author?.toLowerCase().includes(bookSearch.toLowerCase())
-  ) || [];
-
   return (
-    <div className="min-h-screen pb-20 bg-background transition-colors duration-500">
+    <div className="min-h-screen pb-20 bg-background">
       <Navbar />
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-5xl mx-auto">
@@ -303,58 +174,33 @@ export default function AdminPage() {
                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Authority Dashboard</span>
               </div>
               <h1 className="text-5xl font-headline font-black leading-none">Lounge Control</h1>
-              <p className="text-muted-foreground mt-2 text-lg">Manage the global shelf and contributor whitelist.</p>
             </div>
             <div className="flex items-center gap-3">
-              <Link href="/admin/requests">
-                <Button variant="outline" className="h-12 rounded-2xl border-amber-500/20 text-amber-700 bg-amber-500/5 hover:bg-amber-500/10 transition-all font-bold">
-                  <Inbox className="h-4 w-4 mr-2" />
-                  Submissions
-                </Button>
-              </Link>
-              <Link href="/admin/dashboard">
-                <Button className="h-12 rounded-2xl bg-primary text-primary-foreground shadow-xl hover:shadow-primary/20 transition-all font-bold px-6">
-                  <BarChart3 className="h-4 w-4 mr-2" /> Live Analytics
-                </Button>
-              </Link>
+              <Link href="/admin/requests"><Button variant="outline" className="rounded-2xl">Submissions</Button></Link>
+              <Link href="/admin/dashboard"><Button className="rounded-2xl">Live Analytics</Button></Link>
             </div>
           </header>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
-              <div className="h-1 bg-primary w-full opacity-20 group-hover:opacity-100 transition-opacity" />
-              <CardContent className="p-8">
-                <Users className="h-6 w-6 text-primary mb-4" />
-                <h3 className="text-4xl font-headline font-black">{totalUsers.toLocaleString()}</h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">Active Readers</p>
-              </CardContent>
+            <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
+              <Users className="h-6 w-6 text-primary mb-4" />
+              <h3 className="text-4xl font-headline font-black">{totalUsers}</h3>
+              <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">Active Readers</p>
             </Card>
-
-            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
-              <div className="h-1 bg-primary w-full opacity-20 group-hover:opacity-100 transition-opacity" />
-              <CardContent className="p-8">
-                <BookOpen className="h-6 w-6 text-primary mb-4" />
-                <h3 className="text-4xl font-headline font-black">{bookCount.toLocaleString()}</h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">Cloud Volumes</p>
-              </CardContent>
+            <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
+              <BookOpen className="h-6 w-6 text-primary mb-4" />
+              <h3 className="text-4xl font-headline font-black">{bookCount}</h3>
+              <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">Cloud Volumes</p>
             </Card>
-
-            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
-              <div className="h-1 bg-accent w-full opacity-20 group-hover:opacity-100 transition-opacity" />
-              <CardContent className="p-8">
-                <Layers className="h-6 w-6 text-accent mb-4" />
-                <h3 className="text-4xl font-headline font-black">{chapterCount.toLocaleString()}</h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">Total Chapters</p>
-              </CardContent>
+            <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
+              <Layers className="h-6 w-6 text-accent mb-4" />
+              <h3 className="text-4xl font-headline font-black">{chapterCount}</h3>
+              <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">Total Chapters</p>
             </Card>
-
-            <Card className="bg-card/40 backdrop-blur-xl border-none shadow-xl rounded-[2rem] overflow-hidden group">
-              <div className="h-1 bg-green-500 w-full opacity-20 group-hover:opacity-100 transition-opacity" />
-              <CardContent className="p-8">
-                <Activity className="h-6 w-6 text-green-600 mb-4" />
-                <h3 className="text-4xl font-headline font-black text-green-600">Stable</h3>
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2">System Status</p>
-              </CardContent>
+            <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
+              <Activity className="h-6 w-6 text-green-600 mb-4" />
+              <h3 className="text-4xl font-headline font-black text-green-600">Stable</h3>
+              <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">System Status</p>
             </Card>
           </div>
 
@@ -362,109 +208,32 @@ export default function AdminPage() {
 
           <Accordion type="single" collapsible className="mb-6">
             <AccordionItem value="manuscripts" className="border-none">
-              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
-                <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
-                  <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 w-full text-left cursor-pointer group">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <CardTitle className="text-xl font-headline font-black">Global Manuscript Management</CardTitle>
-                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
-                      </div>
-                      <CardDescription className="text-xs">Quick review and removal of cloud volumes.</CardDescription>
-                    </div>
-                  </CardHeader>
+              <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card/80">
+                <AccordionTrigger className="p-6 hover:no-underline">
+                  <div className="text-left">
+                    <CardTitle className="text-xl font-headline font-black">Global Manuscript Management</CardTitle>
+                    <CardDescription>Review and removal of cloud volumes.</CardDescription>
+                  </div>
                 </AccordionTrigger>
-                <AccordionContent className="p-0 border-t border-border/50">
-                  <div className="p-6 pb-4 bg-muted/10">
-                    <div className="relative w-full md:max-w-xs">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                      <Input 
-                        placeholder="Search volumes..." 
-                        className="pl-9 h-9 rounded-lg bg-background border-none shadow-inner text-sm"
-                        value={bookSearch}
-                        onChange={(e) => setBookSearch(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="p-0">
-                    {isBooksLoading ? (
-                      <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" /></div>
-                    ) : filteredBooks.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/10 border-none">
-                            <TableHead className="pl-6 font-black uppercase tracking-widest text-[9px]">Title & Author</TableHead>
-                            <TableHead className="font-black uppercase tracking-widest text-[9px]">Genre</TableHead>
-                            <TableHead className="font-black uppercase tracking-widest text-[9px]">Views</TableHead>
-                            <TableHead className="text-right pr-6 font-black uppercase tracking-widest text-[9px]">Actions</TableHead>
+                <AccordionContent className="p-0 border-t">
+                  {isBooksLoading ? <div className="p-12 flex justify-center"><Loader2 className="animate-spin" /></div> : (
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Title & Author</TableHead><TableHead>Genre</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {allBooks?.map(book => (
+                          <TableRow key={book.id}>
+                            <TableCell className="font-bold">{book.title}<br/><span className="text-[10px] text-muted-foreground">By {book.author}</span></TableCell>
+                            <TableCell><Badge variant="outline">{book.genre}</Badge></TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" onClick={() => handleDeleteBook(book.id)} disabled={processingId === book.id} className="text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredBooks.map((book) => (
-                            <TableRow key={book.id} className="border-border/50 hover:bg-primary/5 transition-colors h-14">
-                              <TableCell className="pl-6">
-                                <div className="flex flex-col">
-                                  <span className="font-bold text-sm leading-tight line-clamp-1">{book.title}</span>
-                                  <span className="text-[10px] text-muted-foreground">By {book.author}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="border-primary/20 text-primary uppercase text-[8px] font-black h-4 px-1.5">
-                                  {book.genre}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="font-mono text-[10px] opacity-60">
-                                {(book.views || 0).toLocaleString()}
-                              </TableCell>
-                              <TableCell className="text-right pr-6">
-                                <div className="flex items-center justify-end gap-1">
-                                  <Link href={`/pages/${book.id}/1`}>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-primary/10 text-primary">
-                                      <ExternalLink className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </Link>
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-8 w-8 rounded-lg hover:bg-destructive/10 text-destructive"
-                                        disabled={processingId === book.id}
-                                      >
-                                        {processingId === book.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle className="text-2xl font-headline font-black">Global Deletion</AlertDialogTitle>
-                                        <AlertDialogDescription className="text-base">
-                                          Remove <span className="font-bold text-foreground">"{book.title}"</span>? This will purge the manuscript for all readers globally.
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-                                        <AlertDialogAction 
-                                          onClick={() => handleDeleteBook(book.id)}
-                                          className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold"
-                                        >
-                                          Confirm Deletion
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <div className="p-12 text-center opacity-50 flex flex-col items-center">
-                        <BookOpen className="h-10 w-10 mb-2 text-primary" />
-                        <p className="text-sm font-headline font-bold">No Manuscripts Found</p>
-                      </div>
-                    )}
-                  </div>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </AccordionContent>
               </Card>
             </AccordionItem>
@@ -472,55 +241,29 @@ export default function AdminPage() {
 
           <Accordion type="single" collapsible className="mb-6">
             <AccordionItem value="contributors" className="border-none">
-              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
-                <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
-                  <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 w-full text-left cursor-pointer group">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <CardTitle className="text-xl font-headline font-black">Approved Contributors</CardTitle>
-                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
-                      </div>
-                      <CardDescription className="text-xs">Users permitted to publish directly to the global cloud library.</CardDescription>
-                    </div>
-                  </CardHeader>
-                </AccordionTrigger>
-                <AccordionContent className="p-0 border-t border-border/50">
-                  <div className="p-0">
-                    {approvedEmails.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/10 border-none">
-                            <TableHead className="pl-6 font-black uppercase tracking-widest text-[9px]">Email Address</TableHead>
-                            <TableHead className="text-right pr-6 font-black uppercase tracking-widest text-[9px]">Manage</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {approvedEmails.map((email) => (
-                            <TableRow key={email} className="border-border/50 hover:bg-primary/5 transition-colors h-14">
-                              <TableCell className="pl-6 font-bold text-sm">
-                                {email}
-                              </TableCell>
-                              <TableCell className="text-right pr-6">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="h-8 text-destructive hover:bg-destructive/10 rounded-lg font-bold text-[10px]"
-                                  onClick={() => handleRemoveContributor(email)}
-                                >
-                                  <UserMinus className="h-3 w-3 mr-1.5" /> Revoke Access
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <div className="p-12 text-center opacity-50 flex flex-col items-center">
-                        <ShieldCheck className="h-10 w-10 mb-2 text-primary opacity-20" />
-                        <p className="text-sm font-headline font-bold">No whitelisted contributors.</p>
-                      </div>
-                    )}
+              <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card/80">
+                <AccordionTrigger className="p-6 hover:no-underline">
+                  <div className="text-left">
+                    <CardTitle className="text-xl font-headline font-black">Approved Contributors</CardTitle>
+                    <CardDescription>Users permitted to publish directly to the global shelf.</CardDescription>
                   </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-0 border-t">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Email Address</TableHead><TableHead className="text-right">Manage</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {approvedEmails.map(email => (
+                        <TableRow key={email}>
+                          <TableCell className="font-bold">{email}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="sm" onClick={() => handleRemoveContributor(email)} className="text-destructive font-bold text-[10px]">
+                              <UserMinus className="h-3 w-3 mr-1" /> Revoke Access
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </AccordionContent>
               </Card>
             </AccordionItem>
@@ -528,76 +271,29 @@ export default function AdminPage() {
 
           <Accordion type="single" collapsible className="mb-12">
             <AccordionItem value="applications" className="border-none">
-              <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[2rem]">
-                <AccordionTrigger className="hover:no-underline p-0 [&>svg]:hidden">
-                  <CardHeader className="bg-muted/30 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 w-full text-left cursor-pointer group">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <CardTitle className="text-xl font-headline font-black">Contributor Applications</CardTitle>
-                        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
-                      </div>
-                      <CardDescription className="text-xs">Vet users requesting global publishing privileges.</CardDescription>
-                    </div>
-                  </CardHeader>
-                </AccordionTrigger>
-                <AccordionContent className="p-0 border-t border-border/50">
-                  <div className="p-0">
-                    {isRequestsLoading ? (
-                      <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" /></div>
-                    ) : requests && requests.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/10 border-none">
-                            <TableHead className="pl-6 font-black uppercase tracking-widest text-[9px]">Candidate Email</TableHead>
-                            <TableHead className="font-black uppercase tracking-widest text-[9px]">Applied On</TableHead>
-                            <TableHead className="text-right pr-6 font-black uppercase tracking-widest text-[9px]">Decision</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {requests.map((req) => (
-                            <TableRow key={req.id} className="border-border/50 hover:bg-primary/5 transition-colors h-14">
-                              <TableCell className="pl-6">
-                                <div className="flex items-center gap-2">
-                                  <Mail className="h-3.5 w-3.5 text-primary opacity-60" />
-                                  <span className="font-bold text-sm">{req.email}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground text-[10px] font-medium">
-                                {req.requestedAt?.toDate ? req.requestedAt.toDate().toLocaleDateString() : 'Pending Sync'}
-                              </TableCell>
-                              <TableCell className="text-right pr-6">
-                                <div className="flex items-center justify-end gap-2">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm"
-                                    className="h-8 text-destructive hover:bg-destructive/10 rounded-lg font-bold text-[10px] px-3"
-                                    onClick={() => handleReject(req.id)}
-                                    disabled={!!processingId}
-                                  >
-                                    <UserX className="h-3 w-3 mr-1.5" /> Discard
-                                  </Button>
-                                  <Button 
-                                    size="sm"
-                                    className="h-8 bg-primary hover:bg-primary/90 shadow-md rounded-lg font-bold text-[10px] px-4"
-                                    onClick={() => handleApprove(req.id, req.email)}
-                                    disabled={!!processingId}
-                                  >
-                                    {processingId === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3 mr-1.5" />}
-                                    Approve
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <div className="p-16 text-center opacity-50 flex flex-col items-center">
-                        <Star className="h-10 w-10 mb-2 text-primary animate-pulse" />
-                        <p className="text-sm font-headline font-bold">No Pending Applications</p>
-                      </div>
-                    )}
+              <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card/80">
+                <AccordionTrigger className="p-6 hover:no-underline">
+                  <div className="text-left">
+                    <CardTitle className="text-xl font-headline font-black">Contributor Applications</CardTitle>
+                    <CardDescription>Vet users requesting global publishing privileges.</CardDescription>
                   </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-0 border-t">
+                  {isRequestsLoading ? <div className="p-12 flex justify-center"><Loader2 className="animate-spin" /></div> : (
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Candidate Email</TableHead><TableHead className="text-right">Decision</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {requests?.map(req => (
+                          <TableRow key={req.id}>
+                            <TableCell className="font-bold">{req.email}</TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" onClick={() => handleApprove(req.id, req.email)} disabled={!!processingId} className="rounded-xl h-8 text-[10px] font-black">Approve</Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </AccordionContent>
               </Card>
             </AccordionItem>

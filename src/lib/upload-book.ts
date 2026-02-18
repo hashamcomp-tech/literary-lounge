@@ -20,7 +20,7 @@ function romanToInt(roman: string): number {
 
 /**
  * Parses full manuscript text into chapters using regex.
- * Also detects book title from the first non-empty line.
+ * Handles Roman numerals and detects title from the first line.
  */
 function parseBookWithChapters(text: string): { title: string; chapters: { number: number; title: string; content: string }[] } {
   const lines = text.split(/\r?\n/);
@@ -107,7 +107,6 @@ export async function uploadBookToCloud({
       chapterNumber: ch.number,
       content: cleanContent(ch.content)
     }));
-    // Use manually entered title if provided, otherwise fallback to detected
     detectedTitle = title || parsed.title;
   }
 

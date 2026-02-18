@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -80,7 +81,6 @@ export function UploadNovelForm() {
     try {
       const result = await parsePastedChapter(pastedText.substring(0, 2000));
       setTitle(result.bookTitle);
-      setAuthor(result.author);
       setChapterNumber(result.chapterNumber.toString());
       setChapterTitle(result.chapterTitle);
       toast({ title: 'AI Detection Complete', description: 'Metadata extracted from the manuscript.' });
