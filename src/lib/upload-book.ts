@@ -20,14 +20,10 @@ function romanToInt(roman: string): number {
 
 /**
  * Parses full manuscript text into chapters using regex.
- * Handles Roman numerals and detects title from the first line.
  */
 function parseBookWithChapters(text: string): { title: string; chapters: { number: number; title: string; content: string }[] } {
   const lines = text.split(/\r?\n/);
-  
-  // 1. Detect book title: first non-empty line
   const bookTitle = lines.find(line => line.trim().length > 0)?.trim() || 'Untitled Manuscript';
-
   const chapterRegex = /^(Chapter|CHAPTER)[\s]*([0-9IVXLCDM]+)\s*(?:[:-]\s*(.*))?$/i;
 
   let chapters: any[] = [];
@@ -47,7 +43,6 @@ function parseBookWithChapters(text: string): { title: string; chapters: { numbe
   }
   if (currentChapter) chapters.push(currentChapter);
   
-  // Fallback if no chapters detected
   if (chapters.length === 0) {
     chapters = [{ number: 1, title: 'Full Volume', content: text }];
   }
@@ -93,14 +88,12 @@ export async function uploadBookToCloud({
   let detectedTitle = title;
 
   if (manualChapterInfo) {
-    // Paste Mode: Preserves as single undivided chapter exactly as requested
     chapters = [{
       chapterNumber: manualChapterInfo.number,
       title: manualChapterInfo.title,
       content: cleanContent(rawContent)
     }];
   } else {
-    // File Mode: Regex segmentation + title detection
     const parsed = parseBookWithChapters(rawContent);
     chapters = parsed.chapters.map(ch => ({
       ...ch,
@@ -119,7 +112,6 @@ export async function uploadBookToCloud({
   const uploadMaxChapter = Math.max(...chapters.map(ch => ch.chapterNumber));
   const finalTotalChapters = Math.max(currentMaxChapter, uploadMaxChapter);
 
-  // Cover Upload
   let coverURL = existingData?.coverURL || null;
   let coverSize = existingData?.coverSize || 0;
   if (coverFile && storage) {
@@ -155,14 +147,9 @@ export async function uploadBookToCloud({
 
   await setDoc(bookRef, rootPayload, { merge: true });
 
-  if (coverSize > 0 && !existingData?.coverURL) {
-    const statsRef = doc(db, 'stats', 'storageUsage');
-    setDoc(statsRef, { storageBytesUsed: increment(coverSize) }, { merge: true }).catch(() => {});
-  }
-
   const batch = writeBatch(db);
   chapters.forEach((ch) => {
-    const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
+    const chRef = doc(db, "books", bookId, "chapters", ch.chapterNumber.toString());
     batch.set(chRef, {
       chapterNumber: ch.chapterNumber,
       content: ch.content,
