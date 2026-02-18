@@ -20,20 +20,37 @@ function cleanText(text: string) {
 }
 
 /**
- * Extracts content from within <body> tags and removes noise like scripts/styles.
+ * Robust HTML to Text conversion for EPUB content.
+ * Preserves semantic paragraph spacing.
  */
-function extractBodyContent(html: string): string {
-  // Remove noise tags entirely
-  let cleaned = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-    .replace(/<head>[\s\S]*?<\/head>/gi, "");
+function htmlToReadableText(html: string): string {
+  // Replace block tags with newlines to preserve structure
+  let text = html
+    .replace(/<(p|div|h[1-6]|li|br|section|article)[^>]*>/gi, '\n')
+    .replace(/<\/ (p|div|h[1-6]|li|section|article)>/gi, '\n');
   
-  const bodyMatch = cleaned.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  if (bodyMatch && bodyMatch[1]) {
-    return bodyMatch[1].trim();
-  }
-  return cleaned.trim();
+  // Remove all other tags
+  text = text.replace(/<[^>]*>/g, ' ');
+  
+  // Decode common HTML entities
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"');
+
+  // Clean up whitespace and ensure double-newlines for paragraphs
+  return text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .join('\n\n');
 }
 
 /**
@@ -94,7 +111,7 @@ async function downloadFile(url: string) {
 }
 
 /**
- * Parse EPUB buffer.
+ * Parse EPUB buffer into metadata + clean text chapters.
  */
 async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
   const tmpPath = `/tmp/${Date.now()}.epub`;
@@ -115,25 +132,26 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
         for (let item of epub.flow) {
           if (!item.id) continue;
           
-          // Skip non-text assets that might be in the flow
+          // Only process text items
           const manifestItem = epub.manifest[item.id];
           const mediaType = manifestItem?.['media-type'] || '';
           if (mediaType && !mediaType.includes('xml') && !mediaType.includes('html') && !mediaType.includes('text')) {
             continue;
           }
 
-          const rawHtmlOrBuffer = await new Promise<any>((res, rej) => {
+          const rawData = await new Promise<any>((res, rej) => {
             epub.getChapter(item.id, (err, txt) => (err ? rej(err) : res(txt || "")));
           });
           
-          const rawHtml = Buffer.isBuffer(rawHtmlOrBuffer) ? rawHtmlOrBuffer.toString('utf8') : rawHtmlOrBuffer;
-          const bodyContent = extractBodyContent(rawHtml);
-          const cleanedContent = removeCredits(cleanText(bodyContent));
+          // Handle both string and Buffer output
+          const html = Buffer.isBuffer(rawData) ? rawData.toString('utf8') : rawData;
+          const cleanBody = htmlToReadableText(html);
+          const finalContent = removeCredits(cleanText(cleanBody));
           
-          if (cleanedContent.length > 50) {
+          if (finalContent.length > 50) {
             chapters.push({
               title: item.title || "Untitled Chapter",
-              content: cleanedContent
+              content: finalContent
             });
           }
         }
@@ -239,18 +257,15 @@ export async function POST(req: Request) {
     // 2. Insert Chapters into subcollection
     let chapterIndex = 1;
     for (const chap of parsedBook.chapters) {
-      const chunks = chunkText(chap.content);
-      for (const chunk of chunks) {
-        const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
-        await setDoc(chRef, {
-          chapterNumber: chapterIndex, 
-          title: chap.title,
-          content: chunk,
-          createdAt: serverTimestamp(),
-          ownerId: ownerId || 'system'
-        });
-        chapterIndex++;
-      }
+      const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
+      await setDoc(chRef, {
+        chapterNumber: chapterIndex, 
+        title: chap.title,
+        content: chap.content,
+        createdAt: serverTimestamp(),
+        ownerId: ownerId || 'system'
+      });
+      chapterIndex++;
     }
 
     // 3. Update parent metadata with final count

@@ -128,9 +128,14 @@ export function UploadNovelForm() {
       const bookId = `${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
       const isEpub = selectedFile?.name.toLowerCase().endsWith('.epub');
 
-      if (canUploadCloud && uploadMode === 'cloud') {
+      if (uploadMode === 'cloud') {
+        if (!canUploadCloud) throw new Error("You don't have permission to publish to the cloud.");
+        
         if (sourceMode === 'file' && selectedFile && isEpub) {
+          // 1. Upload raw EPUB to temporary manuscript storage
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
+          
+          // 2. Call server-side ingest API to parse and store clean chapters
           const response = await fetch('/api/ingest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -151,6 +156,7 @@ export function UploadNovelForm() {
           }
           toast({ title: 'Cloud Processing Complete', description: 'Volume published to global library.' });
         } else {
+          // Single chapter/Text mode
           const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           await uploadBookToCloud({
             db: db!, storage: storage!, bookId,
@@ -161,18 +167,31 @@ export function UploadNovelForm() {
           toast({ title: 'Published to Cloud', description: 'Available globally in the Lounge.' });
         }
       } else {
+        // Local Archive Mode
         if (sourceMode === 'file' && selectedFile && isEpub) {
+          // Use the server's EPUB parser but keep the result private
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
           const response = await fetch('/api/ingest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileUrl, returnOnly: true, overrideMetadata: { title, author, genres: selectedGenres } })
+            body: JSON.stringify({ 
+              fileUrl, 
+              returnOnly: true, 
+              overrideMetadata: { title, author, genres: selectedGenres } 
+            })
           });
 
           if (!response.ok) throw new Error("Failed to parse EPUB for private archive.");
           
           const { book } = await response.json();
-          await saveLocalBook({ id: bookId, title: book.title, author: book.author, genre: book.genres, isLocalOnly: true });
+          await saveLocalBook({ 
+            id: bookId, 
+            title: book.title, 
+            author: book.author, 
+            genre: book.genres, 
+            isLocalOnly: true,
+            totalChapters: book.chapters.length
+          });
           
           for (let i = 0; i < book.chapters.length; i++) {
             await saveLocalChapter({ 
@@ -182,8 +201,9 @@ export function UploadNovelForm() {
               title: book.chapters[i].title 
             });
           }
-          toast({ title: 'Saved to Local Archive', description: 'Volume parsed and archived privately.' });
+          toast({ title: 'Saved to Local Archive', description: `Volume parsed (${book.chapters.length} chapters) and archived privately.` });
         } else {
+          // Single Chapter Local
           let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true, coverURL: coverPreview });
           await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
@@ -222,26 +242,25 @@ export function UploadNovelForm() {
               <CardTitle className="text-3xl font-headline font-black">Add Volume</CardTitle>
               <CardDescription>Upload files or paste text snippets.</CardDescription>
             </div>
-            {canUploadCloud && (
-              <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
-                <Button 
-                  size="sm" 
-                  variant={uploadMode === 'cloud' ? 'default' : 'ghost'} 
-                  className="rounded-lg h-8 text-[10px] font-black uppercase px-3"
-                  onClick={() => setUploadMode('cloud')}
-                >
-                  <Globe className="h-3 w-3 mr-1.5" /> Cloud
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant={uploadMode === 'local' ? 'default' : 'ghost'} 
-                  className="rounded-lg h-8 text-[10px] font-black uppercase px-3"
-                  onClick={() => setUploadMode('local')}
-                >
-                  <HardDrive className="h-3 w-3 mr-1.5" /> Local
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
+              <Button 
+                size="sm" 
+                variant={uploadMode === 'cloud' ? 'default' : 'ghost'} 
+                className="rounded-lg h-8 text-[10px] font-black uppercase px-3"
+                onClick={() => setUploadMode('cloud')}
+                disabled={!canUploadCloud && !isOfflineMode}
+              >
+                <Globe className="h-3 w-3 mr-1.5" /> Cloud
+              </Button>
+              <Button 
+                size="sm" 
+                variant={uploadMode === 'local' ? 'default' : 'ghost'} 
+                className="rounded-lg h-8 text-[10px] font-black uppercase px-3"
+                onClick={() => setUploadMode('local')}
+              >
+                <HardDrive className="h-3 w-3 mr-1.5" /> Local
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -319,7 +338,7 @@ export function UploadNovelForm() {
 
             <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all" disabled={loading}>
               {loading ? <Loader2 className="animate-spin mr-2" /> : <CloudUpload className="mr-2" />}
-              {canUploadCloud && uploadMode === 'cloud' ? 'Publish to Global Cloud' : 'Save to Private Archive'}
+              {uploadMode === 'cloud' ? 'Publish to Global Cloud' : 'Save to Private Archive'}
             </Button>
           </form>
         </CardContent>
