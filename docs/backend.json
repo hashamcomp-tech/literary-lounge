@@ -47,6 +47,19 @@
         "createdAt"
       ]
     },
+    "PublishRequest": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PublishRequest",
+      "type": "object",
+      "description": "A request from a reader to become a cloud contributor.",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      },
+      "required": ["uid", "email", "requestedAt"]
+    },
     "ChatMessage": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ChatMessage",
@@ -125,6 +138,14 @@
           "entityName": "UserProfile",
           "schema": { "$ref": "#/backend/entities/UserProfile" },
           "description": "Stores individual user profiles."
+        }
+      },
+      {
+        "path": "/publishRequests/{requestId}",
+        "definition": {
+          "entityName": "PublishRequest",
+          "schema": { "$ref": "#/backend/entities/PublishRequest" },
+          "description": "Requests for cloud publishing access."
         }
       },
       {

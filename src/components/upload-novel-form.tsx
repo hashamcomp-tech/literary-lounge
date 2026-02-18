@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -7,9 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Upload, BookPlus, Loader2, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, X, ChevronDown, Check, FileText, ClipboardList } from 'lucide-react';
+import { Upload, BookPlus, Loader2, Book, ShieldCheck, HardDrive, Globe, ImageIcon, CloudUpload, FileType, CloudOff, Sparkles, X, ChevronDown, Check, FileText, ClipboardList, Send } from 'lucide-react';
 import ePub from 'epubjs';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
@@ -28,6 +29,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { errorEmitter } from '@/firebase/error-emitter';
+import { FirestorePermissionError } from '@/firebase/errors';
 
 export function UploadNovelForm() {
   const router = useRouter();
@@ -49,6 +52,7 @@ export function UploadNovelForm() {
   const [loadingStatus, setLoadingStatus] = useState('');
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
+  const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
@@ -71,7 +75,6 @@ export function UploadNovelForm() {
       const isSystemAdmin = isSuperAdmin || profile?.role === 'admin';
       setIsAdmin(isSystemAdmin);
       
-      // Default to cloud if admin, otherwise force local
       if (isSystemAdmin) {
         setUploadMode('cloud');
       } else {
@@ -119,6 +122,40 @@ export function UploadNovelForm() {
       toast({ variant: "destructive", title: "Design Failed" });
     } finally {
       setIsGeneratingCover(false);
+    }
+  };
+
+  const handleRequestAccess = async () => {
+    if (!db || !user || user.isAnonymous) {
+      toast({ variant: "destructive", title: "Sign-in Required", description: "Please create an account to request access." });
+      return;
+    }
+
+    setIsRequestingAccess(true);
+    try {
+      const requestRef = doc(db, 'publishRequests', user.uid);
+      const requestData = {
+        uid: user.uid,
+        email: user.email,
+        requestedAt: serverTimestamp(),
+        status: 'pending'
+      };
+
+      setDoc(requestRef, requestData)
+        .then(() => {
+          toast({ title: "Request Sent", description: "The administrator will review your contributor application." });
+        })
+        .catch(async (err) => {
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: requestRef.path,
+            operation: 'create',
+            requestResourceData: requestData,
+          }));
+        });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Request Failed", description: err.message });
+    } finally {
+      setIsRequestingAccess(false);
     }
   };
 
@@ -180,7 +217,6 @@ export function UploadNovelForm() {
           rawContent: fullText, 
           coverFile: optimizedCover, 
           ownerId: user!.uid,
-          // If text was pasted, skip AI division and use manual chapter info
           manualChapterInfo: sourceMode === 'text' ? {
             number: parseInt(chapterNumber) || 1,
             title: chapterTitle || 'Pasted Content'
@@ -229,11 +265,32 @@ export function UploadNovelForm() {
           <AlertDescription className="text-xs font-medium">You have permission to publish directly to the global shelf.</AlertDescription>
         </Alert>
       ) : (
-        <Alert className="bg-amber-500/10 text-amber-700 rounded-xl p-4 border-amber-500/20">
-          <HardDrive className="h-4 w-4" />
-          <AlertTitle className="font-headline font-black text-sm uppercase tracking-tighter">Private Library Mode</AlertTitle>
-          <AlertDescription className="text-xs font-medium">Your uploads are stored locally. Only Admins can publish to the cloud.</AlertDescription>
-        </Alert>
+        <div className="space-y-3">
+          <Alert className="bg-amber-500/10 text-amber-700 rounded-xl p-4 border-amber-500/20">
+            <HardDrive className="h-4 w-4" />
+            <AlertTitle className="font-headline font-black text-sm uppercase tracking-tighter">Private Library Mode</AlertTitle>
+            <AlertDescription className="text-xs font-medium">Your uploads are stored locally. Only Admins can publish to the cloud.</AlertDescription>
+          </Alert>
+          
+          {!user?.isAnonymous && (
+            <div className="bg-primary/5 p-4 rounded-2xl border border-primary/10 flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Contributor Program</p>
+                <p className="text-xs text-muted-foreground leading-tight">Apply to publish your manuscripts globally for all readers in the Lounge.</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="rounded-xl font-bold border-primary/30 text-primary hover:bg-primary/10"
+                onClick={handleRequestAccess}
+                disabled={isRequestingAccess}
+              >
+                {isRequestingAccess ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3 mr-2" />}
+                Request Access
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl rounded-[2rem] overflow-hidden">

@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -44,6 +45,14 @@ service cloud.firestore {
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
+    }
+
+    // PUBLISH REQUESTS
+    match /publishRequests/{requestId} {
+      // Admins can manage all requests
+      allow read, write: if isAdmin();
+      // Signed-in users can create requests for themselves
+      allow create: if isSignedIn();
     }
 
     // CHATS & MESSAGES
