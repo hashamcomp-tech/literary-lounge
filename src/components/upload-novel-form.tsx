@@ -14,7 +14,6 @@ import { saveLocalBook, saveLocalChapter } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
-import { optimizeCoverImage } from '@/lib/image-utils';
 import { uploadManuscriptFile } from '@/lib/upload-cover';
 import { parsePastedChapter } from '@/ai/flows/parse-pasted-chapter';
 import {
@@ -39,7 +38,6 @@ export function UploadNovelForm() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pastedText, setPastedText] = useState('');
   const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
-  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   
   const [loading, setLoading] = useState(false);
@@ -48,8 +46,6 @@ export function UploadNovelForm() {
   
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
-
-  const coverInputRef = useRef<HTMLInputElement>(null);
 
   // Load persistent storage mode preference
   useEffect(() => {
@@ -84,7 +80,6 @@ export function UploadNovelForm() {
       const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
       setCanUploadCloud(permitted);
       
-      // If user is currently in cloud mode but lost permission, force local
       if (uploadMode === 'cloud' && !permitted) {
         setUploadMode('local');
       }
@@ -134,51 +129,39 @@ export function UploadNovelForm() {
       const isEpub = selectedFile?.name.toLowerCase().endsWith('.epub');
 
       if (canUploadCloud && uploadMode === 'cloud') {
-        // --- CLOUD PATH ---
-        if (sourceMode === 'file' && selectedFile) {
-          if (isEpub) {
-            const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
-            const response = await fetch('/api/ingest', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                fileUrl,
-                ownerId: user!.uid,
-                overrideMetadata: {
-                  title: title || undefined,
-                  author: author || undefined,
-                  genres: selectedGenres.length > 0 ? selectedGenres : undefined
-                }
-              })
-            });
+        if (sourceMode === 'file' && selectedFile && isEpub) {
+          const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
+          const response = await fetch('/api/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileUrl,
+              ownerId: user!.uid,
+              overrideMetadata: {
+                title: title || undefined,
+                author: author || undefined,
+                genres: selectedGenres.length > 0 ? selectedGenres : undefined
+              }
+            })
+          });
 
-            if (!response.ok) {
-              const errData = await response.json();
-              throw new Error(errData.details || "Server-side ingestion failed.");
-            }
-            toast({ title: 'Cloud Processing Complete', description: 'Volume has been parsed and published.' });
-          } else {
-            const text = await selectedFile.text();
-            await uploadBookToCloud({
-              db: db!, storage: storage!, bookId,
-              title, author, genres: selectedGenres,
-              rawContent: text, ownerId: user!.uid
-            });
-            toast({ title: 'Published to Cloud', description: 'Available globally in the Lounge.' });
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.details || "Server-side ingestion failed.");
           }
+          toast({ title: 'Cloud Processing Complete', description: 'Volume published to global library.' });
         } else {
+          const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           await uploadBookToCloud({
             db: db!, storage: storage!, bookId,
             title, author, genres: selectedGenres,
-            rawContent: pastedText, ownerId: user!.uid,
-            manualChapterInfo: { number: parseInt(chapterNumber), title: chapterTitle }
+            rawContent: text, ownerId: user!.uid,
+            manualChapterInfo: sourceMode === 'text' ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
           });
           toast({ title: 'Published to Cloud', description: 'Available globally in the Lounge.' });
         }
       } else {
-        // --- LOCAL PATH ---
         if (sourceMode === 'file' && selectedFile && isEpub) {
-          // Use Ingest API to parse EPUB but return it instead of saving to Cloud
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
           const response = await fetch('/api/ingest', {
             method: 'POST',
@@ -201,10 +184,7 @@ export function UploadNovelForm() {
           }
           toast({ title: 'Saved to Local Archive', description: 'Volume parsed and archived privately.' });
         } else {
-          let fullText = sourceMode === 'file' && selectedFile 
-            ? await selectedFile.text() 
-            : pastedText;
-
+          let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true, coverURL: coverPreview });
           await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
           toast({ title: 'Saved to Local Archive', description: 'Private to this browser.' });

@@ -11,7 +11,6 @@ const db = getFirestore(app);
 
 /**
  * Remove UI artifacts and zero-width characters.
- * Also performs basic HTML tag stripping if needed.
  */
 function cleanText(text: string) {
   return text
@@ -131,7 +130,6 @@ async function parseEpubFromBuffer(buffer: Buffer): Promise<any> {
           const bodyContent = extractBodyContent(rawHtml);
           const cleanedContent = removeCredits(cleanText(bodyContent));
           
-          // Only include chapters that actually have readable content
           if (cleanedContent.length > 50) {
             chapters.push({
               title: item.title || "Untitled Chapter",
@@ -187,7 +185,7 @@ export async function POST(req: Request) {
     const finalAuthor = overrideMetadata?.author || parsedBook.author;
     const finalGenres = overrideMetadata?.genres || ['Ingested'];
 
-    // If client just wants the parsed data (e.g. for Local storage save)
+    // If client just wants the parsed data (e.g. for Private Archive)
     if (returnOnly) {
       return Response.json({ 
         success: true, 
@@ -241,7 +239,6 @@ export async function POST(req: Request) {
     // 2. Insert Chapters into subcollection
     let chapterIndex = 1;
     for (const chap of parsedBook.chapters) {
-      // For very long chapters, we chunk them to stay within Firestore limits (approx 1MB)
       const chunks = chunkText(chap.content);
       for (const chunk of chunks) {
         const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
