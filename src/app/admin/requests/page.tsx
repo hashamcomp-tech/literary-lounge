@@ -1,8 +1,6 @@
-
 'use client';
 
 import { useState } from 'react';
-import { MessageSquareQuote } from 'lucide-react';
 import Navbar from '@/components/navbar';
 import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
 import { collection, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
@@ -20,7 +18,9 @@ import {
   FileText, 
   Sparkles, 
   BrainCircuit, 
-  ShieldCheck, 
+  ShieldCheck,
+  MessageSquareQuote,
+  MessageSquare
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';

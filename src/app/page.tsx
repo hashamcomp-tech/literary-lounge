@@ -1,4 +1,3 @@
-
 import Link from 'next/link';
 import Navbar from '@/components/navbar';
 import RecommendationsSection from '@/components/recommendations-section';
