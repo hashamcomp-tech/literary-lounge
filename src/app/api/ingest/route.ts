@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps } from "firebase/app";
-import { getFirestore, collection, addDoc, query, where, getDocs, orderBy, limit, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, query, where, getDocs, limit, doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { firebaseConfig } from "@/firebase/config";
 import EPub from "epub2";
 import fetch from "node-fetch";
