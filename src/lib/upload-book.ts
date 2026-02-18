@@ -1,5 +1,5 @@
 
-import { doc, setDoc, serverTimestamp, Firestore, increment, writeBatch } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, Firestore, increment, writeBatch, getDoc } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 
@@ -110,19 +110,27 @@ export async function uploadBookToCloud({
     detectedTitle = title || parsed.title;
   }
 
+  // Fetch existing book to calculate correct totalChapters
+  const bookRef = doc(db, 'books', bookId);
+  const existingSnap = await getDoc(bookRef);
+  const existingData = existingSnap.exists() ? existingSnap.data() : null;
+  const currentMaxChapter = existingData?.metadata?.info?.totalChapters || 0;
+  
+  const uploadMaxChapter = Math.max(...chapters.map(ch => ch.chapterNumber));
+  const finalTotalChapters = Math.max(currentMaxChapter, uploadMaxChapter);
+
   // Cover Upload
-  let coverURL = null;
-  let coverSize = 0;
+  let coverURL = existingData?.coverURL || null;
+  let coverSize = existingData?.coverSize || 0;
   if (coverFile && storage) {
     coverURL = await uploadCoverImage(storage, coverFile, bookId);
     coverSize = coverFile.size;
   }
 
-  const bookRef = doc(db, 'books', bookId);
   const metadataInfo = {
     author,
     bookTitle: detectedTitle,
-    totalChapters: chapters.length,
+    totalChapters: finalTotalChapters,
     genre: genres,
     coverURL,
     coverSize,
@@ -135,23 +143,19 @@ export async function uploadBookToCloud({
     author,
     authorLower: author.toLowerCase(),
     genre: genres,
-    views: 0,
+    views: existingData?.views || 0,
     isCloud: true,
     ownerId,
-    createdAt: serverTimestamp(),
+    createdAt: existingData?.createdAt || serverTimestamp(),
     lastUpdated: serverTimestamp(),
     coverURL,
     coverSize,
-    metadata: { info: metadataInfo },
-    chapters: chapters.map(ch => ({
-      chapterNumber: ch.chapterNumber,
-      title: ch.title
-    }))
+    metadata: { info: metadataInfo }
   };
 
   await setDoc(bookRef, rootPayload, { merge: true });
 
-  if (coverSize > 0) {
+  if (coverSize > 0 && !existingData?.coverURL) {
     const statsRef = doc(db, 'stats', 'storageUsage');
     setDoc(statsRef, { storageBytesUsed: increment(coverSize) }, { merge: true }).catch(() => {});
   }

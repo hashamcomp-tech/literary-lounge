@@ -1,5 +1,6 @@
+
 import { initializeApp, getApps } from "firebase/app";
-import { getFirestore, collection, query, where, getDocs, limit, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, query, where, getDocs, limit, doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
 import { firebaseConfig } from "@/firebase/config";
 import EPub from "epub2";
 import fetch from "node-fetch";
@@ -67,17 +68,6 @@ function removeCredits(text: string) {
   let cleaned = text;
   patterns.forEach(p => { cleaned = cleaned.replace(p, ""); });
   return cleaned.trim();
-}
-
-/**
- * Split large text into chunks to stay within Firestore document limits (1MB).
- */
-function chunkText(text: string, size = 15000) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += size) {
-    chunks.push(text.slice(i, i + size));
-  }
-  return chunks;
 }
 
 /**
@@ -219,26 +209,21 @@ export async function POST(req: Request) {
     // 1. Check if book exists, or create it
     const bookQuery = query(
       collection(db, "books"),
-      where("title", "==", finalTitle),
+      where("titleLower", "==", finalTitle.toLowerCase()),
       limit(1)
     );
     const existingBook = await getDocs(bookQuery);
 
     let bookId;
+    let currentMaxChapter = 0;
     if (!existingBook.empty) {
       bookId = existingBook.docs[0].id;
+      const data = existingBook.docs[0].data();
+      currentMaxChapter = data.metadata?.info?.totalChapters || 0;
     } else {
       const newBookRef = doc(collection(db, "books"));
       bookId = newBookRef.id;
       
-      const metaInfo = {
-        author: finalAuthor,
-        bookTitle: finalTitle,
-        totalChapters: parsedBook.chapters.length,
-        genre: finalGenres,
-        lastUpdated: serverTimestamp()
-      };
-
       await setDoc(newBookRef, {
         title: finalTitle,
         titleLower: finalTitle.toLowerCase(),
@@ -250,12 +235,19 @@ export async function POST(req: Request) {
         ownerId: ownerId || 'system',
         views: 0,
         genre: finalGenres,
-        metadata: { info: metaInfo }
+        metadata: { info: { 
+          author: finalAuthor, 
+          bookTitle: finalTitle, 
+          totalChapters: 0, 
+          genre: finalGenres, 
+          lastUpdated: serverTimestamp() 
+        } }
       });
     }
 
     // 2. Insert Chapters into subcollection
     let chapterIndex = 1;
+    let ingestMaxChapter = 0;
     for (const chap of parsedBook.chapters) {
       const chRef = doc(db, "books", bookId, "chapters", chapterIndex.toString());
       await setDoc(chRef, {
@@ -265,15 +257,18 @@ export async function POST(req: Request) {
         createdAt: serverTimestamp(),
         ownerId: ownerId || 'system'
       });
+      ingestMaxChapter = chapterIndex;
       chapterIndex++;
     }
 
-    // 3. Update parent metadata with final count
+    // 3. Update parent metadata with correct max count
+    const finalTotalChapters = Math.max(currentMaxChapter, ingestMaxChapter);
     await setDoc(doc(db, "books", bookId), {
-      'metadata.info.totalChapters': chapterIndex - 1
+      'metadata.info.totalChapters': finalTotalChapters,
+      'lastUpdated': serverTimestamp()
     }, { merge: true });
 
-    return Response.json({ success: true, bookId, chaptersAdded: chapterIndex - 1 });
+    return Response.json({ success: true, bookId, chaptersAdded: ingestMaxChapter });
 
   } catch (err: any) {
     console.error("Ingest API Error:", err);

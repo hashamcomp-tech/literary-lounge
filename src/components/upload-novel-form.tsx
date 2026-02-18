@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -135,7 +136,7 @@ export function UploadNovelForm() {
       return;
     }
     const filtered = allBooks.filter(b => 
-      b.title.toLowerCase().includes(title.toLowerCase())
+      b.title.toLowerCase().includes(title.toLowerCase().trim())
     );
     setFilteredSuggestions(filtered);
     setShowSuggestions(filtered.length > 0);
@@ -173,15 +174,20 @@ export function UploadNovelForm() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!title.trim() || !author.trim()) return;
+    
     setLoading(true);
     try {
-      // Check if title/author combo matches an existing book to get its ID
+      // Robust matching: trim and lowercase
+      const searchTitle = title.trim().toLowerCase();
+      const searchAuthor = author.trim().toLowerCase();
+      
       const existingBook = allBooks.find(b => 
-        b.title.toLowerCase() === title.toLowerCase() && 
-        b.author.toLowerCase() === author.toLowerCase()
+        b.title.trim().toLowerCase() === searchTitle && 
+        b.author.trim().toLowerCase() === searchAuthor
       );
 
-      const bookId = existingBook?.id || `${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
+      const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
       const isEpub = selectedFile?.name.toLowerCase().endsWith('.epub');
 
       if (uploadMode === 'cloud') {
@@ -196,8 +202,8 @@ export function UploadNovelForm() {
               fileUrl,
               ownerId: user!.uid,
               overrideMetadata: {
-                title: title || undefined,
-                author: author || undefined,
+                title: title.trim() || undefined,
+                author: author.trim() || undefined,
                 genres: selectedGenres.length > 0 ? selectedGenres : undefined
               }
             })
@@ -212,7 +218,7 @@ export function UploadNovelForm() {
           const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           await uploadBookToCloud({
             db: db!, storage: storage!, bookId,
-            title, author, genres: selectedGenres,
+            title: title.trim(), author: author.trim(), genres: selectedGenres,
             rawContent: text, ownerId: user!.uid,
             manualChapterInfo: sourceMode === 'text' ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
           });
@@ -227,7 +233,7 @@ export function UploadNovelForm() {
             body: JSON.stringify({ 
               fileUrl, 
               returnOnly: true, 
-              overrideMetadata: { title, author, genres: selectedGenres } 
+              overrideMetadata: { title: title.trim(), author: author.trim(), genres: selectedGenres } 
             })
           });
 
@@ -254,13 +260,15 @@ export function UploadNovelForm() {
           toast({ title: 'Saved to Local Archive', description: `Volume parsed (${book.chapters.length} chapters) and archived privately.` });
         } else {
           let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
+          const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
+          
           await saveLocalBook({ 
             id: bookId, 
-            title, 
-            author, 
+            title: title.trim(), 
+            author: author.trim(), 
             genre: selectedGenres, 
             isLocalOnly: true,
-            totalChapters: Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0)
+            totalChapters: finalTotal
           });
           await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
           toast({ title: 'Saved to Local Archive', description: 'Private to this browser.' });
