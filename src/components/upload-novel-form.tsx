@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -37,13 +36,11 @@ export function UploadNovelForm() {
   
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
-  const [chapterNumber, setChapterNumber] = useState('1');
   const [content, setContent] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
-  const [identifiedSummary, setIdentifiedSummary] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
@@ -51,43 +48,28 @@ export function UploadNovelForm() {
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   
   const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
-  const [checkingApproval, setCheckingApproval] = useState(true);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
   useEffect(() => {
-    if (isOfflineMode || !db || !user || user.isAnonymous) {
-      setCheckingApproval(false);
-      return;
-    }
-
+    if (isOfflineMode || !db || !user || user.isAnonymous) return;
     const checkApproval = async () => {
-      try {
-        const pRef = doc(db, 'users', user.uid);
-        const snap = await getDoc(pRef);
-        const pData = snap.data();
-        
-        if (isSuperAdmin || pData?.role === 'admin') {
-          setIsApprovedUser(true);
-        } else {
-          const settingsRef = doc(db, 'settings', 'approvedEmails');
-          const settingsSnap = await getDoc(settingsRef);
-          if (settingsSnap.exists()) {
-            const emails = settingsSnap.data().emails || [];
-            setIsApprovedUser(emails.includes(user.email!));
-          }
+      const pRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(pRef);
+      if (isSuperAdmin || snap.data()?.role === 'admin') {
+        setIsApprovedUser(true);
+      } else {
+        const settingsRef = doc(db, 'settings', 'approvedEmails');
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const emails = settingsSnap.data().emails || [];
+          setIsApprovedUser(emails.includes(user.email!));
         }
-      } catch (e) {
-        // Silently handled
-      } finally {
-        setCheckingApproval(false);
       }
     };
-
     checkApproval();
   }, [user, db, isOfflineMode, isSuperAdmin]);
 
@@ -98,456 +80,210 @@ export function UploadNovelForm() {
       const result = await identifyBookFromFilename(selectedFile.name);
       if (result.title) setTitle(result.title);
       if (result.author) setAuthor(result.author);
-      if (result.genres && result.genres.length > 0) {
-        // Filter suggested genres against our known list
-        const validGenres = result.genres.filter(g => GENRES.includes(g));
-        setSelectedGenres(validGenres);
-      }
-      if (result.summary) setIdentifiedSummary(result.summary);
-      
-      toast({ title: "AI Identification Complete", description: `Matched: ${result.title} with multiple genres.` });
+      if (result.genres) setSelectedGenres(result.genres.filter(g => GENRES.includes(g)));
+      toast({ title: "AI Identification Complete", description: `Matched: ${result.title}` });
     } catch (err: any) {
-      toast({ variant: "destructive", title: "AI Search Failed", description: err.message });
+      toast({ variant: "destructive", title: "AI Search Failed" });
     } finally {
       setIsIdentifying(false);
     }
   };
 
   const handleManualGenerateCover = async () => {
-    if (!title || selectedGenres.length === 0) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Information Required', 
-        description: 'Please provide a title and select genres for the AI to design a cover.' 
-      });
-      return;
-    }
-
+    if (!title || selectedGenres.length === 0) return;
     setIsGeneratingCover(true);
     try {
-      const coverDataUri = await generateBookCover({ 
+      const dataUri = await generateBookCover({ 
         title, 
         author: author || 'Anonymous', 
-        genres: selectedGenres,
-        description: identifiedSummary || `A unique ${selectedGenres.join(', ')} novel.`
+        genres: selectedGenres 
       });
-      const resp = await fetch(coverDataUri);
+      const resp = await fetch(dataUri);
       const blob = await resp.blob();
-      const generatedFile = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
-      setCoverFile(generatedFile);
-      setCoverPreview(coverDataUri);
-      toast({ title: "Cover Designed", description: "AI has created an authentic cover for your manuscript." });
+      setCoverFile(new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' }));
+      setCoverPreview(dataUri);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Generation Failed", description: err.message });
+      toast({ variant: "destructive", title: "Generation Failed" });
     } finally {
       setIsGeneratingCover(false);
     }
   };
 
-  const handleFileChange = async (file: File) => {
-    setSelectedFile(file);
-    if (file.name.endsWith('.epub')) {
-      setLoading(true);
-      setLoadingStatus('Parsing EPUB...');
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const book = ePub(arrayBuffer);
-        await book.ready;
-        
-        const metadata = await book.loaded.metadata;
-        if (metadata.title) setTitle(metadata.title);
-        if (metadata.creator) setAuthor(metadata.creator);
-        
-        toast({ title: "Manuscript Loaded", description: `"${metadata.title}" processed.` });
-      } catch (e) {
-        toast({ variant: 'destructive', title: "Parsing Error", description: "Failed to read EPUB metadata." });
-      } finally {
-        setLoading(false);
-        setLoadingStatus('');
-      }
-    }
-  };
-
-  const handleCoverFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setCoverFile(file);
-      setCoverPreview(URL.createObjectURL(file));
-    }
-  };
-
-  const toggleGenre = (genre: string) => {
-    setSelectedGenres(prev => 
-      prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
-    );
-  };
-
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedGenres.length === 0) return toast({ variant: 'destructive', title: 'Missing Genres', description: 'Please select at least one genre.' });
+    if (selectedGenres.length === 0) return toast({ variant: 'destructive', title: 'Select Genres' });
     if (!db) return;
 
-    const isCloudTarget = isApprovedUser && !isOfflineMode && uploadMode === 'cloud';
     setLoading(true);
-    
     try {
-      let finalTitle = title.trim();
-      let finalAuthor = author.trim() || 'Anonymous Author';
-      let chapters: any[] = [];
-
-      setLoadingStatus('Optimizing Assets...');
-      let optimizedCover: File | null = null;
-      if (coverFile) {
-        const optimizedBlob = await optimizeCoverImage(coverFile);
-        optimizedCover = new File([optimizedBlob], coverFile.name, { type: 'image/jpeg' });
-      }
-
+      let fullText = content;
       if (selectedFile?.name.endsWith('.epub')) {
-        setLoadingStatus('Extracting Chapters...');
+        setLoadingStatus('Parsing EPUB...');
         const arrayBuffer = await selectedFile.arrayBuffer();
         const book = ePub(arrayBuffer);
         await book.ready;
-        
         const spine = book.spine;
-        let idx = 1;
+        let textParts = [];
         // @ts-ignore
         for (const item of spine.items) {
           const chapterDoc = await book.load(item.href);
           // @ts-ignore
-          const body = chapterDoc.querySelector('body');
-          if (body) {
-            const chContent = body.innerHTML;
-            chapters.push({ 
-              chapterNumber: idx++, 
-              content: chContent, 
-              title: item.idref || `Chapter ${idx - 1}` 
-            });
-          }
+          textParts.push(chapterDoc.querySelector('body')?.innerHTML || "");
         }
-      } else {
-        const html = (content || "").split('\n\n').map(p => `<p>${p}</p>`).join('');
-        chapters = [{ chapterNumber: parseInt(chapterNumber) || 1, content: html, title: `Chapter ${chapterNumber}` }];
+        fullText = textParts.join('\n\n');
       }
 
-      if (chapters.length === 0) throw new Error("No readable content found.");
+      setLoadingStatus('Optimizing Cover...');
+      let optimizedCover = null;
+      if (coverFile) {
+        const blob = await optimizeCoverImage(coverFile);
+        optimizedCover = new File([blob], coverFile.name, { type: 'image/jpeg' });
+      }
 
-      const slugify = (t: string) => t.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_').replace(/^-+|-+$/g, '');
-      const docId = `${slugify(finalAuthor)}_${slugify(finalTitle)}`;
+      const slugify = (t: string) => t.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_');
+      const docId = `${slugify(author || 'anon')}_${slugify(title)}_${Date.now()}`;
 
-      if (isCloudTarget) {
-        setLoadingStatus('Publishing to Cloud...');
+      if (isApprovedUser && !isOfflineMode && uploadMode === 'cloud') {
+        setLoadingStatus('AI Chapter Slicing & Publishing...');
         await uploadBookToCloud({
           db, 
           storage: storage!, 
-          bookId: `${docId}_${Date.now()}`,
-          title: finalTitle, 
-          author: finalAuthor, 
+          bookId: docId,
+          title, 
+          author: author || 'Anonymous', 
           genres: selectedGenres, 
-          chapters, 
+          rawContent: fullText, 
           coverFile: optimizedCover, 
           ownerId: user!.uid
         });
-        toast({ title: "Cloud Published", description: "Novel published to the Lounge." });
+        toast({ title: "Cloud Published" });
       } else {
-        setLoadingStatus('Saving Local Draft...');
-        let coverURL = null;
-        if (optimizedCover && !isOfflineMode && storage) {
-          try {
-            coverURL = await uploadCoverImage(storage, optimizedCover, docId);
-          } catch (coverErr) {
-            console.warn("Optional cover upload failed for local draft.");
-          }
-        }
-        
-        const bookData = {
-          id: docId, 
-          title: finalTitle, 
-          author: finalAuthor, 
-          genre: selectedGenres, 
-          coverURL,
-          lastUpdated: new Date().toISOString(), 
-          isLocalOnly: true
-        };
-        
+        setLoadingStatus('Saving Private Draft...');
+        const bookData = { id: docId, title, author: author || 'Anonymous', genre: selectedGenres, isLocalOnly: true };
         await saveLocalBook(bookData);
-        for (const ch of chapters) {
-          await saveLocalChapter({ ...ch, bookId: docId });
-        }
-        toast({ title: "Local Draft Saved", description: "Saved to your browser library." });
+        await saveLocalChapter({ bookId: docId, chapterNumber: 1, content: fullText, title: "Draft Volume" });
+        toast({ title: "Local Draft Saved" });
       }
-      
       router.push('/');
     } catch (error: any) {
       toast({ variant: "destructive", title: "Upload Failed", description: error.message });
     } finally {
       setLoading(false);
-      setLoadingStatus('');
     }
   };
 
-  if (checkingApproval) {
-    return (
-      <div className="py-12 flex flex-col items-center justify-center space-y-4">
-        <Loader2 className="h-8 w-8 animate-spin text-primary opacity-20" />
-        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Verifying...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500 max-w-xl mx-auto">
+    <div className="space-y-4 max-w-xl mx-auto">
       {isOfflineMode ? (
-        <Alert className="border-none shadow-md bg-amber-500/10 text-amber-700 rounded-xl p-4">
+        <Alert className="bg-amber-500/10 text-amber-700 rounded-xl p-4">
           <CloudOff className="h-4 w-4" />
-          <AlertTitle className="font-headline font-black text-sm mb-0.5">Independent Mode</AlertTitle>
-          <AlertDescription className="text-[11px] opacity-80">Saving locally to browser.</AlertDescription>
+          <AlertTitle className="font-headline font-black text-sm">Independent Mode</AlertTitle>
+          <AlertDescription className="text-xs">Saving locally to your browser.</AlertDescription>
         </Alert>
       ) : isApprovedUser ? (
-        <Alert className="border-none shadow-md bg-primary/10 text-primary rounded-xl p-4">
+        <Alert className="bg-primary/10 text-primary rounded-xl p-4">
           <CloudUpload className="h-4 w-4" />
-          <AlertTitle className="font-headline font-black text-sm mb-0.5">Contributor Mode</AlertTitle>
-          <AlertDescription className="text-[11px] opacity-80">Direct cloud publishing enabled.</AlertDescription>
+          <AlertTitle className="font-headline font-black text-sm">Contributor Mode</AlertTitle>
+          <AlertDescription className="text-xs">AI-powered automatic chapter slicing enabled.</AlertDescription>
         </Alert>
       ) : null}
 
-      <Card className="border-none shadow-xl bg-card/80 backdrop-blur-xl overflow-hidden rounded-[1.5rem]">
+      <Card className="border-none shadow-xl bg-card/80 backdrop-blur-xl rounded-[1.5rem] overflow-hidden">
         <div className="h-1.5 bg-primary w-full" />
-        <CardHeader className="pt-6 pb-4 px-6">
+        <CardHeader>
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle className="text-xl font-headline font-black">Manuscript Details</CardTitle>
-              <CardDescription className="text-xs">Add your work to the library collection.</CardDescription>
+              <CardTitle className="text-xl font-headline font-black">Manuscript Portal</CardTitle>
+              <CardDescription className="text-xs">Submit your volume for processing.</CardDescription>
             </div>
             {isSuperAdmin && selectedFile && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="rounded-lg h-8 px-3 gap-2 bg-primary/5 border-primary/20 text-primary animate-in fade-in zoom-in"
-                onClick={handleAiAutoFill}
-                disabled={isIdentifying}
-              >
+              <Button size="sm" variant="outline" className="h-8 gap-2 bg-primary/5 text-primary border-primary/20" onClick={handleAiAutoFill} disabled={isIdentifying}>
                 {isIdentifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                <span className="text-[10px] font-black uppercase tracking-widest">AI Auto-fill</span>
+                <span className="text-[10px] font-black uppercase">AI Match</span>
               </Button>
             )}
           </div>
         </CardHeader>
-        <CardContent className="px-6 pb-6 space-y-6">
+        <CardContent className="space-y-6">
           <form onSubmit={handleUpload} className="space-y-6">
-            
             {isApprovedUser && !isOfflineMode && (
               <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
                 <div className="flex items-center gap-2">
                   <div className="bg-primary/10 p-1.5 rounded-md">
                     {uploadMode === 'cloud' ? <Globe className="h-4 w-4 text-primary" /> : <HardDrive className="h-4 w-4 text-primary" />}
                   </div>
-                  <div>
-                    <p className="text-[11px] font-bold">Target</p>
-                    <p className="text-[9px] uppercase font-black tracking-widest text-muted-foreground">
-                      {uploadMode === 'cloud' ? 'Global Cloud' : 'Private Archive'}
-                    </p>
-                  </div>
+                  <span className="text-[11px] font-bold uppercase">{uploadMode === 'cloud' ? 'Global Cloud' : 'Private'}</span>
                 </div>
-                <div className="flex items-center gap-2 scale-90">
-                  <Switch 
-                    id="upload-mode" 
-                    checked={uploadMode === 'cloud'} 
-                    onCheckedChange={(checked) => setUploadMode(checked ? 'cloud' : 'local')}
-                  />
-                </div>
+                <Switch checked={uploadMode === 'cloud'} onCheckedChange={(c) => setUploadMode(checked ? 'cloud' : 'local')} />
               </div>
             )}
 
             <div className="grid gap-4">
-              <div className="grid gap-1.5">
-                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Author</Label>
-                <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Pen Name" />
-              </div>
+              <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author Name" />
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Novel Title" />
+              
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between h-auto py-2.5 bg-background/50 border-none shadow-inner text-xs">
+                    <span className="truncate">{selectedGenres.length > 0 ? selectedGenres.join(', ') : 'Select Genres'}</span>
+                    <ChevronDown className="h-3 w-3 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0 rounded-xl shadow-2xl border-none">
+                  <ScrollArea className="h-[300px]">
+                    <div className="p-2 space-y-1">
+                      {GENRES.map((g) => (
+                        <button key={g} type="button" onClick={() => setSelectedGenres(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g])} className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-lg ${selectedGenres.includes(g) ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}>
+                          {g} {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
+            </div>
 
-              <div className="grid gap-1.5">
-                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Book Title</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title of the Work" />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                <div className="grid gap-1.5">
-                  <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Genres (Multiple)</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between h-auto py-2.5 px-3 min-h-[40px] rounded-lg border-none shadow-inner bg-background/50 text-xs">
-                        <div className="flex flex-wrap gap-1 max-w-[90%]">
-                          {selectedGenres.length > 0 ? (
-                            selectedGenres.map(g => (
-                              <Badge key={g} variant="secondary" className="h-5 text-[9px] font-bold bg-primary/10 text-primary border-none">
-                                {g}
-                              </Badge>
-                            ))
-                          ) : (
-                            <span className="text-muted-foreground">Select Genres</span>
-                          )}
-                        </div>
-                        <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0 rounded-xl shadow-2xl border-none" align="start">
-                      <ScrollArea className="h-[350px]">
-                        <div className="p-2 space-y-1">
-                          {GENRES.map((g) => (
-                            <button
-                              key={g}
-                              type="button"
-                              onClick={() => toggleGenre(g)}
-                              className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold rounded-lg transition-colors ${selectedGenres.includes(g) ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
-                            >
-                              <span>{g}</span>
-                              {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
-                            </button>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                    </PopoverContent>
-                  </Popover>
+            <div className="pt-4 border-t border-border/50">
+              <Label className="text-[9px] font-black uppercase tracking-widest block mb-3">Cover Identity</Label>
+              <div className="flex gap-4 items-center bg-muted/10 p-4 rounded-xl border border-border/50">
+                <div className="w-20 aspect-[2/3] bg-muted/20 rounded-md overflow-hidden flex items-center justify-center shrink-0">
+                  {coverPreview ? <img src={coverPreview} className="w-full h-full object-cover" /> : <Book className="h-6 w-6 opacity-20" />}
                 </div>
-                
-                {!selectedFile && (
-                  <div className="grid gap-1.5">
-                    <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground">Chapter</Label>
-                    <Input type="number" min={1} value={chapterNumber} onChange={(e) => setChapterNumber(e.target.value)} className="bg-background/50 rounded-lg h-10 text-xs" />
+                <div className="flex flex-wrap gap-2">
+                  <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f) { setCoverFile(f); setCoverPreview(URL.createObjectURL(f)); }}} />
+                  <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg" onClick={() => coverInputRef.current?.click()}>Upload File</Button>
+                  <Button type="button" variant="outline" size="sm" className="h-8 rounded-lg bg-primary/5 text-primary" onClick={handleManualGenerateCover} disabled={isGeneratingCover || !title || selectedGenres.length === 0}>
+                    {isGeneratingCover ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} AI Design
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-border/50">
+              <Label className="text-[9px] font-black uppercase tracking-widest block mb-2">Manuscript File</Label>
+              <div className={`relative border-2 border-dashed rounded-xl p-6 transition-all text-center ${selectedFile ? 'border-primary bg-primary/5' : 'border-muted hover:border-primary/50'}`}>
+                <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                {selectedFile ? (
+                  <div className="flex flex-col items-center gap-1">
+                    <FileType className="h-6 w-6 text-primary" />
+                    <span className="text-xs font-bold truncate max-w-full">{selectedFile.name}</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center opacity-30 gap-1">
+                    <BookPlus className="h-6 w-6" />
+                    <span className="text-[10px] font-black uppercase tracking-tighter">Attach EPUB</span>
                   </div>
                 )}
-              </div>
-            </div>
-
-            {/* Visual Identity Section */}
-            <div className="pt-4 border-t border-border/50">
-              <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5 mb-3">
-                <ImageIcon className="h-3 w-3" /> Visual Identity (Optional)
-              </Label>
-              <div className="flex flex-col sm:flex-row gap-6 items-center sm:items-start bg-muted/10 p-4 rounded-2xl border border-border/50">
-                <div className="relative aspect-[2/3] w-28 bg-muted/20 rounded-lg overflow-hidden border shadow-inner flex items-center justify-center shrink-0">
-                  {coverPreview ? (
-                    <img src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover animate-in fade-in duration-500" />
-                  ) : (
-                    <Book className="h-8 w-8 text-muted-foreground/20" />
-                  )}
-                  {isGeneratingCover && (
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center text-white p-2 text-center">
-                      <Loader2 className="h-5 w-5 animate-spin mb-2" />
-                      <span className="text-[8px] font-black uppercase tracking-tighter">AI Designing...</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 space-y-3 text-center sm:text-left pt-1">
-                  <div>
-                    <h4 className="text-[11px] font-bold mb-1">Cover Art</h4>
-                    <p className="text-[9px] text-muted-foreground leading-relaxed uppercase tracking-widest font-medium">
-                      By default, no cover is added. Use the tools below to manually attach artwork or an AI design.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-                    <input 
-                      type="file" 
-                      ref={coverInputRef} 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={handleCoverFileChange} 
-                    />
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      className="rounded-lg h-8 px-3 gap-2 border-border bg-background hover:bg-muted"
-                      onClick={() => coverInputRef.current?.click()}
-                      disabled={loading || isGeneratingCover}
-                    >
-                      <Upload className="h-3 w-3" />
-                      <span className="text-[9px] font-black uppercase tracking-widest">Upload File</span>
-                    </Button>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      className="rounded-lg h-8 px-3 gap-2 border-primary/20 text-primary bg-primary/5 hover:bg-primary/10"
-                      onClick={handleManualGenerateCover}
-                      disabled={loading || isGeneratingCover || !title || selectedGenres.length === 0}
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      <span className="text-[9px] font-black uppercase tracking-widest">AI Design</span>
-                    </Button>
-                    {coverPreview && (
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="sm" 
-                        className="h-8 w-8 rounded-full text-destructive hover:bg-destructive/10"
-                        onClick={() => { setCoverFile(null); setCoverPreview(null); }}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-border/50">
-              <div className="space-y-2">
-                <Label className="text-[9px] font-black uppercase tracking-[0.1em] text-muted-foreground flex items-center gap-1.5">
-                  <FileType className="h-3 w-3" /> Manuscript File
-                </Label>
-                <div className={`relative border border-dashed rounded-xl p-4 transition-all h-24 flex items-center justify-center ${selectedFile ? 'bg-primary/5 border-primary shadow-inner' : 'hover:border-primary/50 bg-muted/20'}`}>
-                  <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub" onChange={(e) => e.target.files && handleFileChange(e.target.files[0])} />
-                  {selectedFile ? (
-                    <div className="flex flex-col items-center gap-1 text-center">
-                      <FileType className="h-4 w-4 text-primary" />
-                      <span className="text-[9px] font-bold truncate max-w-[250px]">{selectedFile.name}</span>
-                      <button onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }} className="text-[8px] text-destructive font-black uppercase">Clear File</button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center opacity-30 gap-1">
-                      <BookPlus className="h-5 w-5" />
-                      <span className="text-[8px] font-black uppercase tracking-widest">Select EPUB</span>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
             {!selectedFile && (
-              <div className="pt-2 border-t border-border/50">
-                <Textarea
-                  placeholder="Paste chapter content here..."
-                  className="min-h-[150px] text-sm leading-relaxed p-4 rounded-xl bg-background/50 border-none shadow-inner"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                />
-              </div>
+              <Textarea placeholder="Paste content here..." className="min-h-[150px] rounded-xl bg-background/50 border-none shadow-inner" value={content} onChange={(e) => setContent(e.target.value)} />
             )}
 
-            <div className="pt-2">
-              <Button 
-                type="submit" 
-                className="w-full py-6 text-sm font-headline font-black rounded-xl shadow-lg transition-all active:scale-[0.98]"
-                disabled={loading || (!title.trim() && !selectedFile)}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {loadingStatus || 'Processing...'}
-                  </>
-                ) : (uploadMode === 'cloud') ? (
-                  <>
-                    <ShieldCheck className="mr-2 h-4 w-4" />
-                    Publish Volume
-                  </>
-                ) : (
-                  <>
-                    <HardDrive className="mr-2 h-4 w-4" />
-                    Save Local Draft
-                  </>
-                )}
-              </Button>
-            </div>
+            <Button type="submit" className="w-full py-6 font-headline font-black rounded-xl shadow-lg" disabled={loading || (!title && !selectedFile)}>
+              {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {loadingStatus || 'Processing...'}</> : 'Publish to Library'}
+            </Button>
           </form>
         </CardContent>
       </Card>
