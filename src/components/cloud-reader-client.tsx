@@ -14,7 +14,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { deleteCloudBook, updateCloudBookCover } from '@/lib/cloud-library-utils';
-import { generateBookCover } from '@/ai/flows/generate-cover';
 import { uploadCoverImage } from '@/lib/upload-cover';
 import { optimizeCoverImage } from '@/lib/image-utils';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -75,7 +74,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
   const [isBookDeleteDialogOpen, setIsBookDeleteDialogOpen] = useState(false);
   const [isUpdatingCover, setIsUpdatingCover] = useState(false);
-  const [isGeneratingCover, setIsGeneratingCover] = useState(false);
 
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous && firestore) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: profile } = useDoc(profileRef);
@@ -198,11 +196,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const coverURL = meta.coverURL || null;
     const genre = meta.genre || 'Novel';
 
-    // 1. Local storage persistence for all users (instant resume truth)
     const localKey = `lounge-progress-${id}`;
     localStorage.setItem(localKey, currentChapterNum.toString());
 
-    // 2. Minimal history for unlogged users (Browser Session History)
     saveToLocalHistory({
       id,
       title: bookTitle,
@@ -214,7 +210,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       isCloud: true
     });
 
-    // 3. Cloud persistence if authenticated (Synced History)
     if (user && firestore) {
       const historyRef = doc(firestore, 'users', user.uid, 'history', id);
       setDoc(historyRef, {
@@ -226,9 +221,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         lastReadChapter: currentChapterNum,
         lastReadAt: serverTimestamp(),
         isCloud: true
-      }, { merge: true }).catch(() => {
-        // Silently ignore if rules block history sync for regular users
-      });
+      }, { merge: true }).catch(() => {});
     }
   };
 
@@ -248,28 +241,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       toast({ variant: "destructive", title: "Update Failed", description: err.message });
     } finally {
       setIsUpdatingCover(false);
-    }
-  };
-
-  const handleGenerateAiCover = async () => {
-    if (!firestore || !storage || !id || !metadata) return;
-    setIsGeneratingCover(true);
-    try {
-      const genres = Array.isArray(metadata.genre) ? metadata.genre : [metadata.genre];
-      const dataUri = await generateBookCover({
-        title: metadata.bookTitle || metadata.title,
-        author: metadata.author,
-        genres: genres,
-        description: `An authentic cover for the manuscript titled ${metadata.bookTitle || metadata.title}`
-      });
-      const resp = await fetch(dataUri);
-      const blob = await resp.blob();
-      const file = new File([blob], 'ai_cover.jpg', { type: 'image/jpeg' });
-      await handleUpdateCover(file);
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "AI Generation Failed", description: err.message });
-    } finally {
-      setIsGeneratingCover(false);
     }
   };
 
@@ -512,20 +483,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           <div className="py-6 space-y-6">
             <div className="relative aspect-[2/3] w-40 mx-auto bg-muted rounded-xl overflow-hidden shadow-2xl border-4 border-background">
               <img src={metadata?.coverURL || `https://picsum.photos/seed/${id}/400/600`} alt="Cover" className="w-full h-full object-cover" />
-              {(isUpdatingCover || isGeneratingCover) && (
+              {isUpdatingCover && (
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4">
                   <Loader2 className="h-8 w-8 animate-spin mb-2" />
                   <span className="text-[10px] font-black uppercase tracking-widest">Syncing...</span>
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1">
               <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files && handleUpdateCover(e.target.files[0])} />
-              <Button variant="outline" className="rounded-xl h-14 font-bold" onClick={() => coverInputRef.current?.click()} disabled={isUpdatingCover || isGeneratingCover}>
+              <Button variant="outline" className="rounded-xl h-14 font-bold" onClick={() => coverInputRef.current?.click()} disabled={isUpdatingCover}>
                 Manual Upload
-              </Button>
-              <Button variant="outline" className="rounded-xl h-14 font-bold bg-primary/5 text-primary" onClick={handleGenerateAiCover} disabled={isUpdatingCover || isGeneratingCover}>
-                AI Design
               </Button>
             </div>
           </div>

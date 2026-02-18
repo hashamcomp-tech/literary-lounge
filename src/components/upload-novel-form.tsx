@@ -1,13 +1,12 @@
-
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Upload, BookPlus, Loader2, Globe, HardDrive, Sparkles, Send, FileText, ChevronDown, Check, ImageIcon, CloudUpload, BrainCircuit } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2 } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -16,8 +15,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
 import { uploadManuscriptFile } from '@/lib/upload-cover';
-import { parsePastedChapter } from '@/ai/flows/parse-pasted-chapter';
-import { identifyBookFromFilename } from '@/ai/flows/identify-book';
 import {
   Popover,
   PopoverContent,
@@ -40,17 +37,13 @@ export function UploadNovelForm() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pastedText, setPastedText] = useState('');
   const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
-  const [coverPreview, setCoverPreview] = useState<string | null>(null);
   
   const [loading, setLoading] = useState(false);
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
-  const [isIdentifying, setIsIdentifying] = useState(false);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
-  // Load persistent storage mode preference
   useEffect(() => {
     const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
     if (savedMode === 'cloud' || savedMode === 'local') {
@@ -58,7 +51,6 @@ export function UploadNovelForm() {
     }
   }, []);
 
-  // Save storage mode preference on change
   useEffect(() => {
     localStorage.setItem("lounge-upload-mode", uploadMode);
   }, [uploadMode]);
@@ -90,71 +82,9 @@ export function UploadNovelForm() {
     checkPermissions();
   }, [user, db, isOfflineMode, uploadMode]);
 
-  const handleFileChange = async (file: File) => {
+  const handleFileChange = (file: File) => {
     setSelectedFile(file);
-    setIsIdentifying(true);
-    try {
-      const isEpub = file.name.toLowerCase().endsWith('.epub');
-      
-      if (isEpub) {
-        // For EPUBs, we upload to temp storage and use the Ingest API to extract metadata
-        const fileUrl = await uploadManuscriptFile(storage!, file, `temp_${Date.now()}`);
-        const response = await fetch('/api/ingest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            fileUrl, 
-            returnOnly: true 
-          })
-        });
-
-        if (response.ok) {
-          const { book } = await response.json();
-          if (book.title) setTitle(book.title);
-          if (book.author) setAuthor(book.author);
-          if (book.genres && book.genres.length > 0) {
-            const validGenres = book.genres.filter((g: string) => GENRES.includes(g));
-            if (validGenres.length > 0) setSelectedGenres(validGenres);
-          }
-          toast({ title: 'EPUB Metadata Parsed', description: `Detected: ${book.title}` });
-        }
-      } else {
-        // For text files, we read a snippet and use AI
-        const snippet = await file.slice(0, 2000).text();
-        const result = await identifyBookFromFilename({
-          filename: file.name,
-          textSnippet: snippet
-        });
-        
-        if (result.title) setTitle(result.title);
-        if (result.author) setAuthor(result.author);
-        if (result.genres && result.genres.length > 0) {
-          const validGenres = result.genres.filter(g => GENRES.includes(g));
-          if (validGenres.length > 0) setSelectedGenres(validGenres);
-        }
-        toast({ title: 'AI Identification Complete', description: `Identified: ${result.title}` });
-      }
-    } catch (err) {
-      console.warn("Metadata extraction failed, proceeding with manual entry.");
-    } finally {
-      setIsIdentifying(false);
-    }
-  };
-
-  const handleMagicAutoFill = async () => {
-    if (!pastedText.trim()) return toast({ variant: 'destructive', title: 'Empty Content', description: 'Paste some text first.' });
-    setIsAiAnalyzing(true);
-    try {
-      const result = await parsePastedChapter(pastedText.substring(0, 2000));
-      setTitle(result.bookTitle);
-      setChapterNumber(result.chapterNumber.toString());
-      setChapterTitle(result.chapterTitle);
-      toast({ title: 'AI Detection Complete', description: 'Metadata extracted from the manuscript.' });
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'AI Detection Failed', description: 'Could not parse the text structure.' });
-    } finally {
-      setIsAiAnalyzing(false);
-    }
+    // AI Identification paused
   };
 
   const handleRequestAccess = async () => {
@@ -186,10 +116,7 @@ export function UploadNovelForm() {
         if (!canUploadCloud) throw new Error("You don't have permission to publish to the cloud.");
         
         if (sourceMode === 'file' && selectedFile && isEpub) {
-          // 1. Upload raw EPUB to temporary manuscript storage
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
-          
-          // 2. Call server-side ingest API to parse and store clean chapters
           const response = await fetch('/api/ingest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -210,7 +137,6 @@ export function UploadNovelForm() {
           }
           toast({ title: 'Cloud Processing Complete', description: 'Volume published to global library.' });
         } else {
-          // Single chapter/Text mode
           const text = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
           await uploadBookToCloud({
             db: db!, storage: storage!, bookId,
@@ -221,9 +147,7 @@ export function UploadNovelForm() {
           toast({ title: 'Published to Cloud', description: 'Available globally in the Lounge.' });
         }
       } else {
-        // Local Archive Mode
         if (sourceMode === 'file' && selectedFile && isEpub) {
-          // Use the server's EPUB parser but keep the result private
           const fileUrl = await uploadManuscriptFile(storage!, selectedFile, bookId);
           const response = await fetch('/api/ingest', {
             method: 'POST',
@@ -257,9 +181,8 @@ export function UploadNovelForm() {
           }
           toast({ title: 'Saved to Local Archive', description: `Volume parsed (${book.chapters.length} chapters) and archived privately.` });
         } else {
-          // Single Chapter Local
           let fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
-          await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true, coverURL: coverPreview });
+          await saveLocalBook({ id: bookId, title, author, genre: selectedGenres, isLocalOnly: true });
           await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: fullText, title: chapterTitle });
           toast({ title: 'Saved to Local Archive', description: 'Private to this browser.' });
         }
@@ -282,7 +205,7 @@ export function UploadNovelForm() {
               <AlertDescription className="text-xs">Apply for access to publish novels to the global cloud library.</AlertDescription>
             </div>
             <Button size="sm" variant="outline" onClick={handleRequestAccess} disabled={isRequestingAccess} className="rounded-xl border-primary/30 text-primary hover:bg-primary/10">
-              {isRequestingAccess ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+              {isRequestingAccess ? <Loader2 className="h-3 w-3 animate-spin" /> : <CloudUpload className="h-3 w-3" />}
             </Button>
           </div>
         </Alert>
@@ -368,39 +291,16 @@ export function UploadNovelForm() {
                   }} 
                 />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
-                  {isIdentifying ? (
-                    <div className="py-4 space-y-4">
-                      <div className="relative mx-auto w-16 h-16">
-                        <Loader2 className="h-16 w-16 animate-spin text-primary opacity-20 absolute inset-0" />
-                        <BrainCircuit className="h-10 w-10 text-primary absolute inset-3 animate-pulse" />
-                      </div>
-                      <p className="text-sm font-black uppercase tracking-widest text-primary animate-pulse">AI Identifying Manuscript...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <FileText className="h-8 w-8 text-primary" />
-                      </div>
-                      <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
-                      <p className="text-[10px] text-muted-foreground">EPUBs are auto-parsed; TXTs are read as single chapters</p>
-                    </>
-                  )}
+                  <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <FileText className="h-8 w-8 text-primary" />
+                  </div>
+                  <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Choose Manuscript'}</p>
+                  <p className="text-[10px] text-muted-foreground">EPUBs are auto-parsed; TXTs are read as single chapters</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
                 <div className="flex justify-between items-center mb-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter Details</Label>
-                  <Button 
-                    type="button" 
-                    size="sm" 
-                    variant="ghost" 
-                    className="h-7 gap-2 bg-primary/5 text-primary rounded-lg hover:bg-primary/10" 
-                    onClick={handleMagicAutoFill} 
-                    disabled={isAiAnalyzing || !pastedText.trim()}
-                  >
-                    {isAiAnalyzing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                    <span className="text-[10px] font-black uppercase">Magic Auto-Fill</span>
-                  </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <Input type="number" placeholder="Ch #" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} className="rounded-xl h-12" />
@@ -410,7 +310,7 @@ export function UploadNovelForm() {
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all" disabled={loading || isIdentifying}>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] transition-all" disabled={loading}>
               {loading ? <Loader2 className="animate-spin mr-2" /> : <CloudUpload className="mr-2" />}
               {uploadMode === 'cloud' ? 'Publish to Global Cloud' : 'Save to Private Archive'}
             </Button>

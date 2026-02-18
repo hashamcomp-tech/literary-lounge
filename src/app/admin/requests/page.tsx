@@ -1,9 +1,8 @@
-
 'use client';
 
 import { useState } from 'react';
 import Navbar from '@/components/navbar';
-import { useFirestore, useCollection, useMemoFirebase, useUser } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,28 +16,19 @@ import {
   ArrowLeft, 
   User, 
   FileText, 
-  Sparkles, 
-  BrainCircuit, 
-  ShieldCheck,
   MessageSquareQuote
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
-import { analyzeManuscript, type AnalyzeManuscriptOutput } from '@/ai/flows/analyze-manuscript';
 
 export default function AdminRequestsDashboard() {
   const db = useFirestore();
-  const { user } = useUser();
   const { toast } = useToast();
   const router = useRouter();
   
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  const [aiInsights, setAiInsights] = useState<Record<string, AnalyzeManuscriptOutput>>({});
-
-  const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
   const requestsQuery = useMemoFirebase(() => {
     if (!db) return null;
@@ -46,24 +36,6 @@ export default function AdminRequestsDashboard() {
   }, [db]);
 
   const { data: requests, isLoading } = useCollection(requestsQuery);
-
-  const handleAiReview = async (req: any) => {
-    if (!isSuperAdmin) return;
-    setAnalyzingId(req.id);
-    try {
-      const result = await analyzeManuscript({
-        title: req.title,
-        author: req.author || 'Anonymous',
-        content: req.content?.substring(0, 10000) || '',
-      });
-      setAiInsights(prev => ({ ...prev, [req.id]: result }));
-      toast({ title: "AI Analysis Complete", description: "The editorial brief is ready for review." });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "AI Review Failed", description: err.message });
-    } finally {
-      setAnalyzingId(null);
-    }
-  };
 
   const handleDelete = (id: string) => {
     if (!db) return;
@@ -140,62 +112,12 @@ export default function AdminRequestsDashboard() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {isSuperAdmin && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="h-8 rounded-lg border-primary/20 bg-primary/5 text-primary font-bold hover:bg-primary/10 transition-all gap-2"
-                          onClick={() => handleAiReview(req)}
-                          disabled={analyzingId === req.id}
-                        >
-                          {analyzingId === req.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                          Run AI Review
-                        </Button>
-                      )}
                       <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-none uppercase text-[10px] font-black h-6">
                         {req.status || 'Pending'}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {aiInsights[req.id] && (
-                      <div className="bg-primary/5 rounded-2xl p-6 border border-primary/10 animate-in zoom-in duration-300">
-                        <div className="flex items-center gap-2 mb-4 text-primary">
-                          <BrainCircuit className="h-5 w-5" />
-                          <h4 className="font-headline font-black uppercase text-xs tracking-widest">Editorial Insights</h4>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          <div className="space-y-3">
-                            <p className="text-sm font-medium leading-relaxed italic text-foreground/80">
-                              "{aiInsights[req.id].summary}"
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {aiInsights[req.id].themes.map((theme, i) => (
-                                <Badge key={i} variant="secondary" className="bg-white/50 text-[9px] uppercase tracking-tighter">{theme}</Badge>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold opacity-60">Tone:</span>
-                              <span className="font-black text-primary uppercase">{aiInsights[req.id].sentiment}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold opacity-60">Safety:</span>
-                              <Badge className={aiInsights[req.id].safetyRating === 'Safe' ? 'bg-green-500' : 'bg-red-500'}>
-                                {aiInsights[req.id].safetyRating}
-                              </Badge>
-                            </div>
-                            <div className="pt-2 border-t border-primary/10">
-                              <p className="text-[10px] font-bold text-primary flex items-center gap-1.5">
-                                <ShieldCheck className="h-3 w-3" /> VERDICT: {aiInsights[req.id].verdict}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="bg-muted/30 p-6 rounded-2xl border border-border/50 max-h-60 overflow-y-auto relative">
                       <div className="flex items-center gap-2 text-primary mb-3">
                         <MessageSquareQuote className="h-4 w-4" />
