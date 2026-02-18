@@ -51,6 +51,19 @@ export function UploadNovelForm() {
 
   const coverInputRef = useRef<HTMLInputElement>(null);
 
+  // Load persistent storage mode preference
+  useEffect(() => {
+    const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
+    if (savedMode === 'cloud' || savedMode === 'local') {
+      setUploadMode(savedMode);
+    }
+  }, []);
+
+  // Save storage mode preference on change
+  useEffect(() => {
+    localStorage.setItem("lounge-upload-mode", uploadMode);
+  }, [uploadMode]);
+
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) return;
     const checkPermissions = async () => {
@@ -70,10 +83,14 @@ export function UploadNovelForm() {
 
       const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
       setCanUploadCloud(permitted);
-      setUploadMode(permitted ? 'cloud' : 'local');
+      
+      // If user is currently in cloud mode but lost permission, force local
+      if (uploadMode === 'cloud' && !permitted) {
+        setUploadMode('local');
+      }
     };
     checkPermissions();
-  }, [user, db, isOfflineMode]);
+  }, [user, db, isOfflineMode, uploadMode]);
 
   const handleMagicAutoFill = async () => {
     if (!pastedText.trim()) return toast({ variant: 'destructive', title: 'Empty Content', description: 'Paste some text first.' });
