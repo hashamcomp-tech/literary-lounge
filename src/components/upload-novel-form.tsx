@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, AlertCircle } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -20,7 +20,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
 interface Suggestion {
@@ -128,7 +128,6 @@ export function UploadNovelForm() {
     checkPermissions();
   }, [user, db, isOfflineMode, uploadMode]);
 
-  // Filter logic for suggestions
   useEffect(() => {
     const trimmed = title.trim();
     if (trimmed.length < 2) {
@@ -191,14 +190,12 @@ export function UploadNovelForm() {
       );
 
       const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
-      
-      // Get content to send to Ingest API
       const fullText = sourceMode === 'file' && selectedFile ? await selectedFile.text() : pastedText;
       
       setProgress(30);
       setLoadingMessage('Generating Digital Volume...');
       
-      // Call Ingest API with specific JSON format
+      // Send exact JSON format requested: { title, author, text }
       const ingestResponse = await fetch('/api/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,7 +222,6 @@ export function UploadNovelForm() {
           manualChapterInfo: { number: parseInt(chapterNumber), title: chapterTitle }
         });
       } else {
-        // Local Archive Mode
         const finalTotal = Math.max(parseInt(chapterNumber), existingBook?.totalChapters || 0);
         await saveLocalBook({ 
           id: bookId, title: searchTitle, author: searchAuthor, genre: selectedGenres, 
@@ -308,7 +304,6 @@ export function UploadNovelForm() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
                 </div>
 
-                {/* Autocomplete Dropdown */}
                 {showSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-2 border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
@@ -413,7 +408,6 @@ export function UploadNovelForm() {
               className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" 
               disabled={loading}
             >
-              {/* Liquid Wave Animation Background */}
               {loading && (
                 <div 
                   className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0"
