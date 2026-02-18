@@ -82,7 +82,8 @@ function segmentTextIntoChapters(fullText: string, structure: any): Chapter[] {
 }
 
 /**
- * Handles the complete cloud publishing cycle with AI chapter division.
+ * Handles the complete cloud publishing cycle.
+ * Supports AI-powered structural division OR single-chapter preservation (for pasted text).
  */
 export async function uploadBookToCloud({
   db,
@@ -93,7 +94,8 @@ export async function uploadBookToCloud({
   genres,
   rawContent,
   coverFile,
-  ownerId
+  ownerId,
+  manualChapterInfo // If present, skips AI division and saves as single chapter
 }: {
   db: Firestore;
   storage: FirebaseStorage;
@@ -104,15 +106,27 @@ export async function uploadBookToCloud({
   rawContent: string;
   coverFile?: File | null;
   ownerId: string;
+  manualChapterInfo?: { number: number; title: string };
 }) {
   if (!genres || genres.length === 0) throw new Error("At least one genre is required.");
   if (!rawContent) throw new Error("Manuscript content is empty.");
 
-  // 1. AI Structural Analysis (Target first 100k for Index detection)
-  const analysisResult = await structureBook({ text: rawContent.substring(0, 100000) });
-  const chapters = segmentTextIntoChapters(rawContent, analysisResult);
+  let chapters: Chapter[] = [];
 
-  // 2. Asset Upload (Cover)
+  if (manualChapterInfo) {
+    // Single chapter mode (typically for pasted text)
+    chapters = [{
+      chapterNumber: manualChapterInfo.number,
+      title: manualChapterInfo.title || `Chapter ${manualChapterInfo.number}`,
+      content: cleanManuscriptContent(rawContent)
+    }];
+  } else {
+    // AI structural analysis mode (typically for files)
+    const analysisResult = await structureBook({ text: rawContent.substring(0, 100000) });
+    chapters = segmentTextIntoChapters(rawContent, analysisResult);
+  }
+
+  // Asset Upload (Cover)
   let coverURL = null;
   let coverSize = 0;
   if (coverFile && storage) {
@@ -120,7 +134,7 @@ export async function uploadBookToCloud({
     coverSize = coverFile.size;
   }
 
-  // 3. Metadata Preparation
+  // Metadata Preparation
   const metadataInfo = {
     author,
     authorLower: author.toLowerCase(),
@@ -135,7 +149,7 @@ export async function uploadBookToCloud({
     coverSize,
   };
 
-  // 4. Commit Root Document
+  // Commit Root Document
   const bookRef = doc(db, 'books', bookId);
   const rootPayload = {
     title,
@@ -165,13 +179,13 @@ export async function uploadBookToCloud({
     }));
   });
 
-  // 5. Update Global Quota Stats
+  // Update Global Quota Stats
   if (coverSize > 0) {
     const statsRef = doc(db, 'stats', 'storageUsage');
     setDoc(statsRef, { storageBytesUsed: increment(coverSize) }, { merge: true }).catch(() => {});
   }
 
-  // 6. Bulk Chapter Ingestion
+  // Bulk Chapter Ingestion
   const chapterPromises = chapters.map((ch) => {
     const chRef = doc(db, 'books', bookId, 'chapters', ch.chapterNumber.toString());
     const chData = {

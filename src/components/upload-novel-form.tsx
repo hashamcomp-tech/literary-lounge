@@ -36,6 +36,8 @@ export function UploadNovelForm() {
   
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
+  const [chapterNumber, setChapterNumber] = useState('1');
+  const [chapterTitle, setChapterTitle] = useState('');
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pastedText, setPastedText] = useState('');
@@ -48,29 +50,36 @@ export function UploadNovelForm() {
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [isGeneratingCover, setIsGeneratingCover] = useState(false);
   
-  const [isApprovedUser, setIsApprovedUser] = useState<boolean>(false);
-  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('cloud');
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
   const coverInputRef = useRef<HTMLInputElement>(null);
   const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
   useEffect(() => {
-    if (isOfflineMode || !db || !user || user.isAnonymous) return;
-    const checkApproval = async () => {
+    if (isOfflineMode || !db || !user || user.isAnonymous) {
+      setIsAdmin(false);
+      setUploadMode('local');
+      return;
+    }
+    
+    const checkAdminStatus = async () => {
       const pRef = doc(db, 'users', user.uid);
       const snap = await getDoc(pRef);
-      if (isSuperAdmin || snap.data()?.role === 'admin') {
-        setIsApprovedUser(true);
+      const profile = snap.data();
+      
+      const isSystemAdmin = isSuperAdmin || profile?.role === 'admin';
+      setIsAdmin(isSystemAdmin);
+      
+      // Default to cloud if admin, otherwise force local
+      if (isSystemAdmin) {
+        setUploadMode('cloud');
       } else {
-        const settingsRef = doc(db, 'settings', 'approvedEmails');
-        const settingsSnap = await getDoc(settingsRef);
-        if (settingsSnap.exists()) {
-          const emails = settingsSnap.data().emails || [];
-          setIsApprovedUser(emails.includes(user.email!));
-        }
+        setUploadMode('local');
       }
     };
-    checkApproval();
+    
+    checkAdminStatus();
   }, [user, db, isOfflineMode, isSuperAdmin]);
 
   const handleAiAutoFill = async () => {
@@ -122,7 +131,7 @@ export function UploadNovelForm() {
 
     setLoading(true);
     try {
-      setLoadingStatus('Parsing Manuscript...');
+      setLoadingStatus('Ingesting Manuscript...');
       let fullText = "";
       
       if (sourceMode === 'file' && selectedFile) {
@@ -146,9 +155,9 @@ export function UploadNovelForm() {
         fullText = pastedText;
       }
 
-      if (fullText.length < 100) throw new Error("Manuscript appears to be too short or empty.");
+      if (fullText.length < 50) throw new Error("Manuscript appears to be too short or empty.");
 
-      setLoadingStatus('Optimizing Assets...');
+      setLoadingStatus('Processing Visuals...');
       let optimizedCover = null;
       if (coverFile) {
         const blob = await optimizeCoverImage(coverFile);
@@ -158,8 +167,9 @@ export function UploadNovelForm() {
       const slugify = (t: string) => t.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '_');
       const docId = `${slugify(author || 'anon')}_${slugify(title || 'book')}_${Date.now()}`;
 
-      if (isApprovedUser && !isOfflineMode && uploadMode === 'cloud') {
-        setLoadingStatus('AI Structural Slicing...');
+      if (isAdmin && !isOfflineMode && uploadMode === 'cloud') {
+        setLoadingStatus(sourceMode === 'file' ? 'AI Structural Slicing...' : 'Securing Cloud Volume...');
+        
         await uploadBookToCloud({
           db, 
           storage: storage!, 
@@ -169,9 +179,14 @@ export function UploadNovelForm() {
           genres: selectedGenres, 
           rawContent: fullText, 
           coverFile: optimizedCover, 
-          ownerId: user!.uid
+          ownerId: user!.uid,
+          // If text was pasted, skip AI division and use manual chapter info
+          manualChapterInfo: sourceMode === 'text' ? {
+            number: parseInt(chapterNumber) || 1,
+            title: chapterTitle || 'Pasted Content'
+          } : undefined
         });
-        toast({ title: "Published to Cloud", description: "Manuscript divided and secured." });
+        toast({ title: "Published to Lounge", description: "Manuscript is now globally accessible." });
       } else {
         setLoadingStatus('Archiving Locally...');
         const bookData = { 
@@ -179,11 +194,17 @@ export function UploadNovelForm() {
           title: title || (sourceMode === 'file' ? selectedFile!.name : "Pasted Volume"), 
           author: author || 'Anonymous', 
           genre: selectedGenres, 
-          isLocalOnly: true 
+          isLocalOnly: true,
+          coverURL: coverPreview
         };
         await saveLocalBook(bookData);
-        await saveLocalChapter({ bookId: docId, chapterNumber: 1, content: fullText, title: "Private Archive" });
-        toast({ title: "Local Archive Saved" });
+        await saveLocalChapter({ 
+          bookId: docId, 
+          chapterNumber: parseInt(chapterNumber) || 1, 
+          content: fullText, 
+          title: chapterTitle || "Private Archive" 
+        });
+        toast({ title: "Local Archive Saved", description: "This novel is stored privately in your browser." });
       }
       router.push('/');
     } catch (error: any) {
@@ -199,43 +220,49 @@ export function UploadNovelForm() {
         <Alert className="bg-amber-500/10 text-amber-700 rounded-xl p-4 border-amber-500/20">
           <CloudOff className="h-4 w-4" />
           <AlertTitle className="font-headline font-black text-sm uppercase tracking-tighter">Independent Mode</AlertTitle>
-          <AlertDescription className="text-xs font-medium">Archive stored in your browser's private memory.</AlertDescription>
+          <AlertDescription className="text-xs font-medium">Lounge is disconnected. Saving to Private browser memory.</AlertDescription>
         </Alert>
-      ) : isApprovedUser ? (
+      ) : isAdmin ? (
         <Alert className="bg-primary/10 text-primary rounded-xl p-4 border-primary/20">
-          <Sparkles className="h-4 w-4 animate-pulse" />
-          <AlertTitle className="font-headline font-black text-sm uppercase tracking-tighter">Contributor Active</AlertTitle>
-          <AlertDescription className="text-xs font-medium">AI-powered structural division and boilerplate purge enabled.</AlertDescription>
+          <ShieldCheck className="h-4 w-4" />
+          <AlertTitle className="font-headline font-black text-sm uppercase tracking-tighter">Authority Active</AlertTitle>
+          <AlertDescription className="text-xs font-medium">You have permission to publish directly to the global shelf.</AlertDescription>
         </Alert>
-      ) : null}
+      ) : (
+        <Alert className="bg-amber-500/10 text-amber-700 rounded-xl p-4 border-amber-500/20">
+          <HardDrive className="h-4 w-4" />
+          <AlertTitle className="font-headline font-black text-sm uppercase tracking-tighter">Private Library Mode</AlertTitle>
+          <AlertDescription className="text-xs font-medium">Your uploads are stored locally. Only Admins can publish to the cloud.</AlertDescription>
+        </Alert>
+      )}
 
       <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl rounded-[2rem] overflow-hidden">
         <div className="h-2 bg-primary w-full" />
         <CardHeader className="pb-4">
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle className="text-2xl font-headline font-black">Publish Volume</CardTitle>
-              <CardDescription className="text-xs uppercase tracking-widest font-bold text-muted-foreground mt-1">Lounge Submission Portal</CardDescription>
+              <CardTitle className="text-2xl font-headline font-black">Add Novel</CardTitle>
+              <CardDescription className="text-[10px] uppercase tracking-widest font-black text-muted-foreground mt-1">Lounge Submission Portal</CardDescription>
             </div>
             {sourceMode === 'file' && selectedFile && (
               <Button size="sm" variant="outline" className="h-8 gap-2 bg-primary/5 text-primary border-primary/20 hover:bg-primary/10 transition-all" onClick={handleAiAutoFill} disabled={isIdentifying}>
                 {isIdentifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                <span className="text-[10px] font-black uppercase">AI Auto-Fill</span>
+                <span className="text-[10px] font-black uppercase">AI Match</span>
               </Button>
             )}
           </div>
         </CardHeader>
         <CardContent className="space-y-6 pt-2">
           <form onSubmit={handleUpload} className="space-y-6">
-            {isApprovedUser && !isOfflineMode && (
-              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10 group transition-all hover:bg-primary/10">
+            {isAdmin && !isOfflineMode && (
+              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
                 <div className="flex items-center gap-3">
                   <div className="bg-primary/10 p-2 rounded-xl">
                     {uploadMode === 'cloud' ? <Globe className="h-5 w-5 text-primary" /> : <HardDrive className="h-5 w-5 text-primary" />}
                   </div>
                   <div>
                     <p className="text-xs font-black uppercase tracking-widest">{uploadMode === 'cloud' ? 'Global Cloud' : 'Private Mode'}</p>
-                    <p className="text-[10px] text-muted-foreground">Toggle publishing destination</p>
+                    <p className="text-[10px] text-muted-foreground">Admins only: Toggle destination</p>
                   </div>
                 </div>
                 <Switch checked={uploadMode === 'cloud'} onCheckedChange={(c) => setUploadMode(c ? 'cloud' : 'local')} />
@@ -278,10 +305,10 @@ export function UploadNovelForm() {
                 <div className="flex flex-col gap-2 flex-1">
                   <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if(f) { setCoverFile(f); setCoverPreview(URL.createObjectURL(f)); }}} />
                   <Button type="button" variant="outline" size="sm" className="h-10 rounded-xl font-bold border-primary/20" onClick={() => coverInputRef.current?.click()}>
-                    Upload Art
+                    Upload Cover
                   </Button>
                   <Button type="button" variant="outline" size="sm" className="h-10 rounded-xl bg-primary/5 text-primary font-bold border-primary/20 gap-2" onClick={handleManualGenerateCover} disabled={isGeneratingCover || !title || selectedGenres.length === 0}>
-                    {isGeneratingCover ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} AI Design
+                    {isGeneratingCover ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} AI Art
                   </Button>
                 </div>
               </div>
@@ -291,13 +318,13 @@ export function UploadNovelForm() {
               <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground block mb-3 ml-1">Manuscript Source</Label>
               <Tabs defaultValue="file" value={sourceMode} onValueChange={(v) => setSourceMode(v as any)}>
                 <TabsList className="grid w-full grid-cols-2 mb-4 bg-muted/30 p-1 rounded-xl">
-                  <TabsTrigger value="file" className="rounded-lg gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <TabsTrigger value="file" className="rounded-lg gap-2 data-[state=active]:bg-background">
                     <FileType className="h-3.5 w-3.5" /> 
-                    <span className="text-[10px] font-black uppercase tracking-widest">File Upload</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">File</span>
                   </TabsTrigger>
-                  <TabsTrigger value="text" className="rounded-lg gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <TabsTrigger value="text" className="rounded-lg gap-2 data-[state=active]:bg-background">
                     <ClipboardList className="h-3.5 w-3.5" /> 
-                    <span className="text-[10px] font-black uppercase tracking-widest">Paste Text</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Paste</span>
                   </TabsTrigger>
                 </TabsList>
                 
@@ -305,36 +332,47 @@ export function UploadNovelForm() {
                   <div className={`relative border-2 border-dashed rounded-[1.5rem] p-10 transition-all text-center group cursor-pointer ${selectedFile ? 'border-primary bg-primary/5' : 'border-muted-foreground/20 hover:border-primary/50 hover:bg-primary/5'}`}>
                     <input type="file" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".epub,.txt" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
                     {selectedFile ? (
-                      <div className="flex flex-col items-center gap-3 animate-in zoom-in duration-300">
+                      <div className="flex flex-col items-center gap-3 animate-in zoom-in">
                         <div className="bg-primary/10 p-3 rounded-full"><FileText className="h-8 w-8 text-primary" /></div>
-                        <div className="space-y-1">
-                          <p className="text-sm font-black truncate max-w-[300px]">{selectedFile.name}</p>
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase">{(selectedFile.size / 1024).toFixed(1)} KB Ready</p>
-                        </div>
+                        <p className="text-sm font-black truncate max-w-[300px]">{selectedFile.name}</p>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center opacity-40 gap-3 group-hover:opacity-100 transition-opacity">
                         <BookPlus className="h-10 w-10 text-primary" />
-                        <div className="space-y-1">
-                          <p className="text-xs font-black uppercase tracking-widest">Attach EPUB or Text</p>
-                          <p className="text-[10px] font-medium">Direct ingestion enabled</p>
-                        </div>
+                        <p className="text-xs font-black uppercase tracking-widest">Select EPUB or Text</p>
                       </div>
                     )}
                   </div>
                 </TabsContent>
                 
-                <TabsContent value="text" className="mt-0">
+                <TabsContent value="text" className="mt-0 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest ml-1">Chapter #</Label>
+                      <Input 
+                        type="number" 
+                        value={chapterNumber} 
+                        onChange={(e) => setChapterNumber(e.target.value)}
+                        className="h-10 rounded-xl bg-background/50 border-none shadow-inner"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-widest ml-1">Chapter Title</Label>
+                      <Input 
+                        placeholder="e.g. The Beginning" 
+                        value={chapterTitle} 
+                        onChange={(e) => setChapterTitle(e.target.value)}
+                        className="h-10 rounded-xl bg-background/50 border-none shadow-inner"
+                      />
+                    </div>
+                  </div>
                   <div className="relative group">
                     <Textarea 
                       value={pastedText}
                       onChange={(e) => setPastedText(e.target.value)}
-                      placeholder="Paste your manuscript content here..."
+                      placeholder="Paste manuscript content here..."
                       className="min-h-[250px] rounded-[1.5rem] bg-background/50 border-2 border-muted-foreground/10 focus:border-primary/30 transition-all p-6 text-sm leading-relaxed"
                     />
-                    <div className="absolute top-4 right-4 opacity-20 group-focus-within:opacity-100 transition-opacity">
-                      <FileText className="h-5 w-5 text-primary" />
-                    </div>
                   </div>
                 </TabsContent>
               </Tabs>

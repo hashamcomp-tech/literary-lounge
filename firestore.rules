@@ -31,10 +31,10 @@ service cloud.firestore {
 
     // USER PROFILES
     match /users/{userId} {
-      // Admin only access to user profiles
+      // Admin only access to general user profiles
       allow read, write: if isAdmin();
       
-      // Allow users to manage their own history
+      // Allow users to manage their own history even if profiles are locked
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
