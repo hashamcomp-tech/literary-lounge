@@ -39,7 +39,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return () => stopTextToSpeech();
   }, []);
 
-  // Monitor global TTS state
   useEffect(() => {
     const interval = setInterval(() => {
       const active = isSpeakingService();
@@ -48,9 +47,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return () => clearInterval(interval);
   }, [isSpeaking]);
 
-  /**
-   * Primary Content Loading.
-   */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
 
@@ -112,13 +108,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
 
     loadChapter();
-    // Stop audio when changing chapters, but keep progress persistence keyed to the contextId
     stopTextToSpeech();
   }, [firestore, id, currentChapterNum, isOfflineMode]);
 
-  /**
-   * Predictive Buffering Effect.
-   */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id || isLoading) return;
 
@@ -173,8 +165,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleReadAloud = async (textOverride?: string) => {
-    if (isSpeaking && !textOverride) {
+  const handleReadAloud = async (charOffset?: number) => {
+    if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
@@ -185,11 +177,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    const textToPlay = textOverride || chData.content;
-    playTextToSpeech(textToPlay, { 
+    playTextToSpeech(chData.content, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
-      contextId: `cloud-${id}-${currentChapterNum}`
+      contextId: `cloud-${id}-${currentChapterNum}`,
+      charOffset
     });
   };
 
@@ -214,12 +206,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       if (pos) offset = pos.offset;
     }
 
-    const remainingInPara = paragraphs[paraIdx].substring(offset);
-    const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
-    const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
+    let totalOffset = 0;
+    for (let i = 0; i < paraIdx; i++) {
+      totalOffset += paragraphs[i].length + 2; // +2 for double newlines
+    }
+    totalOffset += offset;
 
-    // Jump logic: stop current and start new from remaining text
-    handleReadAloud(fullRemainingText);
+    handleReadAloud(totalOffset);
   };
 
   if (isOfflineMode) {
@@ -332,7 +325,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </footer>
 
-      {/* Floating Audio Controls */}
       <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-card/80 backdrop-blur-md border border-border/50 p-2 rounded-full shadow-2xl animate-in slide-in-from-right-4 duration-500">
         <VoiceSettingsPopover />
         <Button 

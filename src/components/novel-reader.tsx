@@ -73,8 +73,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (saved) setCurrentChapterIndex(parseInt(saved));
   }, [novel.id]);
 
-  const handleReadAloud = async (textOverride?: string) => {
-    if (isSpeaking && !textOverride) {
+  const handleReadAloud = async (charOffset?: number) => {
+    if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
@@ -84,11 +84,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     const savedSettings = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
     
-    const textToPlay = textOverride || currentChapter.content;
-    playTextToSpeech(textToPlay, { 
+    playTextToSpeech(currentChapter.content, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
-      contextId: `mock-${novel.id}-${currentChapterIndex}`
+      contextId: `mock-${novel.id}-${currentChapterIndex}`,
+      charOffset
     });
   };
 
@@ -109,11 +109,13 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       if (pos) offset = pos.offset;
     }
 
-    const remainingInPara = paragraphs[paraIdx].substring(offset);
-    const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
-    const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
+    let totalOffset = 0;
+    for (let i = 0; i < paraIdx; i++) {
+      totalOffset += paragraphs[i].length + 2;
+    }
+    totalOffset += offset;
 
-    handleReadAloud(fullRemainingText);
+    handleReadAloud(totalOffset);
   };
 
   if (!mounted) return null;
@@ -233,7 +235,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
         <Progress value={progress} className="h-full rounded-none bg-primary/10" />
       </div>
 
-      {/* Floating Audio Controls */}
       <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-card/80 backdrop-blur-md border border-border/50 p-2 rounded-full shadow-2xl animate-in slide-in-from-right-4 duration-500">
         <VoiceSettingsPopover />
         <Button 

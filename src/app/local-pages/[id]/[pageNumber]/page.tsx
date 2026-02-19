@@ -70,8 +70,8 @@ export default function LocalReader() {
     }
   }, [id, currentChapterNum]);
 
-  const handleReadAloud = async (textOverride?: string) => {
-    if (isSpeaking && !textOverride) {
+  const handleReadAloud = async (charOffset?: number) => {
+    if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
@@ -82,11 +82,11 @@ export default function LocalReader() {
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    const textToPlay = textOverride || chapter.content;
-    playTextToSpeech(textToPlay, { 
+    playTextToSpeech(chapter.content, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
-      contextId: `local-${id}-${currentChapterNum}`
+      contextId: `local-${id}-${currentChapterNum}`,
+      charOffset
     });
   };
 
@@ -111,11 +111,13 @@ export default function LocalReader() {
       if (pos) offset = pos.offset;
     }
 
-    const remainingInPara = paragraphs[paraIdx].substring(offset);
-    const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
-    const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
+    let totalOffset = 0;
+    for (let i = 0; i < paraIdx; i++) {
+      totalOffset += paragraphs[i].length + 2;
+    }
+    totalOffset += offset;
 
-    handleReadAloud(fullRemainingText);
+    handleReadAloud(totalOffset);
   };
 
   if (loading) {
@@ -252,7 +254,6 @@ export default function LocalReader() {
         </section>
       </main>
 
-      {/* Floating Audio Controls */}
       <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-card/80 backdrop-blur-md border border-border/50 p-2 rounded-full shadow-2xl animate-in slide-in-from-right-4 duration-500">
         <VoiceSettingsPopover />
         <Button 

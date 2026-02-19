@@ -13,6 +13,7 @@ export interface TTSOptions {
   rate?: number;
   pitch?: number;
   contextId?: string; 
+  charOffset?: number; // Jump to specific character position
 }
 
 let isSpeakingGlobal = false;
@@ -51,15 +52,12 @@ function applyPronunciations(text: string): string {
     const map: PronunciationMap = JSON.parse(saved);
     let processed = text;
 
-    // Sort keys by length descending to prevent partial matches 
-    // (e.g. replacing "fire" before "firebase")
     const words = Object.keys(map).sort((a, b) => b.length - a.length);
 
     for (const word of words) {
       const soundsLike = map[word];
       if (!word || !soundsLike) continue;
       
-      // Use word boundary regex for precise matching
       const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
       processed = processed.replace(regex, soundsLike);
@@ -82,7 +80,6 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
-  // Split by sentence boundaries but keep the punctuation
   const parts = clean.split(/([.!?]\s+)/);
   
   const chunks: string[] = [];
@@ -115,19 +112,31 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
   stopTextToSpeech(false);
   
   const sessionId = currentSessionId;
-  const processedText = applyPronunciations(fullText);
-  const sentences = chunkText(processedText);
+  const hash = getTextHash(fullText);
+  const sentences = chunkText(fullText);
   if (sentences.length === 0) return;
 
   const contextKey = options.contextId ? `lounge-audio-progress-${options.contextId}` : null;
   let startIndex = 0;
 
-  if (contextKey) {
+  // 1. Determine starting point
+  if (options.charOffset !== undefined) {
+    // Jump to specific offset
+    let cumulative = 0;
+    for (let i = 0; i < sentences.length; i++) {
+      cumulative += sentences[i].length + 1; // Rough estimate of space
+      if (cumulative >= options.charOffset) {
+        startIndex = i;
+        break;
+      }
+    }
+  } else if (contextKey) {
+    // Load from persistent storage
     const saved = localStorage.getItem(contextKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.textHash === getTextHash(processedText)) {
+        if (parsed.textHash === hash) {
           startIndex = parsed.index;
         }
       } catch (e) {}
@@ -142,13 +151,13 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     sentences.forEach((sentence, index) => {
       if (index < startIndex) return;
 
-      const utterance = new SpeechSynthesisUtterance(sentence);
+      const processedSentence = applyPronunciations(sentence);
+      const utterance = new SpeechSynthesisUtterance(processedSentence);
       
       const voices = window.speechSynthesis.getVoices();
       const selected = voices.find(v => v.voiceURI === options.voice || v.name === options.voice);
       if (selected) utterance.voice = selected;
 
-      // Real-time check: fetch latest rate from settings for each utterance
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       let currentRate = options.rate || 1.0;
       if (savedSettings) {
@@ -162,7 +171,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
         if (sessionId === currentSessionId && contextKey) {
           localStorage.setItem(contextKey, JSON.stringify({
             index,
-            textHash: getTextHash(processedText)
+            textHash: hash
           }));
         }
       };
