@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/textarea';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Suggestion {
   id: string;
@@ -67,7 +67,7 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  // Initialize and Sync Settings
+  // Initialize and Sync Settings from LocalStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
@@ -431,13 +431,13 @@ export function UploadNovelForm() {
       const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
       setCanUploadCloud(permitted);
       
-      // Only override uploadMode if it's set to cloud but they don't have permission
+      // Safety reset: if mode is cloud but they aren't permitted, drop back to local
       if (uploadMode === 'cloud' && !permitted && !isOfflineMode) {
         handleSetUploadMode('local');
       }
     };
     checkPermissions();
-  }, [user, db, isOfflineMode]);
+  }, [user, db, isOfflineMode, uploadMode]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
@@ -588,7 +588,8 @@ export function UploadNovelForm() {
                     onPaste={(e) => {
                       const text = e.clipboardData.getData('text');
                       if (text.length >= 10) {
-                        handleAnalyzePastedText(text);
+                        // Small delay to let the state update with pasted content
+                        setTimeout(() => handleAnalyzePastedText(text), 50);
                       }
                     }}
                     placeholder="Paste novel content here... (Line 1: Novel Name, Line 2: Chapter Info)" 
