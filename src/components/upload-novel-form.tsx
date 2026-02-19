@@ -79,6 +79,7 @@ export function UploadNovelForm() {
    * Positional Parser: 
    * Line 1 = Novel Name
    * Line 2 = Chapter Number and Title
+   * Implements strict cleanup: ignores " - [number] : " after identifying the primary index.
    */
   const quickDetectFromText = useCallback((text: string) => {
     const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -87,14 +88,32 @@ export function UploadNovelForm() {
     const novelName = lines[0];
     const secondLine = lines[1];
 
-    // Pattern for second line: "Chapter 1: Title", "Ch 1 - Title", or just "1. Title"
-    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)(?::|\s+|-|\.)?\s*(.*)$/i;
+    // Pattern for second line to find the primary index: "Chapter 1", "Ch 1", or just "1"
+    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
     const match = secondLine.match(chapterRegex);
 
+    if (match) {
+      const num = match[1];
+      // Get the remainder of the line after the matched prefix (e.g. "Chapter 1")
+      let titlePart = secondLine.substring(match[0].length);
+      
+      // CLEANUP LOGIC:
+      // Strip leading separators (:, -, .), potential sub-indexing numbers, and more separators.
+      // regex handles patterns like " - 5 : Title" or " : 10 - Title" or just " : Title"
+      titlePart = titlePart.replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
+
+      return {
+        novelName,
+        chapterNumber: num,
+        chapterTitle: titlePart || `Chapter ${num}`
+      };
+    }
+
+    // Fallback if no digits found on second line
     return {
       novelName,
-      chapterNumber: match ? match[1] : '1',
-      chapterTitle: match ? (match[2] || `Chapter ${match[1]}`) : secondLine
+      chapterNumber: '1',
+      chapterTitle: secondLine
     };
   }, []);
 
@@ -341,8 +360,6 @@ export function UploadNovelForm() {
 
       if (uploadMode === 'cloud') {
         if (!canUploadCloud) {
-          // If they aren't authorized for cloud, we should actually handle this more gracefully
-          // but for now we follow existing logic.
           throw new Error("Cloud publishing restricted.");
         }
         await uploadBookToCloud({
