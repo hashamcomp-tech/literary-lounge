@@ -6,8 +6,8 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * @fileOverview API Route for extracting metadata and cover image from an EPUB file.
- * Uses the EPub metadata manifest to find the designated cover resource and bibliographic info.
+ * @fileOverview Robust EPUB Metadata & Visual Extraction API.
+ * Identifies bibliographic info and locates the best available cover image.
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
@@ -28,71 +28,111 @@ export async function POST(req: NextRequest) {
 
     // 2. Wrap EPUB parser in a Promise lifecycle
     return new Promise((resolve) => {
-      const epub = new EPub(tempFilePath!);
+      try {
+        const epub = new EPub(tempFilePath!);
 
-      epub.on('error', (err) => {
-        if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        resolve(NextResponse.json({ error: 'Archive Corruption: ' + err.message }, { status: 500 }));
-      });
+        epub.on('error', (err) => {
+          if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+          resolve(NextResponse.json({ error: 'Archive Corruption: ' + err.message }, { status: 500 }));
+        });
 
-      epub.on('end', () => {
-        try {
-          // 3. Extract Bibliographic Metadata
-          const title = epub.metadata.title || '';
-          const author = Array.isArray(epub.metadata.creator) 
-            ? epub.metadata.creator.join(', ') 
-            : epub.metadata.creator || '';
+        epub.on('end', () => {
+          try {
+            // 3. Robust Bibliographic Extraction
+            const title = epub.metadata.title || '';
+            
+            // Handle various author field structures
+            let author = '';
+            if (epub.metadata.creator) {
+              if (Array.isArray(epub.metadata.creator)) {
+                author = epub.metadata.creator
+                  .map(c => typeof c === 'string' ? c : (c as any).name || (c as any)._ || 'Unknown')
+                  .join(', ');
+              } else if (typeof epub.metadata.creator === 'string') {
+                author = epub.metadata.creator;
+              } else if ((epub.metadata.creator as any).name) {
+                author = (epub.metadata.creator as any).name;
+              } else if ((epub.metadata.creator as any)._) {
+                author = (epub.metadata.creator as any)._;
+              }
+            }
 
-          // 4. Locate the cover ID in the manifest
-          const coverId = epub.metadata.cover;
-          
-          if (!coverId) {
-            if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-            resolve(NextResponse.json({ 
-              success: true, 
-              title, 
-              author,
-              dataUri: null,
-              message: 'No designated cover resource found in manifest.' 
-            }));
-            return;
-          }
-
-          // 5. Extract the binary image resource
-          epub.getImage(coverId, (err, data, mimeType) => {
-            // Cleanup temp file regardless of result
-            if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-
-            if (err || !data) {
+            // 4. Intelligent Cover Identification
+            // Strategy: Check standard metadata first, then sweep manifest
+            let coverId = epub.metadata.cover;
+            
+            if (!coverId) {
+              const manifest = epub.manifest;
+              const keywords = ['cover', 'thumb', 'front', 'jacket'];
+              
+              // First pass: Property match (OPF 3.0 standard)
+              for (const id in manifest) {
+                if (manifest[id].properties === 'cover-image') {
+                  coverId = id;
+                  break;
+                }
+              }
+              
+              // Second pass: ID keyword match
+              if (!coverId) {
+                for (const id in manifest) {
+                  if (keywords.some(k => id.toLowerCase().includes(k))) {
+                    coverId = id;
+                    break;
+                  }
+                }
+              }
+            }
+            
+            if (!coverId) {
+              if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
               resolve(NextResponse.json({ 
                 success: true, 
                 title, 
                 author,
                 dataUri: null,
-                message: 'Failed to extract cover image resource.' 
+                message: 'Bibliographic data found, but no cover resource detected.' 
               }));
               return;
             }
 
-            // 6. Return as a Data URI for client-side processing
-            const base64 = data.toString('base64');
-            resolve(NextResponse.json({ 
-              success: true, 
-              title,
-              author,
-              dataUri: `data:${mimeType};base64,${base64}` 
-            }));
-          });
-        } catch (e: any) {
-          if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-          resolve(NextResponse.json({ error: 'Extraction Failure: ' + e.message }, { status: 500 }));
-        }
-      });
+            // 5. Extract Binary Resource
+            epub.getImage(coverId, (err, data, mimeType) => {
+              if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
 
-      epub.parse();
+              if (err || !data) {
+                resolve(NextResponse.json({ 
+                  success: true, 
+                  title, 
+                  author,
+                  dataUri: null,
+                  message: 'Visual asset extraction failed.' 
+                }));
+                return;
+              }
+
+              const base64 = data.toString('base64');
+              resolve(NextResponse.json({ 
+                success: true, 
+                title,
+                author,
+                dataUri: `data:${mimeType || 'image/jpeg'};base64,${base64}` 
+              }));
+            });
+          } catch (e: any) {
+            if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+            resolve(NextResponse.json({ error: 'Manifest Parsing Failure: ' + e.message }, { status: 500 }));
+          }
+        });
+
+        epub.parse();
+      } catch (parseErr: any) {
+        if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        resolve(NextResponse.json({ error: 'Parser Initialization Error: ' + parseErr.message }, { status: 500 }));
+      }
     });
   } catch (err: any) {
     if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-    return NextResponse.json({ error: 'System Error: ' + err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Server Subsystem Failure: ' + err.message }, { status: 500 });
   }
 }

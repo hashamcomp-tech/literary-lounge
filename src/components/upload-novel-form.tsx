@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -78,17 +78,25 @@ export function UploadNovelForm() {
       return;
     }
 
-    if (selectedFile.name.toLowerCase().endsWith('.epub')) {
+    const isEpub = selectedFile.name.toLowerCase().endsWith('.epub');
+    if (isEpub) {
       const getMetadataAndPreview = async () => {
         setIsExtractingPreview(true);
+        setCoverPreview(null); // Clear previous
+        
         try {
           const formData = new FormData();
           formData.append('file', selectedFile);
-          const res = await fetch('/api/extract-cover', { method: 'POST', body: formData });
+          
+          const res = await fetch('/api/extract-cover', { 
+            method: 'POST', 
+            body: formData 
+          });
+          
           if (res.ok) {
             const data = await res.json();
             
-            // Auto-fill form fields if metadata is present
+            // Priority: Apply extracted metadata
             if (data.title) setTitle(data.title);
             if (data.author) setAuthor(data.author);
             
@@ -99,13 +107,20 @@ export function UploadNovelForm() {
             
             if (data.title || data.author) {
               toast({
-                title: "Metadata Identified",
-                description: `Successfully recognized "${data.title || 'Untitled'}" by ${data.author || 'Unknown'}.`
+                title: "Volume Identified",
+                description: `Successfully recognized "${data.title || 'Untitled'}" by ${data.author || 'Unknown author'}.`
+              });
+            } else {
+              toast({
+                title: "Partial Identification",
+                description: "Recognized digital volume, but some metadata is missing.",
               });
             }
+          } else {
+            console.warn("API returned error status during metadata extraction");
           }
         } catch (e) {
-          console.warn("Metadata extraction failed");
+          console.warn("Metadata extraction failed due to network or server error");
         } finally {
           setIsExtractingPreview(false);
         }
@@ -270,26 +285,9 @@ export function UploadNovelForm() {
           
           preParsedChapters = parseData.chapters;
           
-          // Use pre-extracted cover if available, otherwise try one last time
+          // Use pre-extracted cover if available
           if (coverPreview) {
             extractedCoverFile = dataURLtoFile(coverPreview, `epub_cover_${bookId}.jpg`);
-          } else {
-            try {
-              setLoadingMessage('Extracting Digital Art...');
-              setProgress(40);
-              const coverRes = await fetch('/api/extract-cover', { 
-                method: 'POST', 
-                body: formData 
-              });
-              if (coverRes.ok) {
-                const { dataUri } = await coverRes.json();
-                if (dataUri) {
-                  extractedCoverFile = dataURLtoFile(dataUri, `epub_cover_${bookId}.jpg`);
-                }
-              }
-            } catch (e) {
-              console.warn("Auto cover extraction failed, continuing without it.");
-            }
           }
 
           setLoadingMessage('Content Structured...');
