@@ -1,8 +1,7 @@
-
 /**
  * @fileOverview Native Browser Narration Engine.
  * Utilizes the Web Speech API (speechSynthesis) for zero-latency, unlimited narration.
- * Eliminates cloud subscription dependencies and network latency.
+ * Implements Sentence-Level Chunking for maximum reliability.
  */
 
 export interface TTSOptions {
@@ -33,17 +32,43 @@ export function isSpeaking(): boolean {
 }
 
 /**
- * Core chunking logic to divide text into digestible segments for the browser.
+ * Granular chunking logic to divide text into small sentence segments.
+ * Smaller chunks prevent browser "speech hang" on long text blocks.
  */
 function chunkText(text: string): string[] {
   if (!text) return [];
-  // Split into paragraphs, clean HTML, and remove very short fragments
-  return text
+  
+  // 1. Clean HTML and artifacts
+  const clean = text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>?/gm, '')
-    .split(/\n\n/)
-    .map(p => p.trim())
-    .filter(p => p.length > 1);
+    .trim();
+
+  // 2. Split by common sentence boundaries
+  // This regex matches [.!?] followed by a space, keeping the punctuation attached to the preceding text
+  const parts = clean.split(/([.!?]\s+)/);
+  
+  const chunks: string[] = [];
+  let buffer = "";
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+
+    // If it's just punctuation/space, attach to previous
+    if (/^[.!?]\s+$/.test(part)) {
+      if (chunks.length > 0) {
+        chunks[chunks.length - 1] += part.trim();
+      } else {
+        buffer += part.trim();
+      }
+    } else {
+      chunks.push(part.trim());
+    }
+  }
+
+  // Filter out any very short or empty chunks
+  return chunks.filter(c => c.length > 1);
 }
 
 /**
@@ -59,21 +84,19 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
   stopTextToSpeech();
   
   const sessionId = currentSessionId;
-  const paragraphs = chunkText(fullText);
-  if (paragraphs.length === 0) return;
+  const sentences = chunkText(fullText);
+  if (sentences.length === 0) return;
 
   isSpeakingGlobal = true;
 
-  // Use a slight delay to ensure the browser has processed the cancel() call
+  // Small delay to ensure the browser has processed the cancel() call from step 1
   setTimeout(() => {
-    // If the session changed or global speaking flag was reset during the timeout, abort
     if (sessionId !== currentSessionId || !isSpeakingGlobal) return;
 
-    paragraphs.forEach((para, index) => {
-      const utterance = new SpeechSynthesisUtterance(para);
+    sentences.forEach((sentence, index) => {
+      const utterance = new SpeechSynthesisUtterance(sentence);
       
-      // Configure Voice
-      // Handle "system-default" or empty string as browser default
+      // Configure Voice from preferences
       if (options.voice && options.voice !== '' && options.voice !== 'system-default') {
         const voices = window.speechSynthesis.getVoices();
         const selected = voices.find(v => v.voiceURI === options.voice || v.name === options.voice);
@@ -83,25 +106,25 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
       utterance.rate = options.rate || 1.0;
       utterance.pitch = options.pitch || 1.0;
 
-      // Completion tracker
+      // Completion tracker for UI state synchronization
       utterance.onend = () => {
-        // Only update global state if this callback belongs to the active session
-        if (sessionId === currentSessionId && index === paragraphs.length - 1) {
+        // Only reset global state if this is the final chunk of the ACTIVE session
+        if (sessionId === currentSessionId && index === sentences.length - 1) {
           isSpeakingGlobal = false;
         }
       };
 
       utterance.onerror = (event) => {
-        // Ignore expected errors during intentional cancellation
-        const ignoreErrors = ['interrupted', 'canceled'];
+        // Ignore expected errors triggered by intentional cancellation (stop button)
+        const expectedErrors = ['interrupted', 'canceled'];
         
         if (sessionId === currentSessionId) {
-          if (!ignoreErrors.includes(event.error)) {
+          if (!expectedErrors.includes(event.error)) {
             console.error("Speech Synthesis Error:", event.error);
           }
           
           // Reset global flag on actual errors or end of sequence
-          if (index === paragraphs.length - 1) {
+          if (index === sentences.length - 1) {
             isSpeakingGlobal = false;
           }
         }
