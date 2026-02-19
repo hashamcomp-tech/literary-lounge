@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * @fileOverview API Route for VoiceRSS Text-to-Speech conversion.
- * Proxies requests to VoiceRSS to keep the API key secure.
+ * Proxies requests to VoiceRSS and validates the response content.
  */
 export async function POST(req: NextRequest) {
   try {
     const { text, lang, rate } = await req.json();
 
-    if (!text) {
+    if (!text || text.trim().length === 0) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
     }
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       key: apiKey,
       hl: lang || 'en-us',
       r: rate || '0', 
-      src: text, // Client is responsible for chunking
+      src: text.trim(),
       c: 'MP3',
       f: '44khz_16bit_stereo'
     });
@@ -38,13 +38,21 @@ export async function POST(req: NextRequest) {
 
     const audioBlob = await response.blob();
 
+    // Check if the API returned an error message in plain text instead of audio
+    if (audioBlob.type.includes('text') || audioBlob.size < 100) {
+      const errorText = await audioBlob.text();
+      if (errorText.startsWith('ERROR')) {
+        return NextResponse.json({ error: errorText }, { status: 400 });
+      }
+    }
+
     return new Response(audioBlob, {
       headers: {
         'Content-Type': 'audio/mpeg',
       },
     });
   } catch (error: any) {
-    console.error('VoiceRSS TTS Error:', error);
+    console.error('VoiceRSS TTS Route Error:', error);
     return NextResponse.json(
       { error: error.message || 'TTS conversion failed' },
       { status: 500 }

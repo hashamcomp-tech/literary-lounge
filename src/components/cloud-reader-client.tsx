@@ -40,7 +40,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return () => stopTextToSpeech();
   }, []);
 
-  // Simplified state sync with TTS service
+  // Monitor global TTS state
   useEffect(() => {
     const interval = setInterval(() => {
       const active = isSpeakingService();
@@ -51,13 +51,12 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   /**
    * Decoupled Pre-fetching logic.
-   * Runs in the background without affecting the primary isLoading state.
    */
   const preFetchChapters = useCallback(async (start: number, count: number = 3) => {
     if (!firestore || !id || isOfflineMode) return;
-    const total = metadata?.metadata?.info?.totalChapters || 9999;
+    
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
-      .filter(n => n > 0 && n <= total);
+      .filter(n => n > 0);
     
     const missing = targetNumbers.filter(n => !chaptersCache[n]);
     
@@ -79,7 +78,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         setIsBuffering(false);
       }
     }
-  }, [firestore, id, chaptersCache, metadata, isOfflineMode]);
+  }, [firestore, id, chaptersCache, isOfflineMode]);
 
   // Effect to trigger buffering separately from loading
   useEffect(() => {
@@ -90,13 +89,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   /**
    * Primary Loading Effect.
-   * Decoupled from buffering to prevent circular dependency hangs.
    */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
 
     const loadChapter = async () => {
-      // Check cache first
       if (chaptersCache[currentChapterNum]) {
         setIsLoading(false);
         updateHistory(metadata);
@@ -185,13 +182,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    const paragraphsArr = (chData.content || '')
+    const textToRead = (chData.content || '')
       .replace(/<br\s*\/?>/gi, '\n')
-      .split(/\n\n/)
-      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-      .filter((p: string) => p.length > 0);
+      .replace(/<[^>]*>?/gm, '')
+      .trim();
 
-    const textToRead = paragraphsArr.slice(startIndex).join('\n\n');
     playTextToSpeech(textToRead, voiceOptions);
   };
 

@@ -1,5 +1,5 @@
 /**
- * @fileOverview Simplified Sequential TTS Engine.
+ * @fileOverview Refined Sequential TTS Engine.
  * Provides a robust start/stop mechanism for chapter narration.
  * Handles chunking, network fetching, and sequential playback with clear error reporting.
  */
@@ -56,15 +56,20 @@ async function fetchAudioBlobUrl(text: string, options: TTSOptions, signal?: Abo
   });
 
   if (!response.ok) {
-    throw new Error("TTS chunk request failed.");
+    const errData = await response.json().catch(() => ({ error: 'TTS request failed' }));
+    throw new Error(errData.error || "TTS chunk request failed.");
   }
 
   const blob = await response.blob();
+  if (blob.size < 100) {
+    throw new Error("Received invalid audio data from server.");
+  }
+  
   return URL.createObjectURL(blob);
 }
 
 /**
- * Splits text into individual sentences for manageable fetching.
+ * Splits text into manageable sentences.
  */
 function chunkText(text: string): string[] {
   const cleanText = text
@@ -72,29 +77,28 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
-  // Split by major punctuation while keeping it
+  if (!cleanText) return [];
+
+  // Split by punctuation but keep it, then filter out empty/short bits
   return cleanText
     .split(/([.!?]+(?:\s+|\n+|$))/)
-    .filter(part => part.trim().length > 0)
     .reduce((acc: string[], part, i) => {
       if (i % 2 === 0) {
-        acc.push(part);
+        if (part.trim()) acc.push(part.trim());
       } else {
-        if (acc.length > 0) acc[acc.length - 1] += part;
+        if (acc.length > 0) acc[acc.length - 1] += part.trim();
       }
       return acc;
     }, [])
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+    .filter(s => s.length > 1);
 }
 
 /**
  * Initiates the sequential reading process.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
+  // If already speaking, stop first
   stopTextToSpeech();
-
-  if (!fullText || fullText.trim().length === 0) return;
 
   const textQueue = chunkText(fullText);
   if (textQueue.length === 0) return;
@@ -125,8 +129,9 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
         audio.onerror = () => {
           const mediaError = audio.error;
           URL.revokeObjectURL(url);
-          // Extract meaningful error info instead of an empty object
-          const errorMsg = mediaError ? `Audio Error ${mediaError.code}: ${mediaError.message}` : 'Unknown playback error';
+          const errorMsg = mediaError 
+            ? `Audio Error ${mediaError.code}: ${mediaError.message || 'Source not supported'}` 
+            : 'Unknown playback error';
           reject(new Error(errorMsg));
         };
 
@@ -138,7 +143,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
       });
     }
   } catch (error: any) {
-    if (error.name !== 'AbortError') {
+    if (error.name !== 'AbortError' && isSpeakingGlobal) {
       console.error("TTS Playback Error:", error.message || error);
     }
   } finally {
