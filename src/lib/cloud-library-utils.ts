@@ -91,19 +91,60 @@ export async function updateCloudBookCover(
 }
 
 /**
+ * Updates basic bibliographic metadata for a cloud novel.
+ */
+export async function updateCloudBookMetadata(
+  db: Firestore, 
+  bookId: string, 
+  updates: { title: string, author: string }
+) {
+  const bookRef = doc(db, 'books', bookId);
+  const payload = {
+    title: updates.title,
+    titleLower: updates.title.toLowerCase(),
+    author: updates.author,
+    authorLower: updates.author.toLowerCase(),
+    'metadata.info.bookTitle': updates.title,
+    'metadata.info.author': updates.author,
+    lastUpdated: serverTimestamp()
+  };
+
+  await updateDoc(bookRef, payload).catch(async (err) => {
+    errorEmitter.emit('permission-error', new FirestorePermissionError({
+      path: bookRef.path,
+      operation: 'update',
+      requestResourceData: payload
+    }));
+    throw err;
+  });
+}
+
+/**
+ * Deletes a single chapter from a cloud book and updates total count.
+ */
+export async function deleteCloudChapter(db: Firestore, bookId: string, chapterNumber: number) {
+  const chapterRef = doc(db, 'books', bookId, 'chapters', chapterNumber.toString());
+  const bookRef = doc(db, 'books', bookId);
+
+  await deleteDoc(chapterRef).catch(async (err) => {
+    errorEmitter.emit('permission-error', new FirestorePermissionError({
+      path: chapterRef.path,
+      operation: 'delete'
+    }));
+    throw err;
+  });
+
+  await updateDoc(bookRef, {
+    'metadata.info.totalChapters': increment(-1),
+    lastUpdated: serverTimestamp()
+  }).catch(() => {});
+}
+
+/**
  * Deletes multiple chapters from a cloud book in a single batch.
  */
 export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, chapterNumbers: number[]) {
   const bookRef = doc(db, 'books', bookId);
-  const bookSnap = await getDoc(bookRef);
-  
-  if (!bookSnap.exists()) {
-    throw new Error("Parent manuscript not found.");
-  }
-
-  const data = bookSnap.data();
-  const currentChapters = data.chapters || [];
-  const updatedChapters = currentChapters.filter((ch: any) => !chapterNumbers.includes(Number(ch.chapterNumber)));
   
   const batch = writeBatch(db);
   
@@ -113,8 +154,7 @@ export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, cha
   });
   
   const updateData = {
-    chapters: updatedChapters,
-    'metadata.info.totalChapters': updatedChapters.length,
+    'metadata.info.totalChapters': increment(-chapterNumbers.length),
     lastUpdated: serverTimestamp()
   };
 

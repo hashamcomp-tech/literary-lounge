@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase, useStorage } from '@/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -17,7 +17,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Input } from '@/components/ui/input';
-import { deleteCloudBook, updateCloudBookCover } from '@/lib/cloud-library-utils';
+import { Label } from '@/components/ui/label';
+import { deleteCloudBook, updateCloudBookCover, updateCloudBookMetadata, deleteCloudChapter } from '@/lib/cloud-library-utils';
 import { uploadCoverImage } from '@/lib/upload-cover';
 import { optimizeCoverImage } from '@/lib/image-utils';
 import {
@@ -37,11 +38,19 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 /**
  * @fileOverview Lounge Control Panel.
  * Primary command center for administrators.
- * Features real-time status monitoring, contributor vetting, and visual asset management.
+ * Features real-time status monitoring, contributor vetting, and granular manuscript management.
  */
 export default function AdminPage() {
   const db = useFirestore();
@@ -53,9 +62,15 @@ export default function AdminPage() {
 
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [updatingCoverId, setUpdatingCoverId] = useState<string | null>(null);
   const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
   
+  // Settings Dialog State
+  const [selectedBook, setSelectedBook] = useState<any | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAuthor, setEditAuthor] = useState('');
+  const [isSavingMetadata, setIsSavingMetadata] = useState(false);
+
   const [bookCount, setBookCount] = useState<number>(0);
   const [chapterCount, setChapterCount] = useState<number>(0);
   const [totalUsers, setTotalUsers] = useState<number>(0);
@@ -165,40 +180,71 @@ export default function AdminPage() {
       .then(() => toast({ title: "Contributor Removed", description: `${email} access revoked.` }));
   };
 
-  const handleDeleteBook = async (bookId: string) => {
-    if (!db) return;
-    setProcessingId(bookId);
-    deleteCloudBook(db, bookId).then(() => {
-      toast({ title: "Book Deleted", description: "Manuscript purged from the Lounge." });
-    }).finally(() => setProcessingId(null));
+  const openSettings = (book: any) => {
+    setSelectedBook(book);
+    setEditTitle(book.title || book.metadata?.info?.bookTitle || '');
+    setEditAuthor(book.author || book.metadata?.info?.author || '');
+    setIsSettingsOpen(true);
   };
 
-  const handleTriggerCoverEdit = (bookId: string) => {
-    setUpdatingCoverId(bookId);
+  const handleSaveMetadata = async () => {
+    if (!db || !selectedBook) return;
+    setIsSavingMetadata(true);
+    try {
+      await updateCloudBookMetadata(db, selectedBook.id, { title: editTitle, author: editAuthor });
+      toast({ title: "Volume Updated", description: "Bibliographic data synchronized successfully." });
+      setIsSettingsOpen(false);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+    } finally {
+      setIsSavingMetadata(false);
+    }
+  };
+
+  const handleUpdateCover = () => {
     fileInputRef.current?.click();
   };
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !updatingCoverId || !db || !storage) return;
+    if (!file || !selectedBook || !db || !storage) return;
 
-    setProcessingId(updatingCoverId);
+    setProcessingId(selectedBook.id);
     try {
       const optimizedBlob = await optimizeCoverImage(file);
-      const optimizedFile = new File([optimizedBlob], `cover_${updatingCoverId}.jpg`, { type: 'image/jpeg' });
-      const url = await uploadCoverImage(storage, optimizedFile, updatingCoverId);
+      const optimizedFile = new File([optimizedBlob], `cover_${selectedBook.id}.jpg`, { type: 'image/jpeg' });
+      const url = await uploadCoverImage(storage, optimizedFile, selectedBook.id);
       
       if (!url) throw new Error("Cloud upload rejected.");
       
-      await updateCloudBookCover(db, updatingCoverId, url, optimizedFile.size);
+      await updateCloudBookCover(db, selectedBook.id, url, optimizedFile.size);
       
       toast({ title: "Cover Updated", description: "The volume's visual identity has been synchronized." });
+      setIsSettingsOpen(false);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Update Failed", description: err.message });
     } finally {
       setProcessingId(null);
-      setUpdatingCoverId(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteBook = async (bookId: string) => {
+    if (!db) return;
+    setProcessingId(bookId);
+    deleteCloudBook(db, bookId).then(() => {
+      toast({ title: "Book Deleted", description: "Manuscript purged from the Lounge." });
+      setIsSettingsOpen(false);
+    }).finally(() => setProcessingId(null));
+  };
+
+  const handleDeleteChapter = async (chapterNumber: number) => {
+    if (!db || !selectedBook) return;
+    try {
+      await deleteCloudChapter(db, selectedBook.id, chapterNumber);
+      toast({ title: "Chapter Removed", description: `Chapter ${chapterNumber} has been purged.` });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Deletion Failed", description: err.message });
     }
   };
 
@@ -211,13 +257,8 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
-        accept="image/*"
-        onChange={onFileChange} 
-      />
+      <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onFileChange} />
+      
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-5xl mx-auto">
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
@@ -286,34 +327,21 @@ export default function AdminPage() {
                         {allBooks?.map(book => (
                           <TableRow key={book.id}>
                             <TableCell className="font-bold">
-                              {book.title}
+                              {book.title || book.metadata?.info?.bookTitle}
                               <br/>
-                              <span className="text-[10px] text-muted-foreground">By {book.author}</span>
+                              <span className="text-[10px] text-muted-foreground">By {book.author || book.metadata?.info?.author}</span>
                             </TableCell>
                             <TableCell><Badge variant="outline">{Array.isArray(book.genre) ? book.genre[0] : book.genre}</Badge></TableCell>
                             <TableCell className="text-right">
-                              <div className="flex justify-end gap-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={() => handleTriggerCoverEdit(book.id)} 
-                                  disabled={processingId === book.id} 
-                                  className="text-primary"
-                                  title="Change Cover"
-                                >
-                                  {processingId === book.id && updatingCoverId === book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
-                                  onClick={() => handleDeleteBook(book.id)} 
-                                  disabled={processingId === book.id} 
-                                  className="text-destructive"
-                                  title="Delete Book"
-                                >
-                                  {processingId === book.id && updatingCoverId !== book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                </Button>
-                              </div>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openSettings(book)}
+                                className="text-primary"
+                                title="Manuscript Settings"
+                              >
+                                <Settings2 className="h-4 w-4" />
+                              </Button>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -386,6 +414,135 @@ export default function AdminPage() {
           </Accordion>
         </div>
       </main>
+
+      {/* Manuscript Settings Dialog */}
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="max-w-2xl rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-3xl font-headline font-black">Manuscript Settings</DialogTitle>
+            <DialogDescription>Modify volume metadata or manage individual chapters.</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-8 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Title</Label>
+                  <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="rounded-xl h-12" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Author</Label>
+                  <Input value={editAuthor} onChange={e => setEditAuthor(e.target.value)} className="rounded-xl h-12" />
+                </div>
+                <Button onClick={handleSaveMetadata} className="w-full h-12 rounded-xl font-bold" disabled={isSavingMetadata}>
+                  {isSavingMetadata ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  Save Metadata
+                </Button>
+              </div>
+
+              <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-3xl bg-muted/20 gap-4">
+                {selectedBook?.coverURL || selectedBook?.metadata?.info?.coverURL ? (
+                  <img src={selectedBook?.coverURL || selectedBook?.metadata?.info?.coverURL} className="h-32 rounded shadow-lg object-cover" alt="Cover" />
+                ) : (
+                  <div className="h-32 w-24 bg-primary/10 rounded flex items-center justify-center"><BookOpen className="h-8 w-8 text-primary opacity-20" /></div>
+                )}
+                <Button variant="outline" size="sm" onClick={handleUpdateCover} className="rounded-lg font-bold gap-2">
+                  <ImagePlus className="h-4 w-4" /> Change Cover
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter Management</Label>
+                <Badge variant="secondary" className="bg-primary/5 text-primary text-[10px]">
+                  {selectedBook?.metadata?.info?.totalChapters || 0} Total
+                </Badge>
+              </div>
+              <div className="border rounded-2xl overflow-hidden bg-background/50">
+                <ScrollArea className="h-[200px]">
+                  <ChapterList bookId={selectedBook?.id} onDeleteChapter={handleDeleteChapter} />
+                </ScrollArea>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t flex flex-col sm:flex-row gap-4">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" className="flex-1 h-14 rounded-2xl font-black uppercase text-[10px] tracking-widest">
+                    <Trash2 className="h-4 w-4 mr-2" /> Purge Global Volume
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-2xl font-headline font-black">Global Purge Protocol</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      You are about to permanently delete <span className="font-bold text-foreground">"{selectedBook?.title}"</span> and ALL its chapters from the Lounge. This action is irreversible.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => handleDeleteBook(selectedBook?.id)} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">
+                      Confirm Deletion
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button variant="ghost" onClick={() => setIsSettingsOpen(false)} className="rounded-2xl h-14 font-bold text-muted-foreground px-8">Close</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Sub-component to fetch and list chapters for a specific book.
+ */
+function ChapterList({ bookId, onDeleteChapter }: { bookId: string | undefined, onDeleteChapter: (num: number) => void }) {
+  const db = useFirestore();
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!bookId || !db) return;
+    setLoading(true);
+    const colRef = collection(db, 'books', bookId, 'chapters');
+    const q = query(colRef, orderBy('chapterNumber', 'asc'));
+    
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setChapters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [bookId, db]);
+
+  if (loading) return <div className="p-10 flex justify-center"><Loader2 className="animate-spin text-primary opacity-20" /></div>;
+  if (chapters.length === 0) return <div className="p-10 text-center text-muted-foreground text-sm font-medium">No chapters indexed.</div>;
+
+  return (
+    <div className="divide-y">
+      {chapters.map((ch) => (
+        <div key={ch.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black text-primary bg-primary/10 w-6 h-6 rounded flex items-center justify-center">
+              {ch.chapterNumber}
+            </span>
+            <span className="text-sm font-bold truncate max-w-[200px]">{ch.title || 'Untitled Chapter'}</span>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="text-destructive h-8 w-8 hover:bg-destructive/10" 
+            onClick={() => onDeleteChapter(ch.chapterNumber)}
+            title="Delete Chapter"
+          >
+            <FileX className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }
