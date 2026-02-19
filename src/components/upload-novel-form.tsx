@@ -54,6 +54,10 @@ export function UploadNovelForm() {
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
+  // Preview States
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [isExtractingPreview, setIsExtractingPreview] = useState(false);
+
   // Autocomplete States
   const [allBooks, setAllBooks] = useState<Suggestion[]>([]);
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
@@ -66,6 +70,36 @@ export function UploadNovelForm() {
       setUploadMode(savedMode);
     }
   }, []);
+
+  // Handle automatic cover preview extraction
+  useEffect(() => {
+    if (!selectedFile) {
+      setCoverPreview(null);
+      return;
+    }
+
+    if (selectedFile.name.toLowerCase().endsWith('.epub')) {
+      const getPreview = async () => {
+        setIsExtractingPreview(true);
+        try {
+          const formData = new FormData();
+          formData.append('file', selectedFile);
+          const res = await fetch('/api/extract-cover', { method: 'POST', body: formData });
+          if (res.ok) {
+            const { dataUri } = await res.json();
+            setCoverPreview(dataUri);
+          }
+        } catch (e) {
+          console.warn("Cover preview extraction failed");
+        } finally {
+          setIsExtractingPreview(false);
+        }
+      };
+      getPreview();
+    } else {
+      setCoverPreview(null);
+    }
+  }, [selectedFile]);
 
   useEffect(() => {
     localStorage.setItem("lounge-upload-mode", uploadMode);
@@ -221,20 +255,24 @@ export function UploadNovelForm() {
           
           preParsedChapters = parseData.chapters;
           
-          // Auto extract cover from EPUB
-          try {
-            setLoadingMessage('Extracting Digital Art...');
-            setProgress(40);
-            const coverRes = await fetch('/api/extract-cover', { 
-              method: 'POST', 
-              body: formData 
-            });
-            if (coverRes.ok) {
-              const { dataUri } = await coverRes.json();
-              extractedCoverFile = dataURLtoFile(dataUri, `epub_cover_${bookId}.jpg`);
+          // Use pre-extracted cover if available, otherwise try one last time
+          if (coverPreview) {
+            extractedCoverFile = dataURLtoFile(coverPreview, `epub_cover_${bookId}.jpg`);
+          } else {
+            try {
+              setLoadingMessage('Extracting Digital Art...');
+              setProgress(40);
+              const coverRes = await fetch('/api/extract-cover', { 
+                method: 'POST', 
+                body: formData 
+              });
+              if (coverRes.ok) {
+                const { dataUri } = await coverRes.json();
+                extractedCoverFile = dataURLtoFile(dataUri, `epub_cover_${bookId}.jpg`);
+              }
+            } catch (e) {
+              console.warn("Auto cover extraction failed, continuing without it.");
             }
-          } catch (e) {
-            console.warn("Auto cover extraction failed, continuing without it.");
           }
 
           setLoadingMessage('Content Structured...');
@@ -431,9 +469,19 @@ export function UploadNovelForm() {
                   }} 
                 />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
-                  <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <FileText className="h-8 w-8 text-primary" />
-                  </div>
+                  {isExtractingPreview ? (
+                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                    </div>
+                  ) : coverPreview ? (
+                    <div className="relative aspect-[2/3] w-32 mx-auto mb-4 rounded-lg overflow-hidden shadow-xl border-2 border-primary/20 animate-in fade-in zoom-in duration-500">
+                      <img src={coverPreview} alt="Extracted Cover" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <FileText className="h-8 w-8 text-primary" />
+                    </div>
+                  )}
                   <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
                   <p className="text-[10px] text-muted-foreground opacity-60">Digital Volumes or Standard Text.</p>
                 </label>
