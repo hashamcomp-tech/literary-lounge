@@ -120,24 +120,74 @@ export async function updateCloudBookMetadata(
 }
 
 /**
- * Deletes a single chapter from a cloud book and updates total count.
+ * Deletes a single chapter and re-orders all subsequent chapters.
+ * If no chapters remain, the book record is purged (Deleting the page for Ch 1).
  */
 export async function deleteCloudChapter(db: Firestore, bookId: string, chapterNumber: number) {
-  const chapterRef = doc(db, 'books', bookId, 'chapters', chapterNumber.toString());
-  const bookRef = doc(db, 'books', bookId);
+  const chaptersRef = collection(db, 'books', bookId, 'chapters');
+  const chaptersSnap = await getDocs(chaptersRef);
+  
+  const allChapters = chaptersSnap.docs.map(d => ({ 
+    id: d.id, 
+    ...d.data() as any
+  })).sort((a, b) => a.chapterNumber - b.chapterNumber);
 
-  await deleteDoc(chapterRef).catch(async (err) => {
+  const batch = writeBatch(db);
+  const targetDocRef = doc(db, 'books', bookId, 'chapters', chapterNumber.toString());
+  
+  // 1. Delete the targeted chapter
+  batch.delete(targetDocRef);
+
+  // 2. Identify subsequent chapters to shift
+  const subsequent = allChapters.filter(c => c.chapterNumber > chapterNumber);
+  
+  subsequent.forEach(ch => {
+    const oldNum = ch.chapterNumber;
+    const newNum = oldNum - 1;
+    
+    // Auto-update the title if it follows "Chapter X" pattern
+    let newTitle = ch.title || `Chapter ${newNum}`;
+    if (newTitle.toLowerCase().startsWith('chapter')) {
+      newTitle = newTitle.replace(/^chapter\s+\d+/i, `Chapter ${newNum}`);
+    }
+
+    const newRef = doc(db, 'books', bookId, 'chapters', newNum.toString());
+    const oldRef = doc(db, 'books', bookId, 'chapters', oldNum.toString());
+
+    batch.set(newRef, {
+      ...ch,
+      chapterNumber: newNum,
+      title: newTitle,
+      lastUpdated: serverTimestamp()
+    });
+    
+    // Crucial: delete the old index document
+    batch.delete(oldRef);
+  });
+
+  const bookRef = doc(db, 'books', bookId);
+  const remainingCount = allChapters.length - 1;
+
+  if (remainingCount <= 0) {
+    // Purge book if no chapters left
+    batch.delete(bookRef);
+    batch.delete(doc(db, 'books', bookId, 'metadata', 'info'));
+  } else {
+    batch.update(bookRef, {
+      'metadata.info.totalChapters': remainingCount,
+      lastUpdated: serverTimestamp()
+    });
+  }
+
+  await batch.commit().catch(async (err) => {
     errorEmitter.emit('permission-error', new FirestorePermissionError({
-      path: chapterRef.path,
+      path: targetDocRef.path,
       operation: 'delete'
     }));
     throw err;
   });
 
-  await updateDoc(bookRef, {
-    'metadata.info.totalChapters': increment(-1),
-    lastUpdated: serverTimestamp()
-  }).catch(() => {});
+  return { remainingCount };
 }
 
 /**
@@ -145,7 +195,6 @@ export async function deleteCloudChapter(db: Firestore, bookId: string, chapterN
  */
 export async function deleteCloudChaptersBulk(db: Firestore, bookId: string, chapterNumbers: number[]) {
   const bookRef = doc(db, 'books', bookId);
-  
   const batch = writeBatch(db);
   
   chapterNumbers.forEach(num => {

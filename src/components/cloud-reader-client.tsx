@@ -226,17 +226,26 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   /**
    * Global Library Purge Protocol (Admins Only)
+   * Deletes and re-indexes subsequent chapters.
    */
   const handleDeleteCurrentChapter = async () => {
     if (!firestore || !id) return;
     try {
-      await deleteCloudChapter(firestore, id, currentChapterNum);
+      const result = await deleteCloudChapter(firestore, id, currentChapterNum);
       toast({ 
         title: "Segment Purged", 
-        description: `Chapter ${currentChapterNum} has been erased from the global Lounge.` 
+        description: `Chapter ${currentChapterNum} has been erased and sequels re-indexed.` 
       });
-      // Redirect to book start or library
-      router.push(`/pages/${id}/1`);
+      
+      if (result.remainingCount <= 0) {
+        router.push('/');
+      } else {
+        // Redirection logic to maintain continuity
+        const nextTarget = Math.min(currentChapterNum, result.remainingCount);
+        router.push(`/pages/${id}/${nextTarget}`);
+        // Reset cache to force reload of re-indexed content
+        setChaptersCache({});
+      }
     } catch (err: any) {
       toast({ 
         variant: "destructive", 
@@ -316,7 +325,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                   <AlertDialogHeader>
                     <AlertDialogTitle className="text-2xl font-headline font-black">Global Purge Protocol</AlertDialogTitle>
                     <AlertDialogDescription className="text-base">
-                      You are about to permanently delete <span className="font-bold text-foreground">Chapter {currentChapterNum}</span> of <span className="font-bold">"{metadata?.title}"</span> from the global cloud library. This will remove the segment for all readers.
+                      You are about to permanently delete <span className="font-bold text-foreground">Chapter {currentChapterNum}</span> of <span className="font-bold">"{metadata?.title}"</span> from the global cloud library. Sequels will be re-numbered.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter className="pt-4">
