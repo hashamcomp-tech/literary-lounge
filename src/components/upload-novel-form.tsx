@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -12,7 +11,6 @@ import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'fireb
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
 import { urlToFile } from '@/lib/image-utils';
@@ -37,7 +35,7 @@ interface Suggestion {
 
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
- * Features Structure-First Paste Detection and High-Reliability Client-Side Parsing.
+ * Features Structure-First Paste Detection and High-Reliability Client-Side Parsing via JSZip.
  * Implements Sticky Settings persistence via localStorage.
  */
 export function UploadNovelForm() {
@@ -67,7 +65,6 @@ export function UploadNovelForm() {
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [progress, setProgress] = useState(0);
-  const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
 
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -128,8 +125,8 @@ export function UploadNovelForm() {
   };
 
   /**
-   * Robust Client-Side EPUB Extraction.
-   * Direct JSZip access avoids replacements[i] errors.
+   * Robust Client-Side EPUB Extraction using JSZip directly.
+   * Avoids EPUB.js internal hook errors.
    */
   useEffect(() => {
     if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.epub')) {

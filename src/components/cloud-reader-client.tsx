@@ -1,10 +1,9 @@
-
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
-import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap } from 'lucide-react';
+import { useFirebase, useUser } from '@/firebase';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -23,6 +22,7 @@ interface CloudReaderClientProps {
 /**
  * @fileOverview High-Performance Cloud Reader Client.
  * Implements Predictive Buffering for instantaneous chapter navigation.
+ * Navigation buttons moved to top per user request.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -35,7 +35,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [metadata, setMetadata] = useState<any>(null);
   const [chaptersCache, setChaptersCache] = useState<Record<number, any>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [isPreloading, setIsPreloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   
@@ -53,7 +52,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (!firestore || !id || isOfflineMode) return;
     
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
-      .filter(n => n > 0 && n <= (metadata?.totalChapters || 9999));
+      .filter(n => n > 0 && n <= (metadata?.metadata?.info?.totalChapters || 9999));
     
     const missingNumbers = targetNumbers.filter(n => !chaptersCache[n]);
     
@@ -210,7 +209,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   return (
     <div className="max-w-[700px] mx-auto px-5 py-5 transition-all selection:bg-primary/20">
       <header className="mb-12">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-8">
           <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground hover:text-primary transition-colors group">
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
@@ -223,6 +222,29 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
             </Button>
           </div>
+        </div>
+
+        {/* Primary Navigation moved to top */}
+        <div className="flex items-center justify-between gap-4 mb-10 bg-muted/30 p-2 rounded-2xl border border-border/50">
+          <Button 
+            variant="ghost" 
+            className="h-12 px-6 rounded-xl font-black text-xs uppercase tracking-widest" 
+            disabled={currentChapterNum <= 1} 
+            onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
+          >
+            <ChevronLeft className="mr-2 h-4 w-4" /> Prev
+          </Button>
+          <div className="text-center">
+             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/60">{currentChapterNum} / {totalChapters || '...'}</span>
+          </div>
+          <Button 
+            variant="ghost" 
+            className="h-12 px-6 rounded-xl font-black text-xs uppercase tracking-widest text-primary" 
+            disabled={totalChapters > 0 && currentChapterNum >= totalChapters} 
+            onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
+          >
+            Next <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
         </div>
 
         <div className="space-y-6 text-center sm:text-left">
@@ -257,20 +279,19 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </article>
 
-      <section className="mt-20 pt-12 border-t border-border/50">
+      <footer className="mt-20 pt-12 border-t border-border/50">
         <div className="flex items-center justify-between gap-8">
           <Button variant="outline" className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest" disabled={currentChapterNum <= 1} onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}>
             <ChevronLeft className="mr-2 h-4 w-4" /> Prev
           </Button>
-          <div className="text-center min-w-[80px] flex flex-col items-center">
+          <div className="text-center">
              <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">{currentChapterNum} / {totalChapters || '...'}</span>
-             {chaptersCache[currentChapterNum + 1] && <span className="text-[8px] font-bold text-green-500 uppercase flex items-center gap-1 mt-1"><Zap className="h-2 w-2" /> Buffered</span>}
           </div>
           <Button variant="default" className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" disabled={totalChapters > 0 && currentChapterNum >= totalChapters} onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}>
             Next <ChevronRight className="mr-2 h-4 w-4" />
           </Button>
         </div>
-      </section>
+      </footer>
     </div>
   );
 }

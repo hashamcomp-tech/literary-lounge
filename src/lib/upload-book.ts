@@ -1,10 +1,10 @@
-
 import { doc, setDoc, serverTimestamp, Firestore, writeBatch, getDoc } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 
 /**
  * Clean manuscript artifacts and normalize whitespace.
+ * Purges word-count metadata patterns like [1,473 words].
  */
 export function cleanContent(text: string): string {
   if (!text) return "";
@@ -61,10 +61,10 @@ export async function uploadBookToCloud({
   const uploadMax = Math.max(...chapters.map(ch => ch.chapterNumber));
   const finalTotal = Math.max(currentMax, uploadMax);
 
-  // Cover goes to Vercel
+  // Cover goes to Vercel Blob via our binary-safe pipeline
   let coverURL = existingData?.coverURL || null;
   let coverSize = existingData?.coverSize || 0;
-  if (coverFile && storage) {
+  if (coverFile) {
     coverURL = await uploadCoverImage(storage, coverFile, bookId);
     coverSize = coverFile.size;
   }
@@ -85,8 +85,10 @@ export async function uploadBookToCloud({
     metadata: { info: metadataInfo }
   };
 
+  // Structured root document in Firestore
   await setDoc(bookRef, rootPayload, { merge: true });
 
+  // Structured chapter sub-collection in Firestore
   const batch = writeBatch(db);
   chapters.forEach((ch) => {
     const chRef = doc(db, "books", bookId, "chapters", ch.chapterNumber.toString());
