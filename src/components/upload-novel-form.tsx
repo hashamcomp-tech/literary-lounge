@@ -71,13 +71,10 @@ export function UploadNovelForm() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
-      if (savedMode === 'cloud' || savedMode === 'local') {
-        setUploadMode(savedMode);
-      }
+      if (savedMode) setUploadMode(savedMode);
+      
       const savedSource = localStorage.getItem("lounge-source-mode") as 'file' | 'text';
-      if (savedSource === 'file' || savedSource === 'text') {
-        setSourceMode(savedSource);
-      }
+      if (savedSource) setSourceMode(savedSource);
     }
   }, []);
 
@@ -124,7 +121,7 @@ export function UploadNovelForm() {
 
   /**
    * Implementation Protocol: 
-   * Only triggers if Line 1 is a known book and Line 2 contains a Chapter pattern.
+   * Only triggers if Line 1 matches a known book and Line 2 contains a Chapter pattern.
    */
   const handleAnalyzePastedText = (text: string) => {
     if (!text || text.length < 10) return;
@@ -142,7 +139,7 @@ export function UploadNovelForm() {
       return; 
     }
 
-    // 2. Condition: Line 1 must match a pre-existing book name
+    // 2. Condition: Line 1 must fuzzy match a pre-existing book name
     let existing = allBooks.find(b => b.title.toLowerCase() === potentialNovelName);
     if (!existing) {
       existing = allBooks.find(b => 
@@ -151,7 +148,7 @@ export function UploadNovelForm() {
       );
     }
 
-    // 3. Implement detection only if both criteria are met
+    // 3. Implement detection only if both structural criteria are met
     if (existing) {
       const quick = quickDetectFromText(text);
       if (quick) {
@@ -342,7 +339,7 @@ export function UploadNovelForm() {
         // Source is 'text' (pastedText)
         let processedContent = pastedText;
         
-        // If we auto-filled from positional headers, strip those headers from the final content
+        // If we auto-filled from positional headers, strip those headers from the final content body
         if (wasAutoFilled) {
           const lines = pastedText.split('\n');
           let linesToSkip = 0;
@@ -588,7 +585,6 @@ export function UploadNovelForm() {
                     onPaste={(e) => {
                       const text = e.clipboardData.getData('text');
                       if (text.length >= 10) {
-                        // Small delay to let the state update with pasted content
                         setTimeout(() => handleAnalyzePastedText(text), 50);
                       }
                     }}

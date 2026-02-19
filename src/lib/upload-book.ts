@@ -13,7 +13,7 @@ export function cleanContent(text: string): string {
   return text
     .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
     .replace(/Page\s+\d+\s+of\s+\d+/gi, "")
-    .replace(/\[\s*[\d,.\s]+\s*words\s*\]/gi, "") // REMOVE: formatted word counts like [1,473 words]
+    .replace(/\[\s*[\d,.\s]+\s*words\s*\]/gi, "") 
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

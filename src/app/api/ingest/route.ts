@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * @fileOverview High-reliability EPUB Extraction API.
- * Extracts structured chapters and preserves intended paragraph spacing.
+ * Extracts structured chapters and preserves intended headings and paragraph spacing.
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
@@ -38,7 +38,19 @@ export async function POST(req: NextRequest) {
 
       epub.on('end', async () => {
         try {
-          // 3. Sequentially extract chapters to maintain order and fidelity
+          // 3. Create a lookup map for TOC titles to preserve publisher's naming
+          const tocTitles: Record<string, string> = {};
+          if (epub.toc) {
+            epub.toc.forEach((item: any) => {
+              if (item.href) {
+                // Strip anchor and normalize path
+                const baseHref = item.href.split('#')[0];
+                tocTitles[baseHref] = item.title;
+              }
+            });
+          }
+
+          // 4. Sequentially extract chapters to maintain order and fidelity
           const chapterPromises = epub.flow.map((item, i) => {
             return new Promise<{ title: string; content: string; order: number }>((res) => {
               epub.getChapter(item.id, (err, text) => {
@@ -47,32 +59,42 @@ export async function POST(req: NextRequest) {
                   return;
                 }
 
-                // 4. Sanitize XHTML and Preserve Intended Paragraphs
+                // 5. Sanitize XHTML and Preserve Intended Paragraphs
                 const dom = new JSDOM(text);
                 const doc = dom.window.document;
                 
                 // Remove style and script elements that might contain hidden text
                 doc.querySelectorAll('style, script').forEach(el => el.remove());
 
+                // 6. Strategy: Identify the publisher's intended chapter heading
+                let detectedTitle = item.title || tocTitles[item.href] || '';
+                
+                // If title is missing or a generic placeholder, scan the content for headers
+                if (!detectedTitle || /^chapter\s+\d+$/i.test(detectedTitle.trim())) {
+                  const header = doc.querySelector('h1, h2, h3, h4');
+                  if (header && header.textContent?.trim()) {
+                    detectedTitle = header.textContent.trim();
+                  }
+                }
+
+                // Final fallback
+                detectedTitle = detectedTitle || `Chapter ${i + 1}`;
+
                 // Strategy: Identify the publisher's intended paragraph tags (<p>)
                 const pTags = doc.querySelectorAll('p');
                 let chapterText = '';
 
                 if (pTags.length > 5) {
-                  // Standard path: Extract text from <p> tags and join with double newlines
                   chapterText = Array.from(pTags)
                     .map(p => p.textContent?.trim())
                     .filter(Boolean)
                     .join('\n\n');
                 } else {
-                  // Fallback path: If <p> tags are missing, handle <div> or <br/> based structures
-                  // Replace <br> with newlines
                   doc.querySelectorAll('br').forEach(br => {
                     const textNode = doc.createTextNode('\n');
                     br.parentNode?.replaceChild(textNode, br);
                   });
 
-                  // Extract from any block-level elements
                   const blockElements = doc.querySelectorAll('div, h1, h2, h3, h4, h5, h6, li');
                   if (blockElements.length > 0) {
                     chapterText = Array.from(blockElements)
@@ -80,13 +102,12 @@ export async function POST(req: NextRequest) {
                       .filter(Boolean)
                       .join('\n\n');
                   } else {
-                    // Final fallback
                     chapterText = doc.body.textContent || '';
                   }
                 }
 
                 res({
-                  title: item.title || `Chapter ${i + 1}`,
+                  title: detectedTitle,
                   content: chapterText.trim(),
                   order: i
                 });
@@ -96,7 +117,7 @@ export async function POST(req: NextRequest) {
 
           const results = await Promise.all(chapterPromises);
           
-          // 5. Sort results to match intended reading sequence
+          // 7. Sort results to match intended reading sequence
           const sortedChapters = results
             .sort((a, b) => a.order - b.order)
             .map(({ title, content }) => ({ title, content }));
