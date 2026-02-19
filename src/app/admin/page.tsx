@@ -18,7 +18,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { deleteCloudBook, updateCloudBookCover, updateCloudBookMetadata, deleteCloudChapter } from '@/lib/cloud-library-utils';
+import { deleteCloudBook, updateCloudBookCover, updateCloudBookMetadata } from '@/lib/cloud-library-utils';
 import { uploadCoverImage } from '@/lib/upload-cover';
 import { optimizeCoverImage } from '@/lib/image-utils';
 import {
@@ -238,16 +238,6 @@ export default function AdminPage() {
     }).finally(() => setProcessingId(null));
   };
 
-  const handleDeleteChapter = async (chapterNumber: number) => {
-    if (!db || !selectedBook) return;
-    try {
-      await deleteCloudChapter(db, selectedBook.id, chapterNumber);
-      toast({ title: "Chapter Removed", description: `Chapter ${chapterNumber} has been purged.` });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Deletion Failed", description: err.message });
-    }
-  };
-
   if (isUserLoading || (isAdmin === null && !isOfflineMode)) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>;
   }
@@ -420,7 +410,7 @@ export default function AdminPage() {
         <DialogContent className="max-w-2xl rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-3xl font-headline font-black">Manuscript Settings</DialogTitle>
-            <DialogDescription>Modify volume metadata or manage individual chapters.</DialogDescription>
+            <DialogDescription>Modify volume metadata or review the indexed chapters.</DialogDescription>
           </DialogHeader>
           
           <div className="space-y-8 py-4">
@@ -454,14 +444,14 @@ export default function AdminPage() {
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter Management</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Indexed Chapters</Label>
                 <Badge variant="secondary" className="bg-primary/5 text-primary text-[10px]">
                   {selectedBook?.metadata?.info?.totalChapters || 0} Total
                 </Badge>
               </div>
               <div className="border rounded-2xl overflow-hidden bg-background/50">
                 <ScrollArea className="h-[200px]">
-                  <ChapterList bookId={selectedBook?.id} onDeleteChapter={handleDeleteChapter} />
+                  <ChapterList bookId={selectedBook?.id} />
                 </ScrollArea>
               </div>
             </div>
@@ -500,7 +490,7 @@ export default function AdminPage() {
 /**
  * Sub-component to fetch and list chapters for a specific book.
  */
-function ChapterList({ bookId, onDeleteChapter }: { bookId: string | undefined, onDeleteChapter: (num: number) => void }) {
+function ChapterList({ bookId }: { bookId: string | undefined }) {
   const db = useFirestore();
   const [chapters, setChapters] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -530,17 +520,8 @@ function ChapterList({ bookId, onDeleteChapter }: { bookId: string | undefined, 
             <span className="text-[10px] font-black text-primary bg-primary/10 w-6 h-6 rounded flex items-center justify-center">
               {ch.chapterNumber}
             </span>
-            <span className="text-sm font-bold truncate max-w-[200px]">{ch.title || 'Untitled Chapter'}</span>
+            <span className="text-sm font-bold truncate max-w-[400px]">{ch.title || 'Untitled Chapter'}</span>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="text-destructive h-8 w-8 hover:bg-destructive/10" 
-            onClick={() => onDeleteChapter(ch.chapterNumber)}
-            title="Delete Chapter"
-          >
-            <FileX className="h-4 w-4" />
-          </Button>
         </div>
       ))}
     </div>
