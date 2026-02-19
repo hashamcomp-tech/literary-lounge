@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info, X, Sparkles, Wand2 } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info, X, Sparkles } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +24,6 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { parsePastedChapter } from '@/ai/flows/parse-pasted-chapter';
 
 interface Suggestion {
   id: string;
@@ -52,7 +51,6 @@ export function UploadNovelForm() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [progress, setProgress] = useState(0);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
-  const [isParsingText, setIsParsingText] = useState(false);
   
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
@@ -113,8 +111,12 @@ export function UploadNovelForm() {
     };
   }, []);
 
-  const handleAnalyzePastedText = async (text: string) => {
-    if (!text || text.length < 10 || isParsingText) return;
+  /**
+   * Handles metadata detection without AI.
+   * Strictly uses the positional parser and library matching.
+   */
+  const handleAnalyzePastedText = (text: string) => {
+    if (!text || text.length < 10) return;
     
     // 1. Instant Positional Detection (User Rules)
     const quick = quickDetectFromText(text);
@@ -141,42 +143,12 @@ export function UploadNovelForm() {
           title: "Library Match Found", 
           description: `Metadata synced for "${existing.title}".` 
         });
-        return; 
       } else {
         setTitle(quick.novelName);
         setChapterNumber(quick.chapterNumber);
         setChapterTitle(quick.chapterTitle);
+        setWasAutoFilled(true);
       }
-    }
-
-    // 2. Deep AI Logic for Author and Genres (if not found in library)
-    if (text.length < 50) return; 
-
-    setIsParsingText(true);
-    setWasAutoFilled(false);
-    
-    try {
-      const result = await parsePastedChapter(text);
-      if (result.author && !author) setAuthor(result.author);
-      if (result.genres && Array.isArray(result.genres) && selectedGenres.length === 0) {
-        const matchedSet = new Set<string>();
-        result.genres.forEach(g => {
-          const search = g.toLowerCase();
-          GENRES.forEach(available => {
-            const availLower = available.toLowerCase();
-            if (search === availLower || search.includes(availLower) || availLower.includes(search)) {
-              matchedSet.add(available);
-            }
-          });
-        });
-        setSelectedGenres(Array.from(matchedSet));
-      }
-      setWasAutoFilled(true);
-      toast({ title: "Analysis Complete", description: "Prose analyzed and metadata extracted." });
-    } catch (e) {
-      console.warn("AI Detection failed", e);
-    } finally {
-      setIsParsingText(false);
     }
   };
 
@@ -471,8 +443,8 @@ export function UploadNovelForm() {
               <div className="space-y-2 relative" ref={suggestionRef}>
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
                 <div className="relative">
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
                 </div>
                 {showSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
@@ -586,27 +558,6 @@ export function UploadNovelForm() {
                     placeholder="Paste novel content here... (Line 1: Novel Name, Line 2: Chapter Info)" 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" 
                   />
-                  {isParsingText && (
-                    <div className="absolute inset-0 bg-background/60 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center animate-in fade-in">
-                      <div className="bg-primary/10 p-4 rounded-full mb-3">
-                        <Wand2 className="h-8 w-8 text-primary animate-bounce" />
-                      </div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary animate-pulse">Smart Detecting...</p>
-                    </div>
-                  )}
-                </div>
-                <div className="flex justify-end">
-                  <Button 
-                    type="button" 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => handleAnalyzePastedText(pastedText)}
-                    disabled={isParsingText || pastedText.length < 10}
-                    className="text-[10px] font-black uppercase tracking-widest gap-2"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Refine with AI
-                  </Button>
                 </div>
               </TabsContent>
             </Tabs>
