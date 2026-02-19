@@ -14,6 +14,7 @@ import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-l
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
+import { dataURLtoFile } from '@/lib/image-utils';
 import {
   Popover,
   PopoverContent,
@@ -193,6 +194,7 @@ export function UploadNovelForm() {
       
       let preParsedChapters: { title: string; content: string }[] | undefined = undefined;
       let manualContent: string | undefined = undefined;
+      let extractedCoverFile: File | null = null;
 
       if (sourceMode === 'file' && selectedFile) {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
@@ -218,8 +220,25 @@ export function UploadNovelForm() {
           }
           
           preParsedChapters = parseData.chapters;
+          
+          // Auto extract cover from EPUB
+          try {
+            setLoadingMessage('Extracting Digital Art...');
+            setProgress(40);
+            const coverRes = await fetch('/api/extract-cover', { 
+              method: 'POST', 
+              body: formData 
+            });
+            if (coverRes.ok) {
+              const { dataUri } = await coverRes.json();
+              extractedCoverFile = dataURLtoFile(dataUri, `epub_cover_${bookId}.jpg`);
+            }
+          } catch (e) {
+            console.warn("Auto cover extraction failed, continuing without it.");
+          }
+
           setLoadingMessage('Content Structured...');
-          setProgress(50);
+          setProgress(60);
         } else {
           manualContent = await selectedFile.text();
         }
@@ -237,6 +256,7 @@ export function UploadNovelForm() {
           title: searchTitle, author: searchAuthor, genres: selectedGenres,
           rawContent: manualContent, 
           preParsedChapters,
+          coverFile: extractedCoverFile,
           ownerId: user!.uid,
           manualChapterInfo: manualContent ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
         });
