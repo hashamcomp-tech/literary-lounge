@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -31,6 +31,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergedRange, setMergedRange] = useState<number[]>([]);
   
   const viewLoggedRef = useRef<string | null>(null);
 
@@ -109,6 +111,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     loadChapter();
     stopTextToSpeech();
+    setMergedRange([currentChapterNum]);
   }, [firestore, id, currentChapterNum, isOfflineMode]);
 
   useEffect(() => {
@@ -140,6 +143,38 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     bufferAhead();
   }, [currentChapterNum, firestore, id, isOfflineMode, isLoading]);
 
+  const handleMergeNext = async () => {
+    if (!firestore || !id || isMerging) return;
+    setIsMerging(true);
+    
+    try {
+      const start = Math.max(...mergedRange) + 1;
+      const end = start + 9;
+      const targetNumbers = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+      
+      const missing = targetNumbers.filter(n => !chaptersCache[n]);
+      
+      if (missing.length > 0) {
+        const chaptersCol = collection(firestore, 'books', id, 'chapters');
+        const q = query(chaptersCol, where('chapterNumber', 'in', missing));
+        const snap = await getDocs(q);
+        
+        const newEntries: Record<number, any> = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
+        });
+        setChaptersCache(prev => ({ ...prev, ...newEntries }));
+      }
+
+      setMergedRange(prev => [...prev, ...targetNumbers].sort((a, b) => a - b));
+    } catch (e) {
+      console.error("Merge failed", e);
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
   const updateHistory = (metaOverride?: any) => {
     const meta = metaOverride || metadata;
     if (!meta) return;
@@ -165,54 +200,81 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
+  const getFullContent = () => {
+    return mergedRange
+      .map(num => chaptersCache[n]?.content || '')
+      .filter(Boolean)
+      .join('\n\n');
+  };
+
   const handleReadAloud = async (charOffset?: number) => {
     if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
 
-    const chData = chaptersCache[currentChapterNum];
-    if (!chData?.content) return;
+    const fullContent = mergedRange
+      .map(num => {
+        const ch = chaptersCache[num];
+        return ch ? `Chapter ${num}. ${ch.title || ''}. ${ch.content}` : '';
+      })
+      .join('\n\n');
+
+    if (!fullContent) return;
     
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    playTextToSpeech(chData.content, { 
+    playTextToSpeech(fullContent, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
-      contextId: `cloud-${id}-${currentChapterNum}`,
+      contextId: `cloud-${id}-${currentChapterNum}-merged-${mergedRange.length}`,
       charOffset
     });
   };
 
-  const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {
-    const chapter = chaptersCache[currentChapterNum];
-    if (!chapter) return;
+  const handleJumpToWord = (num: number, paraIdx: number, e: React.MouseEvent) => {
+    let absoluteOffset = 0;
+    
+    for (const n of mergedRange) {
+      if (n === num) {
+        const chapter = chaptersCache[n];
+        if (!chapter) break;
 
-    const paragraphs = (chapter.content || '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .split(/\n\n/)
-      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-      .filter((p: string) => p.length > 0);
+        const paragraphs = (chapter.content || '')
+          .replace(/<br\s*\/?>/gi, '\n')
+          .split(/\n\n/)
+          .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+          .filter((p: string) => p.length > 0);
 
-    let offset = 0;
-    if ((document as any).caretRangeFromPoint) {
-      const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
-      if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-        offset = range.startOffset;
+        let localOffset = 0;
+        if ((document as any).caretRangeFromPoint) {
+          const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
+          if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+            localOffset = range.startOffset;
+          }
+        } else if ((document as any).caretPositionFromPoint) {
+          const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+          if (pos) localOffset = pos.offset;
+        }
+
+        for (let i = 0; i < paraIdx; i++) {
+          localOffset += paragraphs[i].length + 2;
+        }
+        
+        // Account for "Chapter X. Title." prefix in TTS string
+        const prefix = `Chapter ${n}. ${chapter.title || ''}. `;
+        absoluteOffset += prefix.length + localOffset;
+        break;
+      } else {
+        const ch = chaptersCache[n];
+        if (ch) {
+          absoluteOffset += `Chapter ${n}. ${ch.title || ''}. ${ch.content}`.length + 2;
+        }
       }
-    } else if ((document as any).caretPositionFromPoint) {
-      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
-      if (pos) offset = pos.offset;
     }
 
-    let totalOffset = 0;
-    for (let i = 0; i < paraIdx; i++) {
-      totalOffset += paragraphs[i].length + 2; // +2 for double newlines
-    }
-    totalOffset += offset;
-
-    handleReadAloud(totalOffset);
+    handleReadAloud(absoluteOffset);
   };
 
   if (isOfflineMode) {
@@ -255,12 +317,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     );
   }
 
-  const paragraphs = (chapter.content || '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .split(/\n\n/)
-    .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-    .filter((p: string) => p.length > 0);
-
   return (
     <div className="max-w-[700px] mx-auto px-5 py-5 transition-all selection:bg-primary/20">
       <header className="mb-12">
@@ -287,39 +343,67 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </header>
 
-      <article className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-        <header className="mb-10 border-b border-border/50 pb-10">
-          <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
-            <Bookmark className="h-4 w-4" />
-            Chapter {currentChapterNum}
-          </div>
-          <h2 className="text-4xl font-headline font-black text-primary leading-tight">
-            {chapter.title || `Chapter ${currentChapterNum}`}
-          </h2>
-        </header>
+      <div className="space-y-20">
+        {mergedRange.map((num) => {
+          const ch = chaptersCache[num];
+          if (!ch) return null;
+          const paragraphs = (ch.content || '')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .split(/\n\n/)
+            .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+            .filter((p: string) => p.length > 0);
 
-        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
-          {paragraphs.map((para: string, idx: number) => (
-            <p 
-              key={idx} 
-              className="mb-8 cursor-pointer hover:text-foreground transition-colors"
-              onClick={(e) => handleJumpToWord(idx, e)}
-            >
-              {para}
-            </p>
-          ))}
+          return (
+            <article key={num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <header className="mb-10 border-b border-border/50 pb-10">
+                <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
+                  <Bookmark className="h-4 w-4" />
+                  Chapter {num}
+                </div>
+                <h2 className="text-4xl font-headline font-black text-primary leading-tight">
+                  {ch.title || `Chapter ${num}`}
+                </h2>
+              </header>
+
+              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
+                {paragraphs.map((para: string, idx: number) => (
+                  <p 
+                    key={idx} 
+                    className="mb-8 cursor-pointer hover:text-foreground transition-colors"
+                    onClick={(e) => handleJumpToWord(num, idx, e)}
+                  >
+                    {para}
+                  </p>
+                ))}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <footer className="mt-20 pt-12 border-t border-border/50 space-y-8">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <Button 
+            variant="outline" 
+            className="rounded-2xl h-14 px-8 font-black uppercase text-[10px] tracking-widest gap-2 w-full sm:w-auto"
+            onClick={handleMergeNext}
+            disabled={isMerging || (totalChapters > 0 && Math.max(...mergedRange) >= totalChapters)}
+          >
+            {isMerging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
+            Merge Next 10 Chapters
+          </Button>
         </div>
-      </article>
 
-      <footer className="mt-20 pt-12 border-t border-border/50">
         <div className="flex items-center justify-between gap-8">
           <Button variant="outline" className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest" disabled={currentChapterNum <= 1} onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}>
             <ChevronLeft className="mr-2 h-4 w-4" /> Prev
           </Button>
           <div className="text-center">
-             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">{currentChapterNum} / {totalChapters || '...'}</span>
+             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
+               {mergedRange.length > 1 ? `${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : currentChapterNum} / {totalChapters || '...'}
+             </span>
           </div>
-          <Button variant="default" className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" disabled={totalChapters > 0 && currentChapterNum >= totalChapters} onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}>
+          <Button variant="default" className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" disabled={totalChapters > 0 && Math.max(...mergedRange) >= totalChapters} onClick={() => router.push(`/pages/${id}/${Math.max(...mergedRange) + 1}`)}>
             Next <ChevronRight className="mr-2 h-4 w-4" />
           </Button>
         </div>
