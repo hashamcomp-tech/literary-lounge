@@ -9,13 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
-import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
   const { theme, setTheme } = useTheme();
-  const { toast } = useToast();
   const router = useRouter();
   const currentChapterNum = parseInt(pageNumber);
   
@@ -79,14 +77,8 @@ export default function LocalReader() {
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    const paragraphs = (chapter.content || '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .split(/\n\n/)
-      .map(p => p.replace(/<[^>]*>?/gm, '').trim())
-      .filter(p => p.length > 0);
-
-    const textToRead = paragraphs.slice(startIndex).join('\n\n');
-    playTextToSpeech(textToRead, voiceOptions);
+    // The engine handles internal chunking and sequential playback
+    playTextToSpeech(chapter.content, { voice: voiceOptions.voice });
   };
 
   if (loading) {
@@ -144,16 +136,16 @@ export default function LocalReader() {
               Back
             </Button>
             <div className="flex gap-2">
+              <VoiceSettingsPopover />
               <Button 
                 variant="outline" 
                 size="icon" 
                 className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
                 onClick={() => handleReadAloud(0)}
-                title={isSpeaking ? "Stop" : "Read Aloud"}
+                title={isSpeaking ? "Stop Narration" : "Read Aloud"}
               >
                 {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
               </Button>
-              <VoiceSettingsPopover />
               <Button 
                 variant="outline" 
                 size="icon" 

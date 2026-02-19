@@ -1,12 +1,13 @@
 /**
- * @fileOverview Refined Sequential TTS Engine.
- * Provides a robust start/stop mechanism for chapter narration.
- * Handles chunking, network fetching, and sequential playback with clear error reporting.
+ * @fileOverview High-Performance AI Narration Engine.
+ * Utilizes Genkit TTS flows for strictly sequential, chunked playback.
+ * Features instantaneous cancellation and zero residual network activity.
  */
+import { generateAudio } from '@/ai/flows/tts-flow';
 
 export interface TTSOptions {
-  lang?: string;
-  rate?: string;
+  voice?: string;
+  onStartChunk?: (index: number) => void;
 }
 
 let isSpeakingGlobal = false;
@@ -14,7 +15,7 @@ let currentAudio: HTMLAudioElement | null = null;
 let abortController: AbortController | null = null;
 
 /**
- * Stops any currently playing TTS audio and clears the playback queue.
+ * Instantly stops all narration and network activity.
  */
 export function stopTextToSpeech(): void {
   isSpeakingGlobal = false;
@@ -32,119 +33,75 @@ export function stopTextToSpeech(): void {
 }
 
 /**
- * Checks if the service is currently active.
+ * Global status check for the narration engine.
  */
 export function isSpeaking(): boolean {
   return isSpeakingGlobal;
 }
 
 /**
- * Internal helper to fetch audio for a specific text chunk.
- */
-async function fetchAudioBlobUrl(text: string, options: TTSOptions, signal?: AbortSignal): Promise<string> {
-  const response = await fetch('/api/tts', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ 
-      text: text.substring(0, 1000), 
-      lang: options.lang || 'en-us',
-      rate: options.rate || '0'
-    }),
-    signal
-  });
-
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({ error: 'TTS request failed' }));
-    throw new Error(errData.error || "TTS chunk request failed.");
-  }
-
-  const blob = await response.blob();
-  if (blob.size < 100) {
-    throw new Error("Received invalid audio data from server.");
-  }
-  
-  return URL.createObjectURL(blob);
-}
-
-/**
- * Splits text into manageable sentences.
+ * Core chunking logic to divide text into digestible segments for the AI.
  */
 function chunkText(text: string): string[] {
-  const cleanText = text
+  return text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>?/gm, '')
-    .trim();
-
-  if (!cleanText) return [];
-
-  // Split by punctuation but keep it, then filter out empty/short bits
-  return cleanText
-    .split(/([.!?]+(?:\s+|\n+|$))/)
-    .reduce((acc: string[], part, i) => {
-      if (i % 2 === 0) {
-        if (part.trim()) acc.push(part.trim());
-      } else {
-        if (acc.length > 0) acc[acc.length - 1] += part.trim();
-      }
-      return acc;
-    }, [])
-    .filter(s => s.length > 1);
+    .split(/\n\n/)
+    .map(p => p.trim())
+    .filter(p => p.length > 1);
 }
 
 /**
- * Initiates the sequential reading process.
+ * Initiates the sequential narration process.
+ * Processes paragraphs one-by-one to maintain responsiveness.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
-  // If already speaking, stop first
+  // 1. Force stop existing streams
   stopTextToSpeech();
 
-  const textQueue = chunkText(fullText);
-  if (textQueue.length === 0) return;
+  const paragraphs = chunkText(fullText);
+  if (paragraphs.length === 0) return;
 
   isSpeakingGlobal = true;
   abortController = new AbortController();
 
   try {
-    for (let i = 0; i < textQueue.length; i++) {
+    for (let i = 0; i < paragraphs.length; i++) {
       if (!isSpeakingGlobal) break;
 
-      const url = await fetchAudioBlobUrl(textQueue[i], options, abortController.signal);
-      
-      await new Promise<void>((resolve, reject) => {
-        if (!isSpeakingGlobal) {
-          URL.revokeObjectURL(url);
-          return resolve();
-        }
+      // 2. Notify UI of progress
+      if (options.onStartChunk) options.onStartChunk(i);
 
-        const audio = new Audio(url);
+      // 3. Fetch current chunk audio via AI flow
+      const { audioDataUri } = await generateAudio(paragraphs[i], options.voice);
+      
+      // Safety check after network delay
+      if (!isSpeakingGlobal) break;
+
+      // 4. Handle playback
+      await new Promise<void>((resolve, reject) => {
+        const audio = new Audio(audioDataUri);
         currentAudio = audio;
 
         audio.onended = () => {
-          URL.revokeObjectURL(url);
+          currentAudio = null;
           resolve();
         };
 
         audio.onerror = () => {
-          const mediaError = audio.error;
-          URL.revokeObjectURL(url);
-          const errorMsg = mediaError 
-            ? `Audio Error ${mediaError.code}: ${mediaError.message || 'Source not supported'}` 
-            : 'Unknown playback error';
-          reject(new Error(errorMsg));
+          currentAudio = null;
+          reject(new Error("Playback failure on segment " + i));
         };
 
         audio.play().catch(err => {
-          URL.revokeObjectURL(url);
-          if (err.name === 'AbortError') resolve();
+          if (err.name === 'AbortError' || !isSpeakingGlobal) resolve();
           else reject(err);
         });
       });
     }
   } catch (error: any) {
     if (error.name !== 'AbortError' && isSpeakingGlobal) {
-      console.error("TTS Playback Error:", error.message || error);
+      console.error("AI Narration Error:", error.message || error);
     }
   } finally {
     // Only reset global flag if we weren't interrupted by a new request

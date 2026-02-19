@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, Square } from 'lucide-react';
@@ -9,9 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { saveToLocalHistory } from '@/lib/local-history-utils';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface CloudReaderClientProps {
   id: string;
@@ -50,45 +50,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   }, [isSpeaking]);
 
   /**
-   * Decoupled Pre-fetching logic.
-   */
-  const preFetchChapters = useCallback(async (start: number, count: number = 3) => {
-    if (!firestore || !id || isOfflineMode) return;
-    
-    const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
-      .filter(n => n > 0);
-    
-    const missing = targetNumbers.filter(n => !chaptersCache[n]);
-    
-    if (missing.length > 0) {
-      if (count > 3) setIsBuffering(true);
-      try {
-        const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        const q = query(chaptersCol, where('chapterNumber', 'in', missing.slice(0, 10)));
-        const snap = await getDocs(q);
-        const newEntries: Record<number, any> = {};
-        snap.docs.forEach(d => {
-          const data = d.data();
-          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
-        });
-        setChaptersCache(prev => ({ ...prev, ...newEntries }));
-      } catch (e) {
-        console.warn("Background buffer failed", e);
-      } finally {
-        setIsBuffering(false);
-      }
-    }
-  }, [firestore, id, chaptersCache, isOfflineMode]);
-
-  // Effect to trigger buffering separately from loading
-  useEffect(() => {
-    if (!isLoading && !error) {
-      preFetchChapters(currentChapterNum + 1, 3);
-    }
-  }, [currentChapterNum, isLoading, error, preFetchChapters]);
-
-  /**
-   * Primary Loading Effect.
+   * Primary Content Loading.
+   * Decoupled from buffering to prevent state-dependency loops.
    */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
@@ -109,7 +72,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           const bookRef = doc(firestore, 'books', id);
           const snapshot = await getDoc(bookRef);
           if (!snapshot.exists()) {
-            setError('Document not found.');
+            setError('Manuscript not found in the global library.');
             setIsLoading(false);
             return;
           }
@@ -134,7 +97,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           setError(`Chapter ${currentChapterNum} is currently unavailable.`);
         }
       } catch (err: any) {
-        console.error("Chapter load failed", err);
+        console.error("Chapter load failure:", err);
         setError('Connection interrupted.');
       } finally {
         setIsLoading(false);
@@ -144,6 +107,39 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     loadChapter();
     stopTextToSpeech();
   }, [firestore, id, currentChapterNum, isOfflineMode, metadata]);
+
+  /**
+   * Predictive Buffering Effect.
+   * Runs independently of the primary loader to avoid infinite re-renders.
+   */
+  useEffect(() => {
+    if (isOfflineMode || !firestore || !id || isLoading) return;
+
+    const bufferAhead = async () => {
+      const nextNumbers = [currentChapterNum + 1, currentChapterNum + 2, currentChapterNum + 3];
+      const missing = nextNumbers.filter(n => !chaptersCache[n] && n > 0);
+      
+      if (missing.length === 0) return;
+
+      try {
+        const chaptersCol = collection(firestore, 'books', id, 'chapters');
+        const q = query(chaptersCol, where('chapterNumber', 'in', missing));
+        const snap = await getDocs(q);
+        
+        const newEntries: Record<number, any> = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
+        });
+        
+        setChaptersCache(prev => ({ ...prev, ...newEntries }));
+      } catch (e) {
+        console.warn("Predictive buffer failed:", e);
+      }
+    };
+
+    bufferAhead();
+  }, [currentChapterNum, firestore, id, isOfflineMode, isLoading]);
 
   const updateHistory = (metaOverride?: any) => {
     const meta = metaOverride || metadata;
@@ -182,12 +178,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    const textToRead = (chData.content || '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]*>?/gm, '')
-      .trim();
-
-    playTextToSpeech(textToRead, voiceOptions);
+    // Pass the specific voice choice to the sequential engine
+    playTextToSpeech(chData.content, { voice: voiceOptions.voice });
   };
 
   if (isOfflineMode) {
@@ -244,24 +236,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => preFetchChapters(currentChapterNum + 1, 10)}
-              className="rounded-full h-9 px-4 text-[10px] font-black uppercase tracking-widest gap-2 border-primary/20 hover:bg-primary/5 transition-all shadow-sm"
-              disabled={isBuffering}
-            >
-              {isBuffering ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : <Zap className="h-3 w-3 text-primary" />}
-              {isBuffering ? "Buffering..." : "Buffer 10"}
-            </Button>
-            <div className="h-4 w-px bg-border/50 mx-1" />
             <VoiceSettingsPopover />
             <Button 
               variant="outline" 
               size="icon" 
               className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
               onClick={() => handleReadAloud(0)} 
-              title={isSpeaking ? "Stop" : "Read Aloud"}
+              title={isSpeaking ? "Stop Narration" : "Read Aloud"}
             >
               {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
             </Button>

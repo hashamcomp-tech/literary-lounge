@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Settings2, Volume2, Globe, Gauge, Play, Loader2 } from 'lucide-react';
+import { Volume2, Globe, Play, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -15,31 +15,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { playTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 
 export interface VoiceSettings {
-  lang: string;
-  rate: string;
+  voice: string;
 }
 
-const LANGUAGES = [
-  { label: 'English (US)', value: 'en-us' },
-  { label: 'English (UK)', value: 'en-gb' },
-  { label: 'English (AU)', value: 'en-au' },
-  { label: 'English (CA)', value: 'en-ca' },
-  { label: 'Spanish (ES)', value: 'es-es' },
-  { label: 'French (FR)', value: 'fr-fr' },
+const VOICES = [
+  { label: 'Algenib (Neutral)', value: 'Algenib' },
+  { label: 'Achernar (Deep)', value: 'Achernar' },
+  { label: 'Hamal (Soft)', value: 'Hamal' },
+  { label: 'Rigel (Commanding)', value: 'Rigel' },
+  { label: 'Fenrir (Expressive)', value: 'Fenrir' },
 ];
 
 export function VoiceSettingsPopover() {
   const { toast } = useToast();
   const [isTesting, setIsTesting] = useState(false);
   const [settings, setSettings] = useState<VoiceSettings>({
-    lang: 'en-us',
-    rate: '0',
+    voice: 'Algenib',
   });
 
   useEffect(() => {
@@ -62,12 +58,12 @@ export function VoiceSettingsPopover() {
   const handleTestVoice = async () => {
     setIsTesting(true);
     try {
-      await playTextToSpeech("Welcome to the Literary Lounge. This is your selected reading voice.", settings);
+      await playTextToSpeech("Welcome to the Literary Lounge. This is your selected AI narration voice.", { voice: settings.voice });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Test Failed",
-        description: err.message || "Failed to generate test audio."
+        title: "Narration Unavailable",
+        description: err.message || "Failed to initialize the AI voice."
       });
     } finally {
       setIsTesting(false);
@@ -91,57 +87,33 @@ export function VoiceSettingsPopover() {
           <div className="space-y-2">
             <h4 className="font-headline font-black text-lg flex items-center gap-2">
               <Volume2 className="h-5 w-5 text-primary" />
-              Voice Settings
+              AI Voice Settings
             </h4>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">
-              Customize your reading voice
+              Powered by Gemini Flash
             </p>
           </div>
 
           <div className="space-y-4 pt-4 border-t">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                <Globe className="h-3 w-3" /> Language & Accent
+                <Globe className="h-3 w-3" /> Voice Profile
               </Label>
               <Select 
-                value={settings.lang} 
-                onValueChange={(lang) => updateSettings({ lang })}
+                value={settings.voice} 
+                onValueChange={(voice) => updateSettings({ voice })}
               >
                 <SelectTrigger className="rounded-xl border-muted bg-muted/20">
-                  <SelectValue placeholder="Select Language" />
+                  <SelectValue placeholder="Select Voice" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
-                  {LANGUAGES.map((lang) => (
-                    <SelectItem key={lang.value} value={lang.value}>
-                      {lang.label}
+                  {VOICES.map((v) => (
+                    <SelectItem key={v.value} value={v.value}>
+                      {v.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                  <Gauge className="h-3 w-3" /> Speech Rate
-                </Label>
-                <span className="text-[10px] font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                  {settings.rate}
-                </span>
-              </div>
-              <Slider
-                value={[parseInt(settings.rate)]}
-                min={-10}
-                max={10}
-                step={1}
-                onValueChange={([val]) => updateSettings({ rate: val.toString() })}
-                className="py-4"
-              />
-              <div className="flex justify-between text-[8px] font-black uppercase tracking-widest opacity-40">
-                <span>Slow</span>
-                <span>Normal</span>
-                <span>Fast</span>
-              </div>
             </div>
 
             <Button 

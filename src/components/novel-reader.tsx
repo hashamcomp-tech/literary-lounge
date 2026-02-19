@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Square, Loader2 } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -12,11 +12,8 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { useUser, useFirestore } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
 import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
-import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 interface NovelReaderProps {
@@ -26,7 +23,6 @@ interface NovelReaderProps {
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { toast } = useToast();
   const { user } = useUser();
   const db = useFirestore();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
@@ -88,13 +84,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     const savedSettings = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
     
-    const paragraphs = currentChapter.content
-      .split(/\n\n/)
-      .map(p => p.replace(/<[^>]*>?/gm, '').trim())
-      .filter(p => p.length > 0);
-
-    const textToRead = paragraphs.slice(startIndex).join('\n\n');
-    playTextToSpeech(textToRead, voiceOptions);
+    // Use the robust sequential AI engine
+    playTextToSpeech(currentChapter.content, { voice: voiceOptions.voice });
   };
 
   if (!mounted) return null;
@@ -115,16 +106,16 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               </Button>
 
               <div className="flex gap-2">
+                <VoiceSettingsPopover />
                 <Button 
                   variant="outline" 
                   size="icon" 
                   className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
                   onClick={() => handleReadAloud(0)}
-                  title={isSpeaking ? "Stop" : "Read Aloud"}
+                  title={isSpeaking ? "Stop Narration" : "Read Aloud"}
                 >
                   {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
-                <VoiceSettingsPopover />
                 <Link href={`/chat/${novel.id}`}>
                   <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5" title="Reader Lounge">
                     <MessageSquare className="h-4 w-4" />
