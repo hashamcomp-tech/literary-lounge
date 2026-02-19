@@ -29,6 +29,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: '**.vercel-storage.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
   // Ensure the app can build and deploy even with non-critical lint/type errors
