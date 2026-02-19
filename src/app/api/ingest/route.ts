@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * @fileOverview High-reliability EPUB Extraction API.
- * Extracts structured chapters from digital volumes using server-side decompression.
+ * Extracts structured chapters and preserves intended paragraph spacing.
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
@@ -43,13 +43,47 @@ export async function POST(req: NextRequest) {
             return new Promise<{ title: string; content: string; order: number }>((res) => {
               epub.getChapter(item.id, (err, text) => {
                 if (err || !text) {
-                  res({ title: `Chapter ${i + 1}`, content: '[Empty or Encrypted Content]', order: i });
+                  res({ title: item.title || `Chapter ${i + 1}`, content: '', order: i });
                   return;
                 }
 
-                // Sanitize XHTML content using JSDOM
+                // 4. Sanitize XHTML and Preserve Intended Paragraphs
                 const dom = new JSDOM(text);
-                const chapterText = dom.window.document.body.textContent || '';
+                const doc = dom.window.document;
+                
+                // Remove style and script elements that might contain hidden text
+                doc.querySelectorAll('style, script').forEach(el => el.remove());
+
+                // Strategy: Identify the publisher's intended paragraph tags (<p>)
+                const pTags = doc.querySelectorAll('p');
+                let chapterText = '';
+
+                if (pTags.length > 5) {
+                  // Standard path: Extract text from <p> tags and join with double newlines
+                  chapterText = Array.from(pTags)
+                    .map(p => p.textContent?.trim())
+                    .filter(Boolean)
+                    .join('\n\n');
+                } else {
+                  // Fallback path: If <p> tags are missing, handle <div> or <br/> based structures
+                  // Replace <br> with newlines
+                  doc.querySelectorAll('br').forEach(br => {
+                    const textNode = doc.createTextNode('\n');
+                    br.parentNode?.replaceChild(textNode, br);
+                  });
+
+                  // Extract from any block-level elements
+                  const blockElements = doc.querySelectorAll('div, h1, h2, h3, h4, h5, h6, li');
+                  if (blockElements.length > 0) {
+                    chapterText = Array.from(blockElements)
+                      .map(el => el.textContent?.trim())
+                      .filter(Boolean)
+                      .join('\n\n');
+                  } else {
+                    // Final fallback
+                    chapterText = doc.body.textContent || '';
+                  }
+                }
 
                 res({
                   title: item.title || `Chapter ${i + 1}`,
@@ -62,7 +96,7 @@ export async function POST(req: NextRequest) {
 
           const results = await Promise.all(chapterPromises);
           
-          // 4. Sort results to match intended reading sequence
+          // 5. Sort results to match intended reading sequence
           const sortedChapters = results
             .sort((a, b) => a.order - b.order)
             .map(({ title, content }) => ({ title, content }));
