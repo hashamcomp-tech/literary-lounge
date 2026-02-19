@@ -28,20 +28,32 @@ export function VoiceSettingsPopover() {
   const { toast } = useToast();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [settings, setSettings] = useState<VoiceSettings>({
-    voice: '', // Default to empty string (System Default)
+    voice: '', // Initialized empty, will be set to Daniel by default logic if needed
   });
 
   const loadVoices = () => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       const available = window.speechSynthesis.getVoices();
       
-      // Shorten the list to the most used English variants for literature
-      const commonLocales = ['en-US', 'en-GB', 'en-AU', 'en-IN', 'en-CA'];
+      // Filter strictly for Daniel, Karen, and Rishi
+      const targetNames = ['daniel', 'karen', 'rishi'];
       const filtered = available.filter(v => 
-        commonLocales.some(locale => v.lang.startsWith(locale))
+        targetNames.some(name => v.name.toLowerCase().includes(name))
       );
       
-      setVoices(filtered.sort((a, b) => a.name.localeCompare(b.name)));
+      const sortedVoices = filtered.sort((a, b) => a.name.localeCompare(b.name));
+      setVoices(sortedVoices);
+
+      // Default Logic: Set Daniel as default if no preference is currently saved
+      const saved = localStorage.getItem('lounge-voice-settings');
+      if (!saved && sortedVoices.length > 0) {
+        const daniel = sortedVoices.find(v => v.name.toLowerCase().includes('daniel'));
+        if (daniel) {
+          const defaultSettings = { voice: daniel.voiceURI };
+          setSettings(defaultSettings);
+          localStorage.setItem('lounge-voice-settings', JSON.stringify(defaultSettings));
+        }
+      }
     }
   };
 
@@ -99,7 +111,7 @@ export function VoiceSettingsPopover() {
               Narration Settings
             </h4>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">
-              Powered by Browser Native Voice
+              Exclusive Voice Profiles
             </p>
           </div>
 
@@ -113,21 +125,18 @@ export function VoiceSettingsPopover() {
                 onValueChange={(voice) => updateSettings({ voice })}
               >
                 <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-xs">
-                  <SelectValue placeholder="System Default" />
+                  <SelectValue placeholder="Select Profile" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl max-h-60">
-                  <SelectItem value="system-default" className="text-xs font-bold">
-                    System Default
-                  </SelectItem>
                   {voices.map((v) => (
-                    <SelectItem key={v.voiceURI} value={v.voiceURI} className="text-xs">
-                      {v.name} ({v.lang})
+                    <SelectItem key={v.voiceURI} value={v.voiceURI} className="text-xs font-bold">
+                      {v.name}
                     </SelectItem>
                   ))}
                   {voices.length === 0 && (
                     <div className="p-2 text-xs text-muted-foreground flex items-center gap-2">
                       <RefreshCw className="h-3 w-3 animate-spin" />
-                      Loading common voices...
+                      Searching for profiles...
                     </div>
                   )}
                 </SelectContent>
