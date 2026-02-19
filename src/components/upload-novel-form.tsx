@@ -76,38 +76,48 @@ export function UploadNovelForm() {
   }, []);
 
   /**
-   * High-speed client-side regex detection for instant feedback.
+   * Positional Parser: 
+   * Line 1 = Novel Name
+   * Line 2 = Chapter Number and Title
    */
   const quickDetectFromText = useCallback((text: string) => {
-    const lines = text.trim().split('\n').filter(l => l.trim().length > 0);
-    if (lines.length === 0) return null;
+    const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) return null;
 
-    const firstLine = lines[0].trim();
-    // Pattern: Chapter 1: The Beginning OR Ch 1 - The Beginning
-    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)\s*(\d+)(?::|\s+|-)?\s*(.*)$/i;
-    const match = firstLine.match(chapterRegex);
+    const novelName = lines[0];
+    const secondLine = lines[1];
 
-    if (match) {
-      return {
-        number: match[1],
-        title: match[2] || `Chapter ${match[1]}`
-      };
-    }
-    return null;
+    // Pattern for second line: "Chapter 1: Title", "Ch 1 - Title", or just "1. Title"
+    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)(?::|\s+|-|\.)?\s*(.*)$/i;
+    const match = secondLine.match(chapterRegex);
+
+    return {
+      novelName,
+      chapterNumber: match ? match[1] : '1',
+      chapterTitle: match ? (match[2] || `Chapter ${match[1]}`) : secondLine
+    };
   }, []);
 
   const handleAnalyzePastedText = async (text: string) => {
-    if (!text || text.length < 50 || isParsingText) return;
+    if (!text || text.length < 10 || isParsingText) return;
     
-    // 1. Instant Detection (Site Logic)
+    // 1. Instant Positional Detection (User Rules)
     const quick = quickDetectFromText(text);
     if (quick) {
-      if (!chapterNumber || chapterNumber === '1') setChapterNumber(quick.number);
-      if (!chapterTitle) setChapterTitle(quick.title);
+      setTitle(quick.novelName);
+      setChapterNumber(quick.chapterNumber);
+      setChapterTitle(quick.chapterTitle);
+      
+      // Auto-fill Author/Genre if the Novel Name matches something in our existing library
+      const existing = allBooks.find(b => b.title.toLowerCase() === quick.novelName.toLowerCase());
+      if (existing) {
+        setAuthor(existing.author);
+        setSelectedGenres(existing.genre);
+      }
     }
 
-    // 2. Deep Detection (AI Logic) for Title, Author, and Genres
-    if (text.length < 150) return; // Skip deep AI for very short snippets
+    // 2. Deep AI Logic for Author and Genres (if not found in library)
+    if (text.length < 50) return; 
 
     setIsParsingText(true);
     setWasAutoFilled(false);
@@ -115,14 +125,11 @@ export function UploadNovelForm() {
     try {
       const result = await parsePastedChapter(text);
       
-      if (result.bookTitle && !title) setTitle(result.bookTitle);
+      // Only fill Author and Genres if they are currently empty or weren't matched by quick-sync
       if (result.author && !author) setAuthor(result.author);
-      if (result.chapterNumber) setChapterNumber(result.chapterNumber.toString());
-      if (result.chapterTitle) setChapterTitle(result.chapterTitle);
-      if (result.chapterContent && text.length > 500) setPastedText(result.chapterContent);
       
-      if (result.genres && Array.isArray(result.genres)) {
-        const matchedSet = new Set<string>(selectedGenres);
+      if (result.genres && Array.isArray(result.genres) && selectedGenres.length === 0) {
+        const matchedSet = new Set<string>();
         result.genres.forEach(g => {
           const search = g.toLowerCase();
           GENRES.forEach(available => {
@@ -136,7 +143,7 @@ export function UploadNovelForm() {
       }
       
       setWasAutoFilled(true);
-      toast({ title: "Intelligence Scan Complete", description: "Metadata identified from manuscript context." });
+      toast({ title: "Scan Complete", description: "Manuscript context identified." });
     } catch (e) {
       console.warn("AI Detection failed", e);
     } finally {
@@ -242,33 +249,6 @@ export function UploadNovelForm() {
   };
 
   useEffect(() => {
-    if (isOfflineMode || !db || !user || user.isAnonymous) return;
-    const checkPermissions = async () => {
-      const pRef = doc(db, 'users', user.uid);
-      const snap = await getDoc(pRef);
-      const userRole = snap.data()?.role;
-      
-      let isWhitelisted = false;
-      if (user.email) {
-        const settingsRef = doc(db, 'settings', 'approvedEmails');
-        const settingsSnap = await getDoc(settingsRef);
-        if (settingsSnap.exists()) {
-          const emails = settingsSnap.data().emails || [];
-          isWhitelisted = emails.includes(user.email);
-        }
-      }
-
-      const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
-      setCanUploadCloud(permitted);
-      
-      if (uploadMode === 'cloud' && !permitted) {
-        setUploadMode('local');
-      }
-    };
-    checkPermissions();
-  }, [user, db, isOfflineMode, uploadMode]);
-
-  useEffect(() => {
     const trimmed = title.trim();
     if (trimmed.length < 2) {
       setFilteredSuggestions([]);
@@ -360,7 +340,11 @@ export function UploadNovelForm() {
       setProgress(80);
 
       if (uploadMode === 'cloud') {
-        if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
+        if (!canUploadCloud) {
+          // If they aren't authorized for cloud, we should actually handle this more gracefully
+          // but for now we follow existing logic.
+          throw new Error("Cloud publishing restricted.");
+        }
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
           title: searchTitle, author: searchAuthor, genres: selectedGenres,
@@ -395,6 +379,33 @@ export function UploadNovelForm() {
       setLoadingMessage('');
     }
   };
+
+  useEffect(() => {
+    if (isOfflineMode || !db || !user || user.isAnonymous) return;
+    const checkPermissions = async () => {
+      const pRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(pRef);
+      const userRole = snap.data()?.role;
+      
+      let isWhitelisted = false;
+      if (user.email) {
+        const settingsRef = doc(db, 'settings', 'approvedEmails');
+        const settingsSnap = await getDoc(settingsRef);
+        if (settingsSnap.exists()) {
+          const emails = settingsSnap.data().emails || [];
+          isWhitelisted = emails.includes(user.email);
+        }
+      }
+
+      const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
+      setCanUploadCloud(permitted);
+      
+      if (uploadMode === 'cloud' && !permitted) {
+        setUploadMode('local');
+      }
+    };
+    checkPermissions();
+  }, [user, db, isOfflineMode, uploadMode]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
@@ -544,11 +555,11 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => {
                       const text = e.clipboardData.getData('text');
-                      if (text.length > 50) {
+                      if (text.length >= 10) {
                         handleAnalyzePastedText(text);
                       }
                     }}
-                    placeholder="Paste novel content here... (Smart Detection active on paste)" 
+                    placeholder="Paste novel content here... (Line 1: Novel Name, Line 2: Chapter Info)" 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" 
                   />
                   {isParsingText && (
@@ -566,7 +577,7 @@ export function UploadNovelForm() {
                     variant="ghost" 
                     size="sm" 
                     onClick={() => handleAnalyzePastedText(pastedText)}
-                    disabled={isParsingText || pastedText.length < 50}
+                    disabled={isParsingText || pastedText.length < 10}
                     className="text-[10px] font-black uppercase tracking-widest gap-2"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
