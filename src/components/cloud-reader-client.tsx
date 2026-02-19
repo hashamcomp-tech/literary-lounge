@@ -276,17 +276,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
           <div className="flex items-center gap-2">
-            <VoiceSettingsPopover />
-            <Button 
-              variant="outline" 
-              size="icon" 
-              className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-              onClick={() => handleReadAloud()} 
-              title={isSpeaking ? "Stop Narration" : "Read Aloud"}
-            >
-              {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full">
+            <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full shadow-sm">
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
             </Button>
           </div>
@@ -341,6 +331,20 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </Button>
         </div>
       </footer>
+
+      {/* Floating Audio Controls */}
+      <div className="fixed bottom-10 right-10 z-50 flex items-center gap-3 bg-card/80 backdrop-blur-md border border-border/50 p-3 rounded-[2rem] shadow-2xl animate-in slide-in-from-right-4 duration-500">
+        <VoiceSettingsPopover />
+        <Button 
+          variant="default" 
+          size="icon" 
+          className={`h-14 w-14 rounded-full shadow-lg transition-all active:scale-95 ${isSpeaking ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground'}`}
+          onClick={() => handleReadAloud()} 
+          title={isSpeaking ? "Stop Narration" : "Read Aloud"}
+        >
+          {isSpeaking ? <Square className="h-6 w-6 fill-current" /> : <Volume2 className="h-6 w-6" />}
+        </Button>
+      </div>
     </div>
   );
 }
