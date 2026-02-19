@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Volume2, Globe, Play, RefreshCw } from 'lucide-react';
+import { Volume2, Globe, Play, RefreshCw, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -100,7 +100,7 @@ export function VoiceSettingsPopover() {
           className="rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
           title="Voice Settings"
         >
-          <Volume2 className="h-4 w-4" />
+          <Settings className="h-4 w-4" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 rounded-2xl shadow-2xl p-6" align="end">
