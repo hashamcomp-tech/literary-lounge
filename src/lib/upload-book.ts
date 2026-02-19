@@ -7,7 +7,7 @@ import { uploadCoverImage } from "./upload-cover";
  * Removes common noise like ISBNs, page numbers, and word counts.
  * Handles formatted numbers like [1,473 words].
  */
-function cleanContent(text: string): string {
+export function cleanContent(text: string): string {
   if (!text) return "";
   return text
     .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")

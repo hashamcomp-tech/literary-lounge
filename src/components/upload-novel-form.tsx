@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
-import { uploadBookToCloud } from '@/lib/upload-book';
+import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
 import { dataURLtoFile } from '@/lib/image-utils';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -66,18 +66,32 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
+  // Remember settings
   useEffect(() => {
-    const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
-    if (savedMode === 'cloud' || savedMode === 'local') {
-      setUploadMode(savedMode);
+    if (typeof window !== 'undefined') {
+      const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
+      if (savedMode === 'cloud' || savedMode === 'local') {
+        setUploadMode(savedMode);
+      }
+      const savedSource = localStorage.getItem("lounge-source-mode") as 'file' | 'text';
+      if (savedSource === 'file' || savedSource === 'text') {
+        setSourceMode(savedSource);
+      }
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("lounge-upload-mode", uploadMode);
+  }, [uploadMode]);
+
+  useEffect(() => {
+    localStorage.setItem("lounge-source-mode", sourceMode);
+  }, [sourceMode]);
 
   /**
    * Positional Parser: 
    * Line 1 = Novel Name
    * Line 2 = Chapter Number and Title
-   * Implements strict cleanup: ignores " - [number] : " after identifying the primary index.
    */
   const quickDetectFromText = useCallback((text: string) => {
     const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -108,8 +122,8 @@ export function UploadNovelForm() {
   }, []);
 
   /**
-   * Handles metadata detection without AI.
-   * Only triggers if Line 1 is a pre-existing book and Line 2 contains a Chapter pattern.
+   * Implementation Protocol: 
+   * Only triggers if Line 1 is a known book and Line 2 contains a Chapter pattern.
    */
   const handleAnalyzePastedText = (text: string) => {
     if (!text || text.length < 10) return;
@@ -123,7 +137,8 @@ export function UploadNovelForm() {
     // 1. Condition: Line 2 must contain "Chapter" followed by a number
     const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
     if (!chapterRegex.test(potentialChapterLine)) {
-      return; // Do not implement auto-functions for this structure
+      setWasAutoFilled(false);
+      return; 
     }
 
     // 2. Condition: Line 1 must match a pre-existing book name
@@ -147,9 +162,11 @@ export function UploadNovelForm() {
         setWasAutoFilled(true);
         toast({ 
           title: "Library Match Detected", 
-          description: `Sequence recognized for "${existing.title}". Headers will be stripped from content.` 
+          description: `Series metadata synced for "${existing.title}".` 
         });
       }
+    } else {
+      setWasAutoFilled(false);
     }
   };
 
@@ -203,7 +220,6 @@ export function UploadNovelForm() {
   }, [selectedFile, toast]);
 
   useEffect(() => {
-    localStorage.setItem("lounge-upload-mode", uploadMode);
     fetchLibraryIndex();
   }, [uploadMode, db]);
 
@@ -319,7 +335,7 @@ export function UploadNovelForm() {
           setLoadingMessage('Content Structured...');
           setProgress(60);
         } else {
-          manualContent = await selectedFile.text();
+          manualContent = cleanContent(await selectedFile.text());
         }
       } else {
         // Source is 'text' (pastedText)
@@ -341,7 +357,7 @@ export function UploadNovelForm() {
           }
           processedContent = lines.slice(linesToSkip).join('\n').trim();
         }
-        manualContent = processedContent;
+        manualContent = cleanContent(processedContent);
       }
 
       setLoadingMessage('Syncing with Lounge...');
@@ -367,10 +383,20 @@ export function UploadNovelForm() {
         });
         if (preParsedChapters) {
           for (let i = 0; i < preParsedChapters.length; i++) {
-            await saveLocalChapter({ bookId, chapterNumber: i + 1, content: preParsedChapters[i].content, title: preParsedChapters[i].title });
+            await saveLocalChapter({ 
+              bookId, 
+              chapterNumber: i + 1, 
+              content: cleanContent(preParsedChapters[i].content), 
+              title: preParsedChapters[i].title 
+            });
           }
         } else if (manualContent) {
-          await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: manualContent, title: chapterTitle });
+          await saveLocalChapter({ 
+            bookId, 
+            chapterNumber: parseInt(chapterNumber), 
+            content: cleanContent(manualContent), 
+            title: chapterTitle 
+          });
         }
       }
 
@@ -567,7 +593,7 @@ export function UploadNovelForm() {
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" disabled={loading}>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" disabled={loading || (!selectedFile && !pastedText.trim())}>
               {loading && (
                 <div className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0" style={{ height: `${progress}%` }}>
                   <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-[#1e293b] animate-liquid-wave opacity-80" />
