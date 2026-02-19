@@ -1,3 +1,4 @@
+
 /**
  * @fileOverview Native Browser Narration Engine.
  * Utilizes the Web Speech API (speechSynthesis) for zero-latency, unlimited narration.
@@ -72,7 +73,8 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
       const utterance = new SpeechSynthesisUtterance(para);
       
       // Configure Voice
-      if (options.voice) {
+      // Handle "system-default" or empty string as browser default
+      if (options.voice && options.voice !== '' && options.voice !== 'system-default') {
         const voices = window.speechSynthesis.getVoices();
         const selected = voices.find(v => v.voiceURI === options.voice || v.name === options.voice);
         if (selected) utterance.voice = selected;
@@ -99,7 +101,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
           }
           
           // Reset global flag on actual errors or end of sequence
-          if (index === paragraphs.length - 1 || !ignoreErrors.includes(event.error)) {
+          if (index === paragraphs.length - 1) {
             isSpeakingGlobal = false;
           }
         }
