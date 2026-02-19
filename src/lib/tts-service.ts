@@ -1,6 +1,6 @@
 /**
  * @fileOverview Overlapping Sequential TTS Engine with Anticipatory Triggering.
- * Uses dual audio elements to allow the next line to start 0.5s before the current one ends,
+ * Uses dual audio elements to allow the next line to start 0.7s before the current one ends,
  * creating a seamless, human-like reading cadence.
  */
 
@@ -159,10 +159,10 @@ async function playChunk(index: number): Promise<void> {
     currentAudio.onended = null;
     currentAudio.onerror = null;
 
-    // ANTICIPATORY TRIGGER: Start next line 0.5s before current ends
+    // ANTICIPATORY TRIGGER: Start next line 0.7s before current ends
     currentAudio.ontimeupdate = () => {
       if (currentAudio.duration > 0 && 
-          currentAudio.currentTime >= currentAudio.duration - 0.5 && 
+          currentAudio.currentTime >= currentAudio.duration - 0.7 && 
           !nextTriggered) {
         nextTriggered = true;
         playChunk(index + 1);
