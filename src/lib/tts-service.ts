@@ -1,26 +1,29 @@
 /**
  * @fileOverview Native Browser Narration Engine.
  * Utilizes the Web Speech API (speechSynthesis) for zero-latency, unlimited narration.
- * Implements Sentence-Level Chunking and Progress Persistence.
+ * Implements Sentence-Level Chunking, Progress Persistence, and Custom Pronunciation.
  */
 
+export interface PronunciationMap {
+  [word: string]: string;
+}
+
 export interface TTSOptions {
-  voice?: string; // Voice URI or Name
+  voice?: string; 
   rate?: number;
   pitch?: number;
-  contextId?: string; // Unique identifier to save/resume progress (e.g. "cloud-123-ch-1")
+  contextId?: string; 
 }
 
 let isSpeakingGlobal = false;
 let currentSessionId = 0;
 
 /**
- * Instantly stops all browser narration and invalidates pending callbacks.
- * @param resetProgress If true, clears the saved index for the provided contextId.
+ * Instantly stops all browser narration.
  */
 export function stopTextToSpeech(resetProgress = false, contextId?: string): void {
   isSpeakingGlobal = false;
-  currentSessionId++; // Invalidate any callbacks from previous sessions
+  currentSessionId++; 
   
   if (typeof window !== 'undefined') {
     if (window.speechSynthesis) {
@@ -33,11 +36,39 @@ export function stopTextToSpeech(resetProgress = false, contextId?: string): voi
   }
 }
 
-/**
- * Global status check for the narration engine.
- */
 export function isSpeaking(): boolean {
   return isSpeakingGlobal;
+}
+
+/**
+ * Applies user-defined pronunciations to text.
+ */
+function applyPronunciations(text: string): string {
+  try {
+    const saved = localStorage.getItem('lounge-pronunciations');
+    if (!saved) return text;
+    
+    const map: PronunciationMap = JSON.parse(saved);
+    let processed = text;
+
+    // Sort keys by length descending to prevent partial matches 
+    // (e.g. replacing "fire" before "firebase")
+    const words = Object.keys(map).sort((a, b) => b.length - a.length);
+
+    for (const word of words) {
+      const soundsLike = map[word];
+      if (!word || !soundsLike) continue;
+      
+      // Use word boundary regex for precise matching
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+      processed = processed.replace(regex, soundsLike);
+    }
+
+    return processed;
+  } catch (e) {
+    return text;
+  }
 }
 
 /**
@@ -51,6 +82,7 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
+  // Split by sentence boundaries but keep the punctuation
   const parts = clean.split(/([.!?]\s+)/);
   
   const chunks: string[] = [];
@@ -70,41 +102,32 @@ function chunkText(text: string): string[] {
   return chunks.filter(c => c.length > 1);
 }
 
-/**
- * Helper to create a simple hash of a string to verify if text has changed.
- */
 function getTextHash(text: string): string {
   return text.substring(0, 50) + text.length;
 }
 
 /**
- * Initiates the sequential narration process with progress persistence.
+ * Initiates the sequential narration process.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
-  if (typeof window === 'undefined' || !window.speechSynthesis) {
-    console.warn("Speech Synthesis not supported in this browser.");
-    return;
-  }
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
-  // 1. Reset state and start a new session
-  // We don't reset progress here because we might be resuming
   stopTextToSpeech(false);
   
   const sessionId = currentSessionId;
-  const sentences = chunkText(fullText);
+  const processedText = applyPronunciations(fullText);
+  const sentences = chunkText(processedText);
   if (sentences.length === 0) return;
 
   const contextKey = options.contextId ? `lounge-audio-progress-${options.contextId}` : null;
   let startIndex = 0;
 
-  // 2. Resume logic
   if (contextKey) {
     const saved = localStorage.getItem(contextKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Only resume if the content seems to be the same
-        if (parsed.textHash === getTextHash(fullText)) {
+        if (parsed.textHash === getTextHash(processedText)) {
           startIndex = parsed.index;
         }
       } catch (e) {}
@@ -113,36 +136,38 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
 
   isSpeakingGlobal = true;
 
-  // Small safety delay for the browser to clear the previous cancel()
   setTimeout(() => {
     if (sessionId !== currentSessionId || !isSpeakingGlobal) return;
 
     sentences.forEach((sentence, index) => {
-      // Skip sentences if we are resuming
       if (index < startIndex) return;
 
       const utterance = new SpeechSynthesisUtterance(sentence);
       
-      if (options.voice && options.voice !== '') {
-        const voices = window.speechSynthesis.getVoices();
-        const selected = voices.find(v => v.voiceURI === options.voice || v.name === options.voice);
-        if (selected) utterance.voice = selected;
+      const voices = window.speechSynthesis.getVoices();
+      const selected = voices.find(v => v.voiceURI === options.voice || v.name === options.voice);
+      if (selected) utterance.voice = selected;
+
+      // Real-time check: fetch latest rate from settings for each utterance
+      const savedSettings = localStorage.getItem('lounge-voice-settings');
+      let currentRate = options.rate || 1.0;
+      if (savedSettings) {
+        try { currentRate = JSON.parse(savedSettings).rate || currentRate; } catch (e) {}
       }
 
-      utterance.rate = options.rate || 1.0;
+      utterance.rate = currentRate;
       utterance.pitch = options.pitch || 1.0;
 
       utterance.onstart = () => {
         if (sessionId === currentSessionId && contextKey) {
           localStorage.setItem(contextKey, JSON.stringify({
             index,
-            textHash: getTextHash(fullText)
+            textHash: getTextHash(processedText)
           }));
         }
       };
 
       utterance.onend = () => {
-        // If this was the last sentence, cleanup progress
         if (sessionId === currentSessionId && index === sentences.length - 1) {
           isSpeakingGlobal = false;
           if (contextKey) localStorage.removeItem(contextKey);
@@ -150,14 +175,8 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
       };
 
       utterance.onerror = (event) => {
-        const expectedErrors = ['interrupted', 'canceled'];
-        if (sessionId === currentSessionId) {
-          if (!expectedErrors.includes(event.error)) {
-            console.error("Speech Synthesis Error:", event.error);
-          }
-          if (index === sentences.length - 1) {
-            isSpeakingGlobal = false;
-          }
+        if (sessionId === currentSessionId && index === sentences.length - 1) {
+          isSpeakingGlobal = false;
         }
       };
 
