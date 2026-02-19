@@ -1,7 +1,7 @@
 /**
- * @fileOverview Refined Sequential TTS Engine.
- * Handles long-form content by chunking text into paragraphs and playing them in a queue.
- * This bypasses the 1,000-character API limits and ensures the whole chapter is read.
+ * @fileOverview Refined Sequential TTS Engine with Autoplay Policy handling.
+ * Handles long-form content by chunking text and playing them in a queue.
+ * Reuses a single audio element to maintain "unlocked" status from user gestures.
  */
 
 export interface TTSOptions {
@@ -9,7 +9,13 @@ export interface TTSOptions {
   rate?: string;
 }
 
-let currentAudio: HTMLAudioElement | null = null;
+// Reuse a single audio element to maintain "unlocked" status from user gestures
+let globalAudio: HTMLAudioElement | null = null;
+
+if (typeof window !== 'undefined') {
+  globalAudio = new Audio();
+}
+
 let textQueue: string[] = [];
 let currentQueueIndex = 0;
 let isSpeakingGlobal = false;
@@ -23,13 +29,14 @@ export function stopTextToSpeech(): void {
   textQueue = [];
   currentQueueIndex = 0;
   
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    if (currentAudio.src) {
-      URL.revokeObjectURL(currentAudio.src);
+  if (globalAudio) {
+    globalAudio.pause();
+    globalAudio.currentTime = 0;
+    // Cleanup blob URLs to prevent memory leaks
+    if (globalAudio.src && globalAudio.src.startsWith('blob:')) {
+      URL.revokeObjectURL(globalAudio.src);
     }
-    currentAudio = null;
+    globalAudio.src = "";
   }
 }
 
@@ -44,14 +51,13 @@ export function isSpeaking(): boolean {
  * Internal helper to fetch and play a specific chunk.
  */
 async function playChunk(index: number): Promise<void> {
-  if (!isSpeakingGlobal || index >= textQueue.length) {
+  if (!isSpeakingGlobal || index >= textQueue.length || !globalAudio) {
     isSpeakingGlobal = false;
     return;
   }
 
   const text = textQueue[index];
   if (!text || text.trim().length === 0) {
-    // Skip empty chunks
     return playNextChunk();
   }
 
@@ -75,27 +81,32 @@ async function playChunk(index: number): Promise<void> {
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     
-    // Cleanup previous audio if it exists
-    if (currentAudio && currentAudio.src) {
-      URL.revokeObjectURL(currentAudio.src);
-    }
+    // Revoke previous blob if applicable to keep memory clean
+    const oldSrc = globalAudio.src;
+    
+    globalAudio.src = url;
 
-    const audio = new Audio(url);
-    currentAudio = audio;
-
-    audio.onended = () => {
-      URL.revokeObjectURL(url);
+    // Use global handlers to avoid duplicate event listeners on the persistent element
+    globalAudio.onended = () => {
+      if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
       playNextChunk();
     };
 
-    audio.onerror = () => {
+    globalAudio.onerror = () => {
       console.warn("Audio playback error, attempting next chunk...");
+      if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
       playNextChunk();
     };
 
-    await audio.play();
+    // Since globalAudio was "unlocked" in playTextToSpeech (sync with user click),
+    // subsequent source changes and play() calls are permitted by the browser.
+    await globalAudio.play().catch(err => {
+      console.error("Playback failed after source swap:", err);
+      isSpeakingGlobal = false;
+    });
+
   } catch (error) {
-    console.error("Chunk playback error:", error);
+    console.error("Chunk playback processing error:", error);
     isSpeakingGlobal = false;
   }
 }
@@ -149,7 +160,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
   // Stop any existing session
   stopTextToSpeech();
 
-  if (!fullText || fullText.trim().length === 0) return;
+  if (!fullText || fullText.trim().length === 0 || !globalAudio) return;
 
   // Prepare new session
   currentOptions = options;
@@ -162,6 +173,16 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     return;
   }
 
-  // Start the loop
+  // UNLOCK: Call play() immediately on the persistent audio element 
+  // with a silent source to satisfy Autoplay policies.
+  // This must happen in the same execution context as the user's click.
+  globalAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+  try {
+    await globalAudio.play();
+  } catch (e) {
+    // Proceed regardless of silent play success; playChunk will attempt the first real segment.
+  }
+
+  // Start the actual content queue
   return playChunk(0);
 }
