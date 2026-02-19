@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
@@ -9,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
@@ -23,9 +22,8 @@ interface CloudReaderClientProps {
 /**
  * @fileOverview High-Performance Cloud Reader Client.
  * Implements Predictive Buffering for instantaneous chapter navigation.
+ * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
  * Navigation buttons located at bottom for immersive start.
- * Manual 'Buffer 10' trigger added to header.
- * Features 'Click to Read from Here' paragraph triggers.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -40,6 +38,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isLoading, setIsLoading] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
   const [lastBufferedCount, setLastBufferedCount] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   
@@ -49,6 +48,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     setMounted(true);
     return () => stopTextToSpeech();
   }, []);
+
+  // Sync state with global TTS service
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const speaking = isSpeakingService();
+      if (speaking !== isSpeaking) {
+        setIsSpeaking(speaking);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isSpeaking]);
 
   /**
    * Predictive Buffer: Background pre-fetches next chapters for seamless transition.
@@ -91,7 +101,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (isOfflineMode || !firestore || !id) return;
 
     const loadChapter = async () => {
-      // 1. Instant Cache Check
       if (chaptersCache[currentChapterNum]) {
         setIsLoading(false);
         updateHistory();
@@ -170,20 +179,31 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   };
 
   const handleReadAloud = async (startIndex: number = 0) => {
+    if (isSpeaking && startIndex === 0) {
+      stopTextToSpeech();
+      setIsSpeaking(false);
+      return;
+    }
+
     const chData = chaptersCache[currentChapterNum];
     if (!chData?.content) return;
     
-    const saved = localStorage.getItem('lounge-voice-settings');
-    const voiceOptions = saved ? JSON.parse(saved) : {};
-    
-    const paragraphsArr = (chData.content || '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
-      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-      .filter((p: string) => p.length > 0);
+    setIsSpeaking(true);
+    try {
+      const saved = localStorage.getItem('lounge-voice-settings');
+      const voiceOptions = saved ? JSON.parse(saved) : {};
+      
+      const paragraphsArr = (chData.content || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
+        .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+        .filter((p: string) => p.length > 0);
 
-    const textToRead = paragraphsArr.slice(startIndex).join('\n\n');
-    await playTextToSpeech(textToRead, voiceOptions);
+      const textToRead = paragraphsArr.slice(startIndex).join('\n\n');
+      await playTextToSpeech(textToRead, voiceOptions);
+    } catch (e) {
+      setIsSpeaking(false);
+    }
   };
 
   if (isOfflineMode) {
@@ -258,8 +278,14 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             </Button>
             <div className="h-4 w-px bg-border/50 mx-1" />
             <VoiceSettingsPopover />
-            <Button variant="outline" size="icon" className="rounded-full shadow-sm" onClick={() => handleReadAloud(0)} title="Read Aloud">
-              <Volume2 className="h-4 w-4" />
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
+              onClick={() => handleReadAloud(0)} 
+              title={isSpeaking ? "Stop" : "Read Aloud"}
+            >
+              {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
             </Button>
             <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full">
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}

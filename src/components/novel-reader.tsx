@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -16,7 +15,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import Link from 'next/link';
-import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
@@ -27,7 +26,7 @@ interface NovelReaderProps {
 /**
  * @fileOverview Reader for Mock Collection.
  * Implements 700px optimized width reading experience.
- * Features invisible 'Click to Read from Here' functionality.
+ * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
  */
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
@@ -44,6 +43,17 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     setMounted(true);
     return () => stopTextToSpeech();
   }, []);
+
+  // Sync state with global TTS service
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const speaking = isSpeakingService();
+      if (speaking !== isSpeaking) {
+        setIsSpeaking(speaking);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isSpeaking]);
 
   const currentChapter = novel.chapters[currentChapterIndex];
   const progress = ((currentChapterIndex + 1) / novel.chapters.length) * 100;
@@ -87,6 +97,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   }, [novel.id]);
 
   const handleReadAloud = async (startIndex: number = 0) => {
+    if (isSpeaking && startIndex === 0) {
+      stopTextToSpeech();
+      setIsSpeaking(false);
+      return;
+    }
+
     if (!currentChapter?.content) return;
     
     setIsSpeaking(true);
@@ -102,13 +118,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
         
       await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
+      setIsSpeaking(false);
       toast({
         variant: "destructive",
         title: "Speech Error",
         description: err.message || "Failed to generate speech."
       });
-    } finally {
-      setIsSpeaking(false);
     }
   };
 
@@ -137,8 +152,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   size="icon" 
                   className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
                   onClick={() => handleReadAloud(0)}
-                  disabled={isSpeaking}
-                  title="Read Aloud"
+                  title={isSpeaking ? "Stop" : "Read Aloud"}
                 >
                   {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
                 </Button>

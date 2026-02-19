@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -9,14 +8,14 @@ import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-l
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
-import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
 /**
  * @fileOverview Local Reader Component.
  * Optimized for 700px width, 18px Literata typography.
- * Features invisible 'Click to Read from Here' functionality.
+ * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
  */
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -35,6 +34,17 @@ export default function LocalReader() {
     setMounted(true);
     return () => stopTextToSpeech();
   }, []);
+
+  // Sync state with global TTS service
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const speaking = isSpeakingService();
+      if (speaking !== isSpeaking) {
+        setIsSpeaking(speaking);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [isSpeaking]);
 
   // Fetch book and all chapters once
   useEffect(() => {
@@ -69,6 +79,12 @@ export default function LocalReader() {
   }, [id, currentChapterNum]);
 
   const handleReadAloud = async (startIndex: number = 0) => {
+    if (isSpeaking && startIndex === 0) {
+      stopTextToSpeech();
+      setIsSpeaking(false);
+      return;
+    }
+
     const chapter = allChapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
     if (!chapter?.content) return;
     
@@ -87,13 +103,12 @@ export default function LocalReader() {
       
       await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
+      setIsSpeaking(false);
       toast({
         variant: "destructive",
         title: "Speech Error",
         description: err.message || "Failed to generate speech."
       });
-    } finally {
-      setIsSpeaking(false);
     }
   };
 
@@ -159,10 +174,9 @@ export default function LocalReader() {
                 size="icon" 
                 className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
                 onClick={() => handleReadAloud(0)}
-                disabled={isSpeaking}
-                title="Read Aloud"
+                title={isSpeaking ? "Stop" : "Read Aloud"}
               >
-                <Volume2 className={`h-4 w-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
+                {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
               </Button>
               <VoiceSettingsPopover />
               <Button 
