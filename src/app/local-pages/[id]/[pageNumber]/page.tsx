@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -83,7 +84,10 @@ export default function LocalReader() {
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
     const textToPlay = textOverride || chapter.content;
-    playTextToSpeech(textToPlay, { voice: voiceOptions.voice });
+    playTextToSpeech(textToPlay, { 
+      voice: voiceOptions.voice,
+      rate: voiceOptions.rate || 1.0
+    });
   };
 
   const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {

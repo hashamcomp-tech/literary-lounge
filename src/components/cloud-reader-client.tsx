@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
@@ -185,7 +186,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
     const textToPlay = textOverride || chData.content;
-    playTextToSpeech(textToPlay, { voice: voiceOptions.voice });
+    playTextToSpeech(textToPlay, { 
+      voice: voiceOptions.voice,
+      rate: voiceOptions.rate || 1.0
+    });
   };
 
   const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {

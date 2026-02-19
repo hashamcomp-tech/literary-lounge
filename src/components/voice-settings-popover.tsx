@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Volume2, Globe, Play, RefreshCw, Settings } from 'lucide-react';
+import { Volume2, Globe, Play, RefreshCw, Settings, Gauge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -16,19 +16,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { playTextToSpeech } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 
 export interface VoiceSettings {
   voice: string;
+  rate: number;
 }
 
 export function VoiceSettingsPopover() {
   const { toast } = useToast();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [settings, setSettings] = useState<VoiceSettings>({
-    voice: '', // Initialized empty, will be set to Daniel by default logic if needed
+    voice: '',
+    rate: 1.0,
   });
 
   const loadVoices = () => {
@@ -49,7 +52,7 @@ export function VoiceSettingsPopover() {
       if (!saved && sortedVoices.length > 0) {
         const daniel = sortedVoices.find(v => v.name.toLowerCase().includes('daniel'));
         if (daniel) {
-          const defaultSettings = { voice: daniel.voiceURI };
+          const defaultSettings = { voice: daniel.voiceURI, rate: 1.0 };
           setSettings(defaultSettings);
           localStorage.setItem('lounge-voice-settings', JSON.stringify(defaultSettings));
         }
@@ -59,7 +62,6 @@ export function VoiceSettingsPopover() {
 
   useEffect(() => {
     loadVoices();
-    // Some browsers load voices asynchronously
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
@@ -68,7 +70,10 @@ export function VoiceSettingsPopover() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setSettings(parsed);
+        setSettings({
+          voice: parsed.voice || '',
+          rate: parsed.rate || 1.0
+        });
       } catch (e) {}
     }
   }, []);
@@ -81,7 +86,10 @@ export function VoiceSettingsPopover() {
 
   const handleTestVoice = async () => {
     try {
-      await playTextToSpeech("This is your selected reading voice in the Lounge.", { voice: settings.voice });
+      await playTextToSpeech("This is your selected reading speed and voice in the Lounge.", { 
+        voice: settings.voice,
+        rate: settings.rate
+      });
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -98,7 +106,7 @@ export function VoiceSettingsPopover() {
           variant="outline" 
           size="icon" 
           className="rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
-          title="Voice Settings"
+          title="Narration Settings"
         >
           <Settings className="h-4 w-4" />
         </Button>
@@ -111,20 +119,21 @@ export function VoiceSettingsPopover() {
               Narration Settings
             </h4>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">
-              Exclusive Voice Profiles
+              Custom Reading Experience
             </p>
           </div>
 
-          <div className="space-y-4 pt-4 border-t">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+          <div className="space-y-6 pt-4 border-t">
+            {/* Voice Selection */}
+            <div className="space-y-3">
+              <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
                 <Globe className="h-3 w-3" /> Voice Profile
               </Label>
               <Select 
                 value={settings.voice} 
                 onValueChange={(voice) => updateSettings({ voice })}
               >
-                <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-xs">
+                <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-xs h-11">
                   <SelectValue placeholder="Select Profile" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl max-h-60">
@@ -143,13 +152,38 @@ export function VoiceSettingsPopover() {
               </Select>
             </div>
 
+            {/* Speed Control */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                  <Gauge className="h-3 w-3" /> Reading Speed
+                </Label>
+                <span className="text-xs font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                  {settings.rate.toFixed(2)}x
+                </span>
+              </div>
+              <Slider
+                value={[settings.rate]}
+                min={0.5}
+                max={2.0}
+                step={0.05}
+                onValueChange={([val]) => updateSettings({ rate: val })}
+                className="py-2"
+              />
+              <div className="flex justify-between text-[9px] font-bold text-muted-foreground/50 uppercase tracking-tighter">
+                <span>Slow</span>
+                <span>Normal</span>
+                <span>Fast</span>
+              </div>
+            </div>
+
             <Button 
               variant="secondary" 
-              className="w-full rounded-xl font-bold gap-2 mt-2" 
+              className="w-full h-12 rounded-xl font-bold gap-2 mt-2 shadow-sm" 
               onClick={handleTestVoice}
             >
               <Play className="h-4 w-4" />
-              Test Voice
+              Test Configuration
             </Button>
           </div>
         </div>

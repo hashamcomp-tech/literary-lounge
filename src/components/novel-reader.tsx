@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -85,7 +86,10 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
     
     const textToPlay = textOverride || currentChapter.content;
-    playTextToSpeech(textToPlay, { voice: voiceOptions.voice });
+    playTextToSpeech(textToPlay, { 
+      voice: voiceOptions.voice,
+      rate: voiceOptions.rate || 1.0
+    });
   };
 
   const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {
