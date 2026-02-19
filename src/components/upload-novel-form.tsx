@@ -123,23 +123,35 @@ export function UploadNovelForm() {
     // 1. Instant Positional Detection (User Rules)
     const quick = quickDetectFromText(text);
     if (quick) {
-      setTitle(quick.novelName);
-      setChapterNumber(quick.chapterNumber);
-      setChapterTitle(quick.chapterTitle);
+      // Find the closest match in the library
+      const searchTitle = quick.novelName.toLowerCase();
+      let existing = allBooks.find(b => b.title.toLowerCase() === searchTitle);
       
-      // AUTO-FILL LOGIC:
-      // If the detected Novel Name matches an existing book in our current scope (Cloud or Local),
-      // we inherit the Author and Categories immediately.
-      const existing = allBooks.find(b => b.title.toLowerCase() === quick.novelName.toLowerCase());
+      if (!existing) {
+        // Fuzzy search: starts with or includes
+        existing = allBooks.find(b => 
+          b.title.toLowerCase().includes(searchTitle) || 
+          searchTitle.includes(b.title.toLowerCase())
+        );
+      }
+
       if (existing) {
+        setTitle(existing.title);
         setAuthor(existing.author);
         setSelectedGenres(existing.genre);
+        setChapterNumber(quick.chapterNumber);
+        setChapterTitle(quick.chapterTitle);
         setWasAutoFilled(true);
         toast({ 
-          title: "Library Sync", 
-          description: `Identified existing volume. Metadata synced for "${existing.title}".` 
+          title: "Library Match Found", 
+          description: `Metadata synced for "${existing.title}".` 
         });
-        return; // Skip AI if we have a perfect library match
+        return; // Skip AI if we have a solid library match
+      } else {
+        // No match found, use positional names and proceed to AI analysis for author/genre
+        setTitle(quick.novelName);
+        setChapterNumber(quick.chapterNumber);
+        setChapterTitle(quick.chapterTitle);
       }
     }
 
@@ -152,7 +164,7 @@ export function UploadNovelForm() {
     try {
       const result = await parsePastedChapter(text);
       
-      // Only fill Author and Genres if they were not already matched by library sync
+      // Only fill Author and Genres if they were not already matched
       if (result.author && !author) setAuthor(result.author);
       
       if (result.genres && Array.isArray(result.genres) && selectedGenres.length === 0) {
