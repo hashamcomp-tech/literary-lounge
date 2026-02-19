@@ -61,7 +61,7 @@ export async function uploadBookToCloud({
   const uploadMax = Math.max(...chapters.map(ch => ch.chapterNumber));
   const finalTotal = Math.max(currentMax, uploadMax);
 
-  // Cover goes to Vercel Blob via our binary-safe pipeline
+  // Cover art synchronized to Vercel Blob
   let coverURL = existingData?.coverURL || null;
   let coverSize = existingData?.coverSize || 0;
   if (coverFile) {
@@ -85,10 +85,10 @@ export async function uploadBookToCloud({
     metadata: { info: metadataInfo }
   };
 
-  // Structured root document in Firestore
+  // Root metadata document in Firestore
   await setDoc(bookRef, rootPayload, { merge: true });
 
-  // Structured chapter sub-collection in Firestore
+  // Structured chapter sub-collection in Firestore for fast lookup and buffering
   const batch = writeBatch(db);
   chapters.forEach((ch) => {
     const chRef = doc(db, "books", bookId, "chapters", ch.chapterNumber.toString());

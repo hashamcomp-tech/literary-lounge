@@ -22,7 +22,7 @@ interface CloudReaderClientProps {
 /**
  * @fileOverview High-Performance Cloud Reader Client.
  * Implements Predictive Buffering for instantaneous chapter navigation.
- * Navigation buttons moved to top per user request.
+ * Navigation buttons located at bottom for immersive start.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -222,29 +222,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
             </Button>
           </div>
-        </div>
-
-        {/* Primary Navigation moved to top */}
-        <div className="flex items-center justify-between gap-4 mb-10 bg-muted/30 p-2 rounded-2xl border border-border/50">
-          <Button 
-            variant="ghost" 
-            className="h-12 px-6 rounded-xl font-black text-xs uppercase tracking-widest" 
-            disabled={currentChapterNum <= 1} 
-            onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}
-          >
-            <ChevronLeft className="mr-2 h-4 w-4" /> Prev
-          </Button>
-          <div className="text-center">
-             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/60">{currentChapterNum} / {totalChapters || '...'}</span>
-          </div>
-          <Button 
-            variant="ghost" 
-            className="h-12 px-6 rounded-xl font-black text-xs uppercase tracking-widest text-primary" 
-            disabled={totalChapters > 0 && currentChapterNum >= totalChapters} 
-            onClick={() => router.push(`/pages/${id}/${currentChapterNum + 1}`)}
-          >
-            Next <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
         </div>
 
         <div className="space-y-6 text-center sm:text-left">
