@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@/components/textarea';
 
 interface Suggestion {
   id: string;
@@ -66,7 +67,7 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  // Remember settings
+  // Initialize and Sync Settings
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
@@ -80,18 +81,18 @@ export function UploadNovelForm() {
     }
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("lounge-upload-mode", uploadMode);
-  }, [uploadMode]);
+  const handleSetUploadMode = (mode: 'cloud' | 'local') => {
+    setUploadMode(mode);
+    localStorage.setItem("lounge-upload-mode", mode);
+  };
 
-  useEffect(() => {
-    localStorage.setItem("lounge-source-mode", sourceMode);
-  }, [sourceMode]);
+  const handleSetSourceMode = (mode: 'file' | 'text') => {
+    setSourceMode(mode);
+    localStorage.setItem("lounge-source-mode", mode);
+  };
 
   /**
-   * Positional Parser: 
-   * Line 1 = Novel Name
-   * Line 2 = Chapter Number and Title
+   * Structure-First Positional Parser
    */
   const quickDetectFromText = useCallback((text: string) => {
     const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
@@ -100,7 +101,7 @@ export function UploadNovelForm() {
     const novelName = lines[0];
     const secondLine = lines[1];
 
-    // Pattern for second line to find the primary index: "Chapter 1", "Ch 1", or just "1"
+    // Pattern for second line: "Chapter 1", "Ch 1", or just "1"
     const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
     const match = secondLine.match(chapterRegex);
 
@@ -108,7 +109,7 @@ export function UploadNovelForm() {
       const num = match[1];
       let titlePart = secondLine.substring(match[0].length);
       
-      // CLEANUP LOGIC: Strip indexing noise like " - 5 : Title"
+      // CLEANUP: Strip indexing noise like " - 5 : Title"
       titlePart = titlePart.replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
 
       return {
@@ -429,10 +430,14 @@ export function UploadNovelForm() {
       }
       const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
       setCanUploadCloud(permitted);
-      if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
+      
+      // Only override uploadMode if it's set to cloud but they don't have permission
+      if (uploadMode === 'cloud' && !permitted && !isOfflineMode) {
+        handleSetUploadMode('local');
+      }
     };
     checkPermissions();
-  }, [user, db, isOfflineMode, uploadMode]);
+  }, [user, db, isOfflineMode]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
@@ -459,10 +464,10 @@ export function UploadNovelForm() {
               <CardDescription>Expand your personal or global library.</CardDescription>
             </div>
             <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
-              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => setUploadMode('cloud')} disabled={!canUploadCloud && !isOfflineMode}>
+              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => handleSetUploadMode('cloud')} disabled={!canUploadCloud && !isOfflineMode}>
                 <Globe className="h-3 w-3 mr-1.5" /> Cloud
               </Button>
-              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => setUploadMode('local')}>
+              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => handleSetUploadMode('local')}>
                 <HardDrive className="h-3 w-3 mr-1.5" /> Archive
               </Button>
             </div>
@@ -546,7 +551,7 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <Tabs value={sourceMode} onValueChange={v => setSourceMode(v as any)}>
+            <Tabs value={sourceMode} onValueChange={v => handleSetSourceMode(v as any)}>
               <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1">
                 <TabsTrigger value="file" className="rounded-lg font-bold">Manuscript File</TabsTrigger>
                 <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
