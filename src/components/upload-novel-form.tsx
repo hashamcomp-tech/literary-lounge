@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -7,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info, X, Sparkles } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info, X, Sparkles, Wand2 } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -25,6 +24,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { parsePastedChapter } from '@/ai/flows/parse-pasted-chapter';
 
 interface Suggestion {
   id: string;
@@ -52,6 +52,7 @@ export function UploadNovelForm() {
   const [loadingMessage, setLoadingMessage] = useState('');
   const [progress, setProgress] = useState(0);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
+  const [isParsingText, setIsParsingText] = useState(false);
   
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
@@ -74,7 +75,7 @@ export function UploadNovelForm() {
     }
   }, []);
 
-  // Handle automatic metadata, cover preview, and genre extraction
+  // Handle automatic metadata, cover preview, and genre extraction for files
   useEffect(() => {
     if (!selectedFile) {
       setCoverPreview(null);
@@ -100,14 +101,11 @@ export function UploadNovelForm() {
           if (res.ok) {
             const data = await res.json();
             
-            // Apply title and author
             if (data.title) setTitle(data.title);
             if (data.author) setAuthor(data.author);
             
-            // Auto-select Genres with bidirectional fuzzy matching
             if (data.genres && Array.isArray(data.genres)) {
               const matchedSet = new Set<string>();
-              
               data.genres.forEach((subject: string) => {
                 const search = subject.toLowerCase();
                 GENRES.forEach(available => {
@@ -117,23 +115,14 @@ export function UploadNovelForm() {
                   }
                 });
               });
-              
-              if (matchedSet.size > 0) {
-                setSelectedGenres(Array.from(matchedSet));
-              }
+              if (matchedSet.size > 0) setSelectedGenres(Array.from(matchedSet));
             }
             
-            // Set cover preview
-            if (data.dataUri) {
-              setCoverPreview(data.dataUri);
-            }
+            if (data.dataUri) setCoverPreview(data.dataUri);
             
             if (data.title || data.author) {
               setWasAutoFilled(true);
-              toast({
-                title: "Volume Identified",
-                description: `Metadata and genres extracted from archive.`
-              });
+              toast({ title: "Volume Identified", description: `Metadata extracted from digital volume.` });
             }
           }
         } catch (e) {
@@ -147,6 +136,44 @@ export function UploadNovelForm() {
       setCoverPreview(null);
     }
   }, [selectedFile, toast]);
+
+  const handleAnalyzePastedText = async (text: string) => {
+    if (!text || text.length < 100 || isParsingText) return;
+    
+    setIsParsingText(true);
+    setWasAutoFilled(false);
+    
+    try {
+      const result = await parsePastedChapter(text);
+      
+      if (result.bookTitle) setTitle(result.bookTitle);
+      if (result.author) setAuthor(result.author);
+      if (result.chapterNumber) setChapterNumber(result.chapterNumber.toString());
+      if (result.chapterTitle) setChapterTitle(result.chapterTitle);
+      if (result.chapterContent) setPastedText(result.chapterContent);
+      
+      if (result.genres && Array.isArray(result.genres)) {
+        const matchedSet = new Set<string>(selectedGenres);
+        result.genres.forEach(g => {
+          const search = g.toLowerCase();
+          GENRES.forEach(available => {
+            const availLower = available.toLowerCase();
+            if (search === availLower || search.includes(availLower) || availLower.includes(search)) {
+              matchedSet.add(available);
+            }
+          });
+        });
+        setSelectedGenres(Array.from(matchedSet));
+      }
+      
+      setWasAutoFilled(true);
+      toast({ title: "Content Parsed", description: "Metadata identified from your text." });
+    } catch (e) {
+      console.warn("AI Parsing failed", e);
+    } finally {
+      setIsParsingText(false);
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem("lounge-upload-mode", uploadMode);
@@ -230,17 +257,12 @@ export function UploadNovelForm() {
     setSelectedGenres(book.genre);
     setChapterNumber((book.totalChapters + 1).toString());
     setShowSuggestions(false);
-    toast({
-      title: "Volume Matched",
-      description: `Preparing next chapter for "${book.title}".`
-    });
+    toast({ title: "Volume Matched", description: `Preparing next chapter for "${book.title}".` });
   };
 
   const toggleGenre = (genre: string) => {
     setSelectedGenres(prev => 
-      prev.includes(genre) 
-        ? prev.filter(g => g !== genre) 
-        : [...prev, genre]
+      prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
     );
   };
 
@@ -249,10 +271,7 @@ export function UploadNovelForm() {
     setIsRequestingAccess(true);
     try {
       await setDoc(doc(db, 'publishRequests', user.uid), {
-        uid: user.uid,
-        email: user.email,
-        requestedAt: serverTimestamp(),
-        status: 'pending'
+        uid: user.uid, email: user.email, requestedAt: serverTimestamp(), status: 'pending'
       });
       toast({ title: 'Application Submitted', description: 'Admins will review your request shortly.' });
     } catch (err) {
@@ -289,31 +308,14 @@ export function UploadNovelForm() {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
           setLoadingMessage('Decompressing Archive...');
           setProgress(20);
-          
           const formData = new FormData();
           formData.append('file', selectedFile);
-          
-          const parseRes = await fetch('/api/ingest', { 
-            method: 'POST', 
-            body: formData 
-          });
-          
-          if (!parseRes.ok) {
-            const errJson = await parseRes.json();
-            throw new Error(errJson.error || "Digital parsing failed.");
-          }
-          
+          const parseRes = await fetch('/api/ingest', { method: 'POST', body: formData });
+          if (!parseRes.ok) throw new Error("Digital parsing failed.");
           const parseData = await parseRes.json();
-          if (!parseData.chapters || parseData.chapters.length === 0) {
-            throw new Error("The digital volume appears empty.");
-          }
-          
+          if (!parseData.chapters || parseData.chapters.length === 0) throw new Error("Digital volume empty.");
           preParsedChapters = parseData.chapters;
-          
-          if (coverPreview) {
-            extractedCoverFile = dataURLtoFile(coverPreview, `epub_cover_${bookId}.jpg`);
-          }
-
+          if (coverPreview) extractedCoverFile = dataURLtoFile(coverPreview, `epub_cover_${bookId}.jpg`);
           setLoadingMessage('Content Structured...');
           setProgress(60);
         } else {
@@ -342,17 +344,12 @@ export function UploadNovelForm() {
           id: bookId, title: searchTitle, author: searchAuthor, genre: selectedGenres, 
           isLocalOnly: true, totalChapters: preParsedChapters ? preParsedChapters.length : parseInt(chapterNumber)
         });
-
         if (preParsedChapters) {
           for (let i = 0; i < preParsedChapters.length; i++) {
-            await saveLocalChapter({ 
-              bookId, chapterNumber: i + 1, content: preParsedChapters[i].content, title: preParsedChapters[i].title 
-            });
+            await saveLocalChapter({ bookId, chapterNumber: i + 1, content: preParsedChapters[i].content, title: preParsedChapters[i].title });
           }
         } else if (manualContent) {
-          await saveLocalChapter({ 
-            bookId, chapterNumber: parseInt(chapterNumber), content: manualContent, title: chapterTitle 
-          });
+          await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: manualContent, title: chapterTitle });
         }
       }
 
@@ -393,21 +390,10 @@ export function UploadNovelForm() {
               <CardDescription>Expand your personal or global library.</CardDescription>
             </div>
             <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
-              <Button 
-                size="sm" 
-                variant={uploadMode === 'cloud' ? 'default' : 'ghost'} 
-                className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all"
-                onClick={() => setUploadMode('cloud')}
-                disabled={!canUploadCloud && !isOfflineMode}
-              >
+              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => setUploadMode('cloud')} disabled={!canUploadCloud && !isOfflineMode}>
                 <Globe className="h-3 w-3 mr-1.5" /> Cloud
               </Button>
-              <Button 
-                size="sm" 
-                variant={uploadMode === 'local' ? 'default' : 'ghost'} 
-                className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all"
-                onClick={() => setUploadMode('local')}
-              >
+              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => setUploadMode('local')}>
                 <HardDrive className="h-3 w-3 mr-1.5" /> Archive
               </Button>
             </div>
@@ -419,17 +405,9 @@ export function UploadNovelForm() {
               <div className="space-y-2 relative" ref={suggestionRef}>
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
                 <div className="relative">
-                  <Input 
-                    value={title} 
-                    onChange={(e) => setTitle(e.target.value)} 
-                    onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)}
-                    placeholder="Novel Title" 
-                    className="h-12 rounded-xl pl-10" 
-                    required 
-                  />
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
                 </div>
-
                 {showSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="p-2 border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
@@ -438,30 +416,18 @@ export function UploadNovelForm() {
                     </div>
                     <ScrollArea className="max-h-[240px]">
                       {filteredSuggestions.map((book) => (
-                        <button
-                          key={book.id}
-                          type="button"
-                          onClick={() => handleSelectBook(book)}
-                          className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none"
-                        >
-                          <div className="bg-primary/10 p-2 rounded-lg">
-                            <Book className="h-4 w-4 text-primary" />
-                          </div>
+                        <button key={book.id} type="button" onClick={() => handleSelectBook(book)} className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none">
+                          <div className="bg-primary/10 p-2 rounded-lg"><Book className="h-4 w-4 text-primary" /></div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold truncate">{book.title}</p>
-                            <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                              <User className="h-3 w-3" /> {book.author}
-                            </p>
+                            <p className="text-xs text-muted-foreground truncate flex items-center gap-1"><User className="h-3 w-3" /> {book.author}</p>
                           </div>
-                          <div className="text-primary font-black text-sm pr-2">
-                            {book.totalChapters + 1}
-                          </div>
+                          <div className="text-primary font-black text-sm pr-2">{book.totalChapters + 1}</div>
                         </button>
                       ))}
                     </ScrollArea>
                   </div>
                 )}
-
                 <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author" className="h-12 rounded-xl" required />
               </div>
               
@@ -479,18 +445,9 @@ export function UploadNovelForm() {
                     <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50 hover:bg-muted/30 transition-colors">
                       {selectedGenres.length > 0 ? (
                         selectedGenres.map(g => (
-                          <Badge 
-                            key={g} 
-                            variant="secondary" 
-                            className="bg-primary/10 text-primary hover:bg-primary/20 transition-all gap-1.5 px-2 py-1 rounded-lg animate-in zoom-in-95"
-                          >
+                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 transition-all gap-1.5 px-2 py-1 rounded-lg animate-in zoom-in-95">
                             {g}
-                            <span 
-                              onClick={(e) => { e.stopPropagation(); toggleGenre(g); }} 
-                              className="hover:text-destructive transition-colors"
-                            >
-                              <X className="h-3 w-3" />
-                            </span>
+                            <span onClick={(e) => { e.stopPropagation(); toggleGenre(g); }} className="hover:text-destructive transition-colors"><X className="h-3 w-3" /></span>
                           </Badge>
                         ))
                       ) : (
@@ -509,16 +466,7 @@ export function UploadNovelForm() {
                     <ScrollArea className="h-72 p-3">
                       <div className="grid grid-cols-2 gap-2">
                         {GENRES.map(g => (
-                          <button 
-                            key={g} 
-                            type="button" 
-                            onClick={() => toggleGenre(g)} 
-                            className={`w-full flex items-center justify-between p-3 text-[11px] font-bold rounded-xl transition-all ${
-                              selectedGenres.includes(g) 
-                                ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' 
-                                : 'bg-muted/50 hover:bg-muted text-muted-foreground'
-                            }`}
-                          >
+                          <button key={g} type="button" onClick={() => toggleGenre(g)} className={`w-full flex items-center justify-between p-3 text-[11px] font-bold rounded-xl transition-all ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'bg-muted/50 hover:bg-muted text-muted-foreground'}`}>
                             {g} {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
                           </button>
                         ))}
@@ -535,28 +483,14 @@ export function UploadNovelForm() {
                 <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
               </TabsList>
               <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center hover:bg-muted/30 transition-colors">
-                <input 
-                  type="file" 
-                  className="hidden" 
-                  id="file-upload" 
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) setSelectedFile(file);
-                  }} 
-                />
+                <input type="file" className="hidden" id="file-upload" onChange={e => { const file = e.target.files?.[0]; if (file) setSelectedFile(file); }} />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
                   {isExtractingPreview ? (
-                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <Loader2 className="h-8 w-8 text-primary animate-spin" />
-                    </div>
+                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Loader2 className="h-8 w-8 text-primary animate-spin" /></div>
                   ) : coverPreview ? (
-                    <div className="relative aspect-[2/3] w-32 mx-auto mb-4 rounded-lg overflow-hidden shadow-xl border-2 border-primary/20 animate-in fade-in zoom-in duration-500">
-                      <img src={coverPreview} alt="Extracted Cover" className="w-full h-full object-cover" />
-                    </div>
+                    <div className="relative aspect-[2/3] w-32 mx-auto mb-4 rounded-lg overflow-hidden shadow-xl border-2 border-primary/20 animate-in fade-in zoom-in duration-500"><img src={coverPreview} alt="Extracted Cover" className="w-full h-full object-cover" /></div>
                   ) : (
-                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <FileText className="h-8 w-8 text-primary" />
-                    </div>
+                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><FileText className="h-8 w-8 text-primary" /></div>
                   )}
                   <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
                   <p className="text-[10px] text-muted-foreground opacity-60">Digital Volumes or Standard Text.</p>
@@ -573,36 +507,56 @@ export function UploadNovelForm() {
                     <Input placeholder="Enter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
                   </div>
                 </div>
-                <Textarea value={pastedText} onChange={e => setPastedText(e.target.value)} placeholder="Enter manuscript content here..." className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" />
+                <div className="relative">
+                  <Textarea 
+                    value={pastedText} 
+                    onChange={e => setPastedText(e.target.value)} 
+                    onPaste={(e) => {
+                      const text = e.clipboardData.getData('text');
+                      if (text.length > 200) {
+                        handleAnalyzePastedText(text);
+                      }
+                    }}
+                    placeholder="Paste novel content here... (Min 200 chars for AI detection)" 
+                    className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" 
+                  />
+                  {isParsingText && (
+                    <div className="absolute inset-0 bg-background/60 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center animate-in fade-in">
+                      <div className="bg-primary/10 p-4 rounded-full mb-3">
+                        <Wand2 className="h-8 w-8 text-primary animate-bounce" />
+                      </div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary animate-pulse">Reading Text...</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end">
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => handleAnalyzePastedText(pastedText)}
+                    disabled={isParsingText || pastedText.length < 100}
+                    className="text-[10px] font-black uppercase tracking-widest gap-2"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Manually Analyze
+                  </Button>
+                </div>
               </TabsContent>
             </Tabs>
 
-            <Button 
-              type="submit" 
-              className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" 
-              disabled={loading}
-            >
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" disabled={loading}>
               {loading && (
-                <div 
-                  className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0"
-                  style={{ height: `${progress}%` }}
-                >
+                <div className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0" style={{ height: `${progress}%` }}>
                   <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-[#1e293b] animate-liquid-wave opacity-80" />
                   <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[88%] rounded-[38%] bg-[#334155] animate-liquid-wave-fast opacity-40" />
                 </div>
               )}
-
               <div className="relative z-10 flex flex-col items-center justify-center">
                 {loading ? (
-                  <>
-                    <Loader2 className="animate-spin h-5 w-5 mb-1" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">{loadingMessage}</span>
-                  </>
+                  <><Loader2 className="animate-spin h-5 w-5 mb-1" /><span className="text-[10px] font-black uppercase tracking-widest">{loadingMessage}</span></>
                 ) : (
-                  <div className="flex items-center">
-                    <CloudUpload className="mr-2" />
-                    {uploadMode === 'cloud' ? 'Publish Globally' : 'Secure to Archive'}
-                  </div>
+                  <div className="flex items-center"><CloudUpload className="mr-2" />{uploadMode === 'cloud' ? 'Publish Globally' : 'Secure to Archive'}</div>
                 )}
               </div>
             </Button>
