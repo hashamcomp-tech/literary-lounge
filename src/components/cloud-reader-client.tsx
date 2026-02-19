@@ -3,13 +3,13 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
-import { playTextToSpeech, stopTextToSpeech } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as checkIsSpeaking } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
@@ -81,7 +81,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   useEffect(() => {
     setMounted(true);
-    return () => stopTextToSpeech();
+    const interval = setInterval(() => {
+      setIsSpeaking(checkIsSpeaking());
+    }, 500);
+    return () => {
+      clearInterval(interval);
+      stopTextToSpeech();
+    };
   }, []);
 
   useEffect(() => {
@@ -286,24 +292,35 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   };
 
   const handleReadAloud = async (chNum: number, startIndex: number = 0) => {
+    if (isSpeaking) {
+      stopTextToSpeech();
+      setIsSpeaking(false);
+      return;
+    }
+
     const chData = chaptersCache[chNum];
     if (!chData?.content) return;
+    
     setIsSpeaking(true);
     try {
       const savedSettings = localStorage.getItem('lounge-voice-settings');
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
       
-      const paragraphs = (chData.content || '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
-        .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-        .filter((p: string) => p.length > 0);
+      const rawContent = chData.content || '';
+      // If we clicked a specific paragraph, start from there
+      let textToRead = rawContent;
+      if (startIndex > 0) {
+        const paragraphs = rawContent
+          .replace(/<br\s*\/?>/gi, '\n')
+          .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
+          .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+          .filter((p: string) => p.length > 0);
+        textToRead = paragraphs.slice(startIndex).join('\n\n');
+      }
 
-      const textToRead = paragraphs.slice(startIndex).join('\n\n');
       await playTextToSpeech(textToRead, voiceOptions);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Speech Error", description: err.message });
-    } finally {
       setIsSpeaking(false);
     }
   };
@@ -397,6 +414,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             </Button>
 
             <VoiceSettingsPopover />
+            
+            <Button 
+              variant="outline" 
+              size="icon" 
+              className={`rounded-full shadow-sm transition-all ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
+              onClick={() => handleReadAloud(currentChapterNum)}
+              title={isSpeaking ? "Stop Reading" : "Read Aloud"}
+            >
+              {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
+            </Button>
+
             <Link href={`/chat/${id}`}>
               <Button variant="outline" size="icon" className="rounded-full text-primary border-primary/20 hover:bg-primary/5 shadow-sm">
                 <MessageSquare className="h-4 w-4" />
