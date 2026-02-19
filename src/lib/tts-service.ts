@@ -1,7 +1,7 @@
 /**
- * @fileOverview Overlapping Sequential TTS Engine with Anticipatory Pre-loading.
- * Uses dual audio elements to allow the next line to start 0.7s before the current one ends.
- * Implements a look-ahead buffer to pre-fetch upcoming chunks for zero-latency playback.
+ * @fileOverview Sequential TTS Engine with Anticipatory Handoff and Pre-loading.
+ * Uses dual audio elements to trigger the next sentence 0.7s early.
+ * When the next audio starts, the previous one is immediately abandoned.
  */
 
 export interface TTSOptions {
@@ -9,7 +9,7 @@ export interface TTSOptions {
   rate?: string;
 }
 
-// Persistent dual audio elements to allow overlapping playback
+// Persistent dual audio elements to allow overlapping/handoff logic
 let audioElements: [HTMLAudioElement, HTMLAudioElement] | null = null;
 
 if (typeof window !== 'undefined') {
@@ -41,7 +41,6 @@ export function stopTextToSpeech(): void {
       audio.onended = null;
       audio.ontimeupdate = null;
       audio.onerror = null;
-      // Cleanup blob URLs to prevent memory leaks
       if (audio.src && audio.src.startsWith('blob:')) {
         URL.revokeObjectURL(audio.src);
       }
@@ -49,7 +48,6 @@ export function stopTextToSpeech(): void {
     });
   }
 
-  // Cleanup pre-loaded resource
   if (preloadedUrl) {
     URL.revokeObjectURL(preloadedUrl);
     preloadedUrl = null;
@@ -74,7 +72,7 @@ async function fetchAudioBlobUrl(text: string): Promise<string> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ 
-      text: text.substring(0, 1000), // API reliability cap
+      text: text.substring(0, 1000), 
       lang: currentOptions.lang || 'en-us',
       rate: currentOptions.rate || '0'
     })
@@ -93,11 +91,8 @@ async function fetchAudioBlobUrl(text: string): Promise<string> {
  */
 async function preloadNextChunk(index: number) {
   if (index >= textQueue.length || isPreloading || !isSpeakingGlobal) return;
-  
-  // If we already have this index preloaded, skip
   if (preloadedIndex === index) return;
 
-  // Cleanup old preloaded URL if it wasn't used
   if (preloadedUrl) {
     URL.revokeObjectURL(preloadedUrl);
     preloadedUrl = null;
@@ -126,9 +121,7 @@ async function playChunk(index: number): Promise<void> {
     return;
   }
 
-  // Update global index tracker
   currentQueueIndex = index;
-
   const text = textQueue[index];
   if (!text || text.trim().length === 0) {
     return playChunk(index + 1);
@@ -136,23 +129,18 @@ async function playChunk(index: number): Promise<void> {
 
   try {
     let url: string;
-
-    // USE PRE-LOADED URL IF AVAILABLE
     if (preloadedIndex === index && preloadedUrl) {
       url = preloadedUrl;
       preloadedUrl = null;
       preloadedIndex = -1;
     } else {
-      // Fetch immediately if not pre-loaded (fallback)
       url = await fetchAudioBlobUrl(text);
     }
 
-    // Determine which audio slot to use (alternating A/B)
     const audioSlot = index % 2;
     const currentAudio = audioElements[audioSlot];
     let nextTriggered = false;
 
-    // Reset and Load
     const oldSrc = currentAudio.src;
     currentAudio.src = url;
     currentAudio.ontimeupdate = null;
@@ -165,6 +153,7 @@ async function playChunk(index: number): Promise<void> {
           currentAudio.currentTime >= currentAudio.duration - 0.7 && 
           !nextTriggered) {
         nextTriggered = true;
+        // The next chunk will start and stop this one via the abandonment logic below
         playChunk(index + 1);
       }
     };
@@ -178,7 +167,6 @@ async function playChunk(index: number): Promise<void> {
     };
 
     currentAudio.onerror = () => {
-      console.warn("Audio playback error on index", index, "skipping...");
       if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
       if (!nextTriggered) {
         nextTriggered = true;
@@ -195,8 +183,14 @@ async function playChunk(index: number): Promise<void> {
       }
     });
 
-    // LOOK-AHEAD: While current is playing, trigger preload for NEXT index (current + 1)
-    // Note: If we just triggered current + 1 via ontimeupdate, we preload current + 2
+    // ABANDON PREVIOUS AUDIO: Now that the current one has successfully started,
+    // immediately silence the other slot to prevent overlapping voices.
+    const otherSlot = (index + 1) % 2;
+    const otherAudio = audioElements[otherSlot];
+    otherAudio.pause();
+    otherAudio.currentTime = 0;
+
+    // LOOK-AHEAD: Preload the next required resource
     const preloadTarget = nextTriggered ? index + 2 : index + 1;
     preloadNextChunk(preloadTarget);
 
@@ -215,7 +209,6 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
-  // Split by sentences and line breaks
   const sentences = cleanText.split(/([.!?]+(?:\s+|\n+|$))/);
   
   const finalUnits: string[] = [];
@@ -242,15 +235,13 @@ function chunkText(text: string): string[] {
 }
 
 /**
- * Initiates the multi-stream reading process with pre-loading and anticipatory triggers.
+ * Initiates the multi-stream reading process with pre-loading and anticipatory handoff.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
-  // Stop any existing session
   stopTextToSpeech();
 
   if (!fullText || fullText.trim().length === 0 || !audioElements) return;
 
-  // Prepare new session
   currentOptions = options;
   textQueue = chunkText(fullText);
   currentQueueIndex = 0;
@@ -261,8 +252,6 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     return;
   }
 
-  // UNLOCK BOTH ELEMENTS: Call play() immediately on both persistent elements 
-  // with a silent source to satisfy browser Autoplay policies for the entire session.
   const silentSrc = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
   for (const audio of audioElements) {
     audio.src = silentSrc;
@@ -271,6 +260,5 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     } catch (e) {}
   }
 
-  // Start the actual queue from the first chunk
   return playChunk(0);
 }

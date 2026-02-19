@@ -43,7 +43,6 @@ export function UploadNovelForm() {
   const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
-  // Sticky Settings Initialization
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>(() => {
     if (typeof window !== 'undefined') return (localStorage.getItem("lounge-upload-mode") as any) || 'local';
     return 'local';
@@ -126,7 +125,6 @@ export function UploadNovelForm() {
 
   /**
    * Robust Client-Side EPUB Extraction using JSZip directly.
-   * Avoids EPUB.js internal hook errors.
    */
   useEffect(() => {
     if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.epub')) {

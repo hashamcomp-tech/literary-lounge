@@ -1,10 +1,9 @@
-
 import { getAuth } from "firebase/auth";
 import { FirebaseStorage } from "firebase/storage";
 
 /**
  * @fileOverview Profile Photo Utility.
- * Directly to Vercel Blob via API Route for high performance.
+ * Directly to Vercel Blob via API Route using ArrayBuffer for high-reliability cloud sync.
  */
 
 export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, userId: string): Promise<string> {
@@ -20,10 +19,12 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
   try {
     const filename = `profilePhotos/${userId}_${Date.now()}.jpg`;
     
-    // Upload using the Vercel Blob API route pattern
+    // Process as ArrayBuffer to resolve Vercel "disturbed or locked" stream errors
+    const buffer = await file.arrayBuffer();
+    
     const response = await fetch(`/api/upload?filename=${encodeURIComponent(filename)}`, {
       method: 'POST',
-      body: file,
+      body: buffer,
     });
 
     if (!response.ok) {
