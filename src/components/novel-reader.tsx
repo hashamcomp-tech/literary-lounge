@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -88,7 +87,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     const textToPlay = textOverride || currentChapter.content;
     playTextToSpeech(textToPlay, { 
       voice: voiceOptions.voice,
-      rate: voiceOptions.rate || 1.0
+      rate: voiceOptions.rate || 1.0,
+      contextId: `mock-${novel.id}-${currentChapterIndex}`
     });
   };
 

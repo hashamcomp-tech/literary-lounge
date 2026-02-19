@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
@@ -113,6 +112,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
 
     loadChapter();
+    // Stop audio when changing chapters, but keep progress persistence keyed to the contextId
     stopTextToSpeech();
   }, [firestore, id, currentChapterNum, isOfflineMode]);
 
@@ -188,7 +188,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const textToPlay = textOverride || chData.content;
     playTextToSpeech(textToPlay, { 
       voice: voiceOptions.voice,
-      rate: voiceOptions.rate || 1.0
+      rate: voiceOptions.rate || 1.0,
+      contextId: `cloud-${id}-${currentChapterNum}`
     });
   };
 
@@ -217,6 +218,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
     const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
 
+    // Jump logic: stop current and start new from remaining text
     handleReadAloud(fullRemainingText);
   };
 

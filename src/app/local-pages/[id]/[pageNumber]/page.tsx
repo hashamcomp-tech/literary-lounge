@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -86,7 +85,8 @@ export default function LocalReader() {
     const textToPlay = textOverride || chapter.content;
     playTextToSpeech(textToPlay, { 
       voice: voiceOptions.voice,
-      rate: voiceOptions.rate || 1.0
+      rate: voiceOptions.rate || 1.0,
+      contextId: `local-${id}-${currentChapterNum}`
     });
   };
 
