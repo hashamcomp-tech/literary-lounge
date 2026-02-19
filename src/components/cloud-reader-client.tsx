@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -23,6 +23,7 @@ interface CloudReaderClientProps {
  * @fileOverview High-Performance Cloud Reader Client.
  * Implements Predictive Buffering for instantaneous chapter navigation.
  * Navigation buttons located at bottom for immersive start.
+ * Manual 'Buffer 10' trigger added to header.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -35,6 +36,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [metadata, setMetadata] = useState<any>(null);
   const [chaptersCache, setChaptersCache] = useState<Record<number, any>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [lastBufferedCount, setLastBufferedCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   
@@ -57,9 +60,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const missingNumbers = targetNumbers.filter(n => !chaptersCache[n]);
     
     if (missingNumbers.length > 0) {
+      if (count > 3) setIsBuffering(true);
       try {
         const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        const q = query(chaptersCol, where('chapterNumber', 'in', missingNumbers));
+        // Firestore 'in' queries are limited to 10-30 items depending on version, 10 is safe here
+        const q = query(chaptersCol, where('chapterNumber', 'in', missingNumbers.slice(0, 10)));
         const snap = await getDocs(q);
         const newEntries: Record<number, any> = {};
         snap.docs.forEach(d => {
@@ -67,9 +72,19 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
         });
         setChaptersCache(prev => ({ ...prev, ...newEntries }));
-      } catch (e) {}
+        if (count > 3) {
+          setLastBufferedCount(snap.size);
+          setTimeout(() => setLastBufferedCount(0), 3000);
+        }
+      } catch (e) {
+        console.warn("Buffering cycle interrupted.");
+      } finally {
+        setIsBuffering(false);
+      }
+    } else if (count > 3) {
+      toast({ title: "Cache Primed", description: "The next chapters are already in memory." });
     }
-  }, [firestore, id, chaptersCache, metadata, isOfflineMode]);
+  }, [firestore, id, chaptersCache, metadata, isOfflineMode, toast]);
 
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
@@ -214,6 +229,23 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
           <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => preFetchChapters(currentChapterNum + 1, 10)}
+              className="rounded-full h-9 px-4 text-[10px] font-black uppercase tracking-widest gap-2 border-primary/20 hover:bg-primary/5 transition-all shadow-sm group"
+              disabled={isBuffering}
+            >
+              {isBuffering ? (
+                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              ) : lastBufferedCount > 0 ? (
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
+              ) : (
+                <Zap className="h-3 w-3 text-primary group-hover:scale-110 transition-transform" />
+              )}
+              {isBuffering ? "Buffering..." : lastBufferedCount > 0 ? `Synced +${lastBufferedCount}` : "Buffer 10"}
+            </Button>
+            <div className="h-4 w-px bg-border/50 mx-1" />
             <VoiceSettingsPopover />
             <Button variant="outline" size="icon" className="rounded-full shadow-sm" onClick={handleReadAloud} title="Read Aloud">
               <Volume2 className="h-4 w-4" />
