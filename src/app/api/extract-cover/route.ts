@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from 'fs';
-import { EPub } from 'epub2';
-import path from 'path';
-import os from 'os';
-import { v4 as uuidv4 } from 'uuid';
+import JSZip from 'jszip';
+import { JSDOM } from 'jsdom';
 
 /**
- * @fileOverview Robust EPUB Metadata & Visual Extraction API.
- * Identifies bibliographic info, genres, and locates the best available cover image.
+ * @fileOverview Pure JS EPUB Metadata & Visual Extraction API.
+ * Uses JSZip and JSDOM to avoid native module conflicts in serverless environments.
  */
 export async function POST(req: NextRequest) {
-  let tempFilePath: string | null = null;
-  
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
@@ -20,132 +15,81 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No digital volume detected." }, { status: 400 });
     }
 
-    // 1. Prepare secure temporary storage
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const tempDir = os.tmpdir();
-    tempFilePath = path.join(tempDir, `extract_${uuidv4()}.epub`);
-    fs.writeFileSync(tempFilePath, buffer);
+    const buffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buffer);
 
-    // 2. Wrap EPUB parser in a Promise lifecycle
-    return new Promise((resolve) => {
-      try {
-        const epub = new EPub(tempFilePath!);
+    // 1. Locate root OPF file
+    const containerXml = await zip.file("META-INF/container.xml")?.async("string");
+    if (!containerXml) throw new Error("Invalid Archive: container.xml missing.");
 
-        epub.on('error', (err) => {
-          if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-          resolve(NextResponse.json({ error: 'Archive Corruption: ' + err.message }, { status: 500 }));
-        });
+    const dom = new JSDOM(containerXml, { contentType: 'text/xml' });
+    const opfPath = dom.window.document.querySelector("rootfile")?.getAttribute("full-path");
+    if (!opfPath) throw new Error("Invalid Archive: OPF path not found.");
 
-        epub.on('end', () => {
-          try {
-            // 3. Robust Bibliographic Extraction
-            const title = epub.metadata.title || '';
-            
-            // Handle various author field structures
-            let author = '';
-            if (epub.metadata.creator) {
-              if (Array.isArray(epub.metadata.creator)) {
-                author = epub.metadata.creator
-                  .map(c => typeof c === 'string' ? c : (c as any).name || (c as any)._ || 'Unknown')
-                  .join(', ');
-              } else if (typeof epub.metadata.creator === 'string') {
-                author = epub.metadata.creator;
-              } else if ((epub.metadata.creator as any).name) {
-                author = (epub.metadata.creator as any).name;
-              } else if ((epub.metadata.creator as any)._) {
-                author = (epub.metadata.creator as any)._;
-              }
-            }
+    // 2. Parse OPF for Metadata
+    const opfXml = await zip.file(opfPath)?.async("string");
+    if (!opfXml) throw new Error("Invalid Archive: OPF content missing.");
 
-            // 4. Genre / Subject Extraction
-            // Aggressively split by common delimiters to get granular tags
-            let genres: string[] = [];
-            if (epub.metadata.subject) {
-              const rawSubjects = Array.isArray(epub.metadata.subject) 
-                ? epub.metadata.subject 
-                : [String(epub.metadata.subject)];
-              
-              genres = rawSubjects.flatMap(s => 
-                String(s).split(/[,;/]/).map(part => part.trim())
-              ).filter(Boolean);
-            }
+    const opfDom = new JSDOM(opfXml, { contentType: 'text/xml' });
+    const metadata = opfDom.window.document.querySelector("metadata");
+    
+    const title = metadata?.querySelector("title")?.textContent || "Untitled";
+    const author = metadata?.querySelector("creator")?.textContent || "Unknown Author";
+    
+    const rawSubjects = Array.from(metadata?.querySelectorAll("subject") || []);
+    const genres = rawSubjects.flatMap(s => 
+      (s.textContent || "").split(/[,;/]/).map(part => part.trim())
+    ).filter(Boolean);
 
-            // 5. Intelligent Cover Identification
-            let coverId = epub.metadata.cover;
-            
-            if (!coverId) {
-              const manifest = epub.manifest;
-              const keywords = ['cover', 'thumb', 'front', 'jacket'];
-              
-              for (const id in manifest) {
-                if (manifest[id].properties === 'cover-image') {
-                  coverId = id;
-                  break;
-                }
-              }
-              
-              if (!coverId) {
-                for (const id in manifest) {
-                  if (keywords.some(k => id.toLowerCase().includes(k))) {
-                    coverId = id;
-                    break;
-                  }
-                }
-              }
-            }
-            
-            if (!coverId) {
-              if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-              resolve(NextResponse.json({ 
-                success: true, 
-                title, 
-                author,
-                genres,
-                dataUri: null,
-                message: 'Bibliographic data found, but no cover resource detected.' 
-              }));
-              return;
-            }
+    // 3. Identify Cover Image
+    let coverHref: string | null = null;
+    const coverMeta = metadata?.querySelector("meta[name='cover']");
+    const coverId = coverMeta?.getAttribute("content");
 
-            // 6. Extract Binary Resource
-            epub.getImage(coverId, (err, data, mimeType) => {
-              if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+    if (coverId) {
+      const coverItem = opfDom.window.document.querySelector(`item[id='${coverId}']`);
+      coverHref = coverItem?.getAttribute("href") || null;
+    }
 
-              if (err || !data) {
-                resolve(NextResponse.json({ 
-                  success: true, 
-                  title, 
-                  author,
-                  genres,
-                  dataUri: null,
-                  message: 'Visual asset extraction failed.' 
-                }));
-                return;
-              }
+    if (!coverHref) {
+      const coverItem = opfDom.window.document.querySelector("item[properties='cover-image']");
+      coverHref = coverItem?.getAttribute("href") || null;
+    }
 
-              const base64 = data.toString('base64');
-              resolve(NextResponse.json({ 
-                success: true, 
-                title,
-                author,
-                genres,
-                dataUri: `data:${mimeType || 'image/jpeg'};base64,${base64}` 
-              }));
-            });
-          } catch (e: any) {
-            if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-            resolve(NextResponse.json({ error: 'Manifest Parsing Failure: ' + e.message }, { status: 500 }));
-          }
-        });
+    if (!coverHref) {
+      // Fallback: search for keywords in manifest
+      const items = Array.from(opfDom.window.document.querySelectorAll("item"));
+      const keywords = ['cover', 'thumb', 'front', 'jacket'];
+      const fallback = items.find(item => 
+        keywords.some(k => (item.getAttribute('id') || '').toLowerCase().includes(k))
+      );
+      coverHref = fallback?.getAttribute('href') || null;
+    }
 
-        epub.parse();
-      } catch (parseErr: any) {
-        if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-        resolve(NextResponse.json({ error: 'Parser Initialization Error: ' + parseErr.message }, { status: 500 }));
+    let dataUri: string | null = null;
+    if (coverHref) {
+      const baseDir = opfPath.substring(0, opfPath.lastIndexOf('/') + 1);
+      const fullCoverPath = baseDir + coverHref;
+      const coverFile = zip.file(fullCoverPath);
+      
+      if (coverFile) {
+        const coverBuffer = await coverFile.async("nodebuffer");
+        const mimeType = coverHref.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        dataUri = `data:${mimeType};base64,${coverBuffer.toString('base64')}`;
       }
+    }
+
+    return NextResponse.json({
+      success: true,
+      title,
+      author,
+      genres,
+      dataUri,
+      message: dataUri ? 'Visual identity extracted.' : 'Bibliographic data found, no cover detected.'
     });
+
   } catch (err: any) {
-    if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-    return NextResponse.json({ error: 'Server Subsystem Failure: ' + err.message }, { status: 500 });
+    console.error("EPUB Extraction Failure:", err);
+    return NextResponse.json({ error: 'Archive Processing Error: ' + err.message }, { status: 500 });
   }
 }
