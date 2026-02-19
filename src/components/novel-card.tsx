@@ -4,12 +4,14 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useUser, useFirestore, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { Button } from '@/components/ui/button';
-import { Trash2, Loader2, Book, Play } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Trash2, Loader2, Book, Play, ImagePlus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { deleteCloudBook } from '@/lib/cloud-library-utils';
+import { deleteCloudBook, updateCloudBookCover } from '@/lib/cloud-library-utils';
+import { uploadCoverImage } from '@/lib/upload-cover';
+import { optimizeCoverImage } from '@/lib/image-utils';
 import { doc } from 'firebase/firestore';
 import {
   AlertDialog,
@@ -30,18 +32,22 @@ interface NovelCardProps {
 /**
  * @fileOverview Universal Novel Card.
  * Intelligently routes between Mock, Cloud, and Local library collections.
- * remembers how far the user has read by checking localStorage fallback.
+ * Remembers how far the user has read by checking localStorage fallback.
+ * Allows administrators to update cover art directly from the card.
  */
 export default function NovelCard({ novel }: NovelCardProps) {
   const { user } = useUser();
   const db = useFirestore();
+  const storage = useStorage();
   const { toast } = useToast();
+  
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUpdatingCover, setIsUpdatingCover] = useState(false);
   const [lastReadChapter, setLastReadChapter] = useState<number>(1);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // 1. Source of truth for resume logic: Browser Local Storage
-    // This allows for instant resume even without a network/auth check.
     const localProgress = localStorage.getItem(`lounge-progress-${novel.id}`);
     if (localProgress) {
       setLastReadChapter(parseInt(localProgress));
@@ -52,7 +58,7 @@ export default function NovelCard({ novel }: NovelCardProps) {
   const isLocal = !!(novel.isLocalOnly || novel._isLocal);
   const isCloud = !!(novel.isCloud && !isLocal);
   
-  // Check admin status (for global deletion privileges)
+  // Check admin status (for global deletion and edit privileges)
   const profileRef = useMemoFirebase(() => (db && user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
   const { data: profile } = useDoc(profileRef);
   const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
@@ -66,7 +72,6 @@ export default function NovelCard({ novel }: NovelCardProps) {
   }
 
   const authorName = novel.author || 'Unknown Author';
-  
   const genres: string[] = (Array.isArray(novel.genre) ? novel.genre : (novel.genre ? [novel.genre] : [])).filter(Boolean);
   
   const displayImage = novel.coverURL || 
@@ -91,6 +96,45 @@ export default function NovelCard({ novel }: NovelCardProps) {
       });
   };
 
+  const handleEditCoverClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    fileInputRef.current?.click();
+  };
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !db || !storage || !novel.id) return;
+
+    setIsUpdatingCover(true);
+    try {
+      // 1. Optimize
+      const optimizedBlob = await optimizeCoverImage(file);
+      const optimizedFile = new File([optimizedBlob], `cover_${novel.id}.jpg`, { type: 'image/jpeg' });
+
+      // 2. Upload to Vercel Blob
+      const url = await uploadCoverImage(storage, optimizedFile, novel.id);
+      if (!url) throw new Error("Cloud upload rejected.");
+
+      // 3. Update Firestore & Stats
+      await updateCloudBookCover(db, novel.id, url, optimizedFile.size);
+
+      toast({
+        title: "Cover Updated",
+        description: `Visual assets for "${novel.title}" have been synchronized.`
+      });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Update Failed",
+        description: err.message || "Failed to update manuscript cover."
+      });
+    } finally {
+      setIsUpdatingCover(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="relative group">
       <Link href={href}>
@@ -108,6 +152,12 @@ export default function NovelCard({ novel }: NovelCardProps) {
                 />
               ) : (
                 <Book className="h-12 w-12 text-muted-foreground/20" />
+              )}
+              {isUpdatingCover && (
+                <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="text-[10px] font-black uppercase tracking-widest mt-2 text-primary">Updating...</span>
+                </div>
               )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
                 <Badge variant="secondary" className="bg-white/95 backdrop-blur-sm text-primary border-none font-bold py-1 px-3 flex items-center gap-1.5">
@@ -147,14 +197,31 @@ export default function NovelCard({ novel }: NovelCardProps) {
       </Link>
 
       {isAdmin && isCloud && (
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-20 flex gap-1">
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept="image/*"
+            onChange={onFileChange} 
+          />
+          <Button 
+            variant="secondary" 
+            size="icon" 
+            className="h-8 w-8 rounded-full shadow-lg border-2 border-background bg-white/90 hover:bg-white"
+            disabled={isDeleting || isUpdatingCover}
+            onClick={handleEditCoverClick}
+            title="Edit Cover Art"
+          >
+            {isUpdatingCover ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <ImagePlus className="h-4 w-4 text-primary" />}
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button 
                 variant="destructive" 
                 size="icon" 
                 className="h-8 w-8 rounded-full shadow-lg border-2 border-background"
-                disabled={isDeleting}
+                disabled={isDeleting || isUpdatingCover}
               >
                 {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               </Button>

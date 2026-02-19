@@ -1,16 +1,15 @@
-
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase } from '@/firebase';
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase, useStorage } from '@/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -18,7 +17,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { Input } from '@/components/ui/input';
-import { deleteCloudBook } from '@/lib/cloud-library-utils';
+import { deleteCloudBook, updateCloudBookCover } from '@/lib/cloud-library-utils';
+import { uploadCoverImage } from '@/lib/upload-cover';
+import { optimizeCoverImage } from '@/lib/image-utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,8 +38,14 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
+/**
+ * @fileOverview Lounge Control Panel.
+ * Primary command center for administrators.
+ * Features real-time status monitoring, contributor vetting, and visual asset management.
+ */
 export default function AdminPage() {
   const db = useFirestore();
+  const storage = useStorage();
   const { user, isUserLoading } = useUser();
   const { isOfflineMode } = useFirebase();
   const { toast } = useToast();
@@ -46,12 +53,14 @@ export default function AdminPage() {
 
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [bookSearch, setBookSearch] = useState('');
+  const [updatingCoverId, setUpdatingCoverId] = useState<string | null>(null);
   const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
   
   const [bookCount, setBookCount] = useState<number>(0);
   const [chapterCount, setChapterCount] = useState<number>(0);
   const [totalUsers, setTotalUsers] = useState<number>(0);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const profileRef = useMemoFirebase(() => {
     if (!db || !user || user.isAnonymous || isUserLoading) return null;
@@ -121,7 +130,6 @@ export default function AdminPage() {
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
-  // New Cloud Upload Requests query for notification dot
   const cloudRequestsQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
     return collection(db, 'cloudUploadRequests');
@@ -165,6 +173,35 @@ export default function AdminPage() {
     }).finally(() => setProcessingId(null));
   };
 
+  const handleTriggerCoverEdit = (bookId: string) => {
+    setUpdatingCoverId(bookId);
+    fileInputRef.current?.click();
+  };
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !updatingCoverId || !db || !storage) return;
+
+    setProcessingId(updatingCoverId);
+    try {
+      const optimizedBlob = await optimizeCoverImage(file);
+      const optimizedFile = new File([optimizedBlob], `cover_${updatingCoverId}.jpg`, { type: 'image/jpeg' });
+      const url = await uploadCoverImage(storage, optimizedFile, updatingCoverId);
+      
+      if (!url) throw new Error("Cloud upload rejected.");
+      
+      await updateCloudBookCover(db, updatingCoverId, url, optimizedFile.size);
+      
+      toast({ title: "Cover Updated", description: "The volume's visual identity has been synchronized." });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+    } finally {
+      setProcessingId(null);
+      setUpdatingCoverId(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   if (isUserLoading || (isAdmin === null && !isOfflineMode)) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>;
   }
@@ -174,6 +211,13 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*"
+        onChange={onFileChange} 
+      />
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-5xl mx-auto">
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
@@ -231,7 +275,7 @@ export default function AdminPage() {
                 <AccordionTrigger className="p-6 hover:no-underline">
                   <div className="text-left">
                     <CardTitle className="text-xl font-headline font-black">Global Manuscript Management</CardTitle>
-                    <CardDescription>Review and removal of cloud volumes.</CardDescription>
+                    <CardDescription>Review, remove, or update cloud volumes.</CardDescription>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="p-0 border-t">
@@ -241,12 +285,35 @@ export default function AdminPage() {
                       <TableBody>
                         {allBooks?.map(book => (
                           <TableRow key={book.id}>
-                            <TableCell className="font-bold">{book.title}<br/><span className="text-[10px] text-muted-foreground">By {book.author}</span></TableCell>
-                            <TableCell><Badge variant="outline">{book.genre}</Badge></TableCell>
+                            <TableCell className="font-bold">
+                              {book.title}
+                              <br/>
+                              <span className="text-[10px] text-muted-foreground">By {book.author}</span>
+                            </TableCell>
+                            <TableCell><Badge variant="outline">{Array.isArray(book.genre) ? book.genre[0] : book.genre}</Badge></TableCell>
                             <TableCell className="text-right">
-                              <Button variant="ghost" size="icon" onClick={() => handleDeleteBook(book.id)} disabled={processingId === book.id} className="text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <div className="flex justify-end gap-1">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={() => handleTriggerCoverEdit(book.id)} 
+                                  disabled={processingId === book.id} 
+                                  className="text-primary"
+                                  title="Change Cover"
+                                >
+                                  {processingId === book.id && updatingCoverId === book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={() => handleDeleteBook(book.id)} 
+                                  disabled={processingId === book.id} 
+                                  className="text-destructive"
+                                  title="Delete Book"
+                                >
+                                  {processingId === book.id && updatingCoverId !== book.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
