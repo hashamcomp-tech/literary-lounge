@@ -94,12 +94,9 @@ export function UploadNovelForm() {
 
     if (match) {
       const num = match[1];
-      // Get the remainder of the line after the matched prefix (e.g. "Chapter 1")
       let titlePart = secondLine.substring(match[0].length);
       
-      // CLEANUP LOGIC:
-      // Strip leading separators (:, -, .), potential sub-indexing numbers, and more separators.
-      // Handles patterns like " - 5 : Title" or " : 10 - Title" or just " : Title"
+      // CLEANUP LOGIC: Strip indexing noise like " - 5 : Title"
       titlePart = titlePart.replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
 
       return {
@@ -109,7 +106,6 @@ export function UploadNovelForm() {
       };
     }
 
-    // Fallback if no digits found on second line
     return {
       novelName,
       chapterNumber: '1',
@@ -123,12 +119,10 @@ export function UploadNovelForm() {
     // 1. Instant Positional Detection (User Rules)
     const quick = quickDetectFromText(text);
     if (quick) {
-      // Find the closest match in the library
       const searchTitle = quick.novelName.toLowerCase();
       let existing = allBooks.find(b => b.title.toLowerCase() === searchTitle);
       
       if (!existing) {
-        // Fuzzy search: starts with or includes
         existing = allBooks.find(b => 
           b.title.toLowerCase().includes(searchTitle) || 
           searchTitle.includes(b.title.toLowerCase())
@@ -146,9 +140,8 @@ export function UploadNovelForm() {
           title: "Library Match Found", 
           description: `Metadata synced for "${existing.title}".` 
         });
-        return; // Skip AI if we have a solid library match
+        return; 
       } else {
-        // No match found, use positional names and proceed to AI analysis for author/genre
         setTitle(quick.novelName);
         setChapterNumber(quick.chapterNumber);
         setChapterTitle(quick.chapterTitle);
@@ -163,10 +156,7 @@ export function UploadNovelForm() {
     
     try {
       const result = await parsePastedChapter(text);
-      
-      // Only fill Author and Genres if they were not already matched
       if (result.author && !author) setAuthor(result.author);
-      
       if (result.genres && Array.isArray(result.genres) && selectedGenres.length === 0) {
         const matchedSet = new Set<string>();
         result.genres.forEach(g => {
@@ -180,7 +170,6 @@ export function UploadNovelForm() {
         });
         setSelectedGenres(Array.from(matchedSet));
       }
-      
       setWasAutoFilled(true);
       toast({ title: "Analysis Complete", description: "Prose analyzed and metadata extracted." });
     } catch (e) {
@@ -190,7 +179,6 @@ export function UploadNovelForm() {
     }
   };
 
-  // Handle automatic metadata, cover preview, and genre extraction for files
   useEffect(() => {
     if (!selectedFile) {
       setCoverPreview(null);
@@ -203,22 +191,14 @@ export function UploadNovelForm() {
         setIsExtractingPreview(true);
         setCoverPreview(null); 
         setWasAutoFilled(false);
-        
         try {
           const formData = new FormData();
           formData.append('file', selectedFile);
-          
-          const res = await fetch('/api/extract-cover', { 
-            method: 'POST', 
-            body: formData 
-          });
-          
+          const res = await fetch('/api/extract-cover', { method: 'POST', body: formData });
           if (res.ok) {
             const data = await res.json();
-            
             if (data.title) setTitle(data.title);
             if (data.author) setAuthor(data.author);
-            
             if (data.genres && Array.isArray(data.genres)) {
               const matchedSet = new Set<string>();
               data.genres.forEach((subject: string) => {
@@ -232,9 +212,7 @@ export function UploadNovelForm() {
               });
               if (matchedSet.size > 0) setSelectedGenres(Array.from(matchedSet));
             }
-            
             if (data.dataUri) setCoverPreview(data.dataUri);
-            
             if (data.title || data.author) {
               setWasAutoFilled(true);
               toast({ title: "Volume Identified", description: `Metadata extracted from digital volume.` });
@@ -247,8 +225,6 @@ export function UploadNovelForm() {
         }
       };
       getMetadataAndPreview();
-    } else {
-      setCoverPreview(null);
     }
   }, [selectedFile, toast]);
 
@@ -372,7 +348,21 @@ export function UploadNovelForm() {
           manualContent = await selectedFile.text();
         }
       } else {
-        manualContent = pastedText;
+        // Source is 'text' (pastedText)
+        // CRITICAL: Strip first two non-empty lines (Novel Name and Chapter Info) from the body
+        const lines = pastedText.split('\n');
+        let linesToSkip = 0;
+        let nonEntryCount = 0;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim().length > 0) {
+            nonEntryCount++;
+            if (nonEntryCount === 2) {
+              linesToSkip = i + 1;
+              break;
+            }
+          }
+        }
+        manualContent = lines.slice(linesToSkip).join('\n').trim();
       }
 
       setLoadingMessage('Syncing with Lounge...');
@@ -423,7 +413,6 @@ export function UploadNovelForm() {
       const pRef = doc(db, 'users', user.uid);
       const snap = await getDoc(pRef);
       const userRole = snap.data()?.role;
-      
       let isWhitelisted = false;
       if (user.email) {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
@@ -433,13 +422,9 @@ export function UploadNovelForm() {
           isWhitelisted = emails.includes(user.email);
         }
       }
-
       const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
       setCanUploadCloud(permitted);
-      
-      if (uploadMode === 'cloud' && !permitted) {
-        setUploadMode('local');
-      }
+      if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
     };
     checkPermissions();
   }, [user, db, isOfflineMode, uploadMode]);
