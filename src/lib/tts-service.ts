@@ -1,7 +1,7 @@
 /**
  * @fileOverview Refined Sequential TTS Engine with Autoplay Policy handling.
- * Handles long-form content by chunking text and playing them in a queue.
- * Reuses a single audio element to maintain "unlocked" status from user gestures.
+ * Handles long-form content by chunking text into individual lines/sentences 
+ * and playing them in a queue for maximum responsiveness.
  */
 
 export interface TTSOptions {
@@ -68,7 +68,7 @@ async function playChunk(index: number): Promise<void> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        text: text.substring(0, 1000), // Safety cap for API reliability
+        text: text.substring(0, 1000), // API reliability cap
         lang: currentOptions.lang || 'en-us',
         rate: currentOptions.rate || '0'
       })
@@ -81,12 +81,11 @@ async function playChunk(index: number): Promise<void> {
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     
-    // Revoke previous blob if applicable to keep memory clean
+    // Revoke previous blob if applicable
     const oldSrc = globalAudio.src;
     
     globalAudio.src = url;
 
-    // Use global handlers to avoid duplicate event listeners on the persistent element
     globalAudio.onended = () => {
       if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
       playNextChunk();
@@ -98,8 +97,7 @@ async function playChunk(index: number): Promise<void> {
       playNextChunk();
     };
 
-    // Since globalAudio was "unlocked" in playTextToSpeech (sync with user click),
-    // subsequent source changes and play() calls are permitted by the browser.
+    // Playback is permitted because we unlocked the element in the initial click handler
     await globalAudio.play().catch(err => {
       console.error("Playback failed after source swap:", err);
       isSpeakingGlobal = false;
@@ -117,7 +115,8 @@ function playNextChunk() {
 }
 
 /**
- * Splits long text into meaningful chunks (by paragraph then by sentence if needed).
+ * Splits text into individual lines and sentences.
+ * This ensures the engine loads "one line at a time" as requested.
  */
 function chunkText(text: string): string[] {
   // 1. Clean HTML artifacts
@@ -126,35 +125,39 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
-  // 2. Split by paragraphs
-  const paragraphs = cleanText.split(/\n\n+/);
-  const finalChunks: string[] = [];
+  // 2. Split by sentences and line breaks
+  // This matches periods, question marks, and exclamation points followed by space or newline
+  const sentences = cleanText.split(/([.!?]+(?:\s+|\n+|$))/);
+  
+  const finalUnits: string[] = [];
+  let currentUnit = "";
 
-  for (const para of paragraphs) {
-    if (para.length <= 1000) {
-      finalChunks.push(para.trim());
+  for (const part of sentences) {
+    if (part.match(/[.!?]/)) {
+      // It's a delimiter, attach to current unit and finish it
+      currentUnit += part;
+      if (currentUnit.trim()) finalUnits.push(currentUnit.trim());
+      currentUnit = "";
     } else {
-      // 3. If a paragraph is too long, split by sentences (period followed by space)
-      const sentences = para.match(/[^.!?]+[.!?]+(?=\s|$)/g) || [para];
-      let currentSentenceChunk = "";
-      
-      for (const sentence of sentences) {
-        if ((currentSentenceChunk + sentence).length < 1000) {
-          currentSentenceChunk += sentence + " ";
-        } else {
-          finalChunks.push(currentSentenceChunk.trim());
-          currentSentenceChunk = sentence + " ";
-        }
+      // It's text, or newline
+      if (part.includes('\n')) {
+        // If there's a hard newline, break the current unit if it exists
+        if (currentUnit.trim()) finalUnits.push(currentUnit.trim());
+        currentUnit = part.replace(/\n/g, ' '); // Keep the newline text for splitting but normalize space
+      } else {
+        currentUnit += part;
       }
-      if (currentSentenceChunk) finalChunks.push(currentSentenceChunk.trim());
     }
   }
+  
+  if (currentUnit.trim()) finalUnits.push(currentUnit.trim());
 
-  return finalChunks.filter(c => c.length > 0);
+  // Filter out empty strings and items that are just whitespace
+  return finalUnits.filter(u => u.trim().length > 0);
 }
 
 /**
- * Initiates the multi-chunk reading process.
+ * Initiates the line-by-line reading process.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
   // Stop any existing session
@@ -174,15 +177,14 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
   }
 
   // UNLOCK: Call play() immediately on the persistent audio element 
-  // with a silent source to satisfy Autoplay policies.
-  // This must happen in the same execution context as the user's click.
+  // with a silent source to satisfy browser Autoplay policies.
   globalAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
   try {
     await globalAudio.play();
   } catch (e) {
-    // Proceed regardless of silent play success; playChunk will attempt the first real segment.
+    // Proceed; playChunk will attempt the first real segment.
   }
 
-  // Start the actual content queue
+  // Start the actual queue
   return playChunk(0);
 }
