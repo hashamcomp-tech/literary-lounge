@@ -15,10 +15,20 @@ export async function uploadToVercelBlob(formData: FormData, filename: string) {
     throw new Error('No binary data detected for upload.');
   }
 
-  // Upload to Vercel Blob with public access
-  const blob = await put(filename, file, {
-    access: 'public',
-  });
+  // Defensive check for the Vercel Blob Token
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('Vercel Blob token is missing. Please add BLOB_READ_WRITE_TOKEN to your environment variables.');
+  }
 
-  return blob.url;
+  try {
+    // Upload to Vercel Blob with public access
+    const blob = await put(filename, file, {
+      access: 'public',
+    });
+
+    return blob.url;
+  } catch (error: any) {
+    console.error("Vercel Blob Put Error:", error);
+    throw new Error(`Upload to Vercel failed: ${error.message}`);
+  }
 }
