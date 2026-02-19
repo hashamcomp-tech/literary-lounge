@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Loader2 } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Square, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -23,11 +23,6 @@ interface NovelReaderProps {
   novel: Novel;
 }
 
-/**
- * @fileOverview Reader for Mock Collection.
- * Implements 700px optimized width reading experience.
- * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
- */
 export default function NovelReader({ novel }: NovelReaderProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -44,14 +39,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     return () => stopTextToSpeech();
   }, []);
 
-  // Sync state with global TTS service
   useEffect(() => {
     const interval = setInterval(() => {
-      const speaking = isSpeakingService();
-      if (speaking !== isSpeaking) {
-        setIsSpeaking(speaking);
-      }
-    }, 500);
+      const active = isSpeakingService();
+      if (active !== isSpeaking) setIsSpeaking(active);
+    }, 300);
     return () => clearInterval(interval);
   }, [isSpeaking]);
 
@@ -59,9 +51,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const progress = ((currentChapterIndex + 1) / novel.chapters.length) * 100;
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo(0, 0);
-    }
+    if (scrollRef.current) scrollRef.current.scrollTo(0, 0);
     stopTextToSpeech();
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
 
@@ -78,71 +68,49 @@ export default function NovelReader({ novel }: NovelReaderProps) {
         isCloud: false
       };
       
-      setDoc(historyRef, historyData, { merge: true })
-        .catch(async () => {
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: historyRef.path,
-            operation: 'write',
-            requestResourceData: historyData
-          }));
-        });
+      setDoc(historyRef, historyData, { merge: true }).catch(() => {});
     }
   }, [currentChapterIndex, novel.id, user, db]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
-    if (saved) {
-      setCurrentChapterIndex(parseInt(saved));
-    }
+    if (saved) setCurrentChapterIndex(parseInt(saved));
   }, [novel.id]);
 
   const handleReadAloud = async (startIndex: number = 0) => {
-    if (isSpeaking && startIndex === 0) {
+    if (isSpeaking) {
       stopTextToSpeech();
-      setIsSpeaking(false);
       return;
     }
 
     if (!currentChapter?.content) return;
     
-    setIsSpeaking(true);
-    try {
-      const savedSettings = localStorage.getItem('lounge-voice-settings');
-      const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
-      
-      const paragraphs = currentChapter.content.split('\n\n');
-      const textToRead = paragraphs.slice(startIndex).join('\n\n')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]*>?/gm, '')
-        .trim();
-        
-      await playTextToSpeech(textToRead, voiceOptions);
-    } catch (err: any) {
-      setIsSpeaking(false);
-      toast({
-        variant: "destructive",
-        title: "Speech Error",
-        description: err.message || "Failed to generate speech."
-      });
-    }
+    const savedSettings = localStorage.getItem('lounge-voice-settings');
+    const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
+    
+    const paragraphs = currentChapter.content
+      .split(/\n\n/)
+      .map(p => p.replace(/<[^>]*>?/gm, '').trim())
+      .filter(p => p.length > 0);
+
+    const textToRead = paragraphs.slice(startIndex).join('\n\n');
+    playTextToSpeech(textToRead, voiceOptions);
   };
 
   if (!mounted) return null;
 
-  const paragraphs = currentChapter.content.split('\n\n');
+  const paragraphs = currentChapter.content
+    .split(/\n\n/)
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background transition-colors duration-300">
       <div className="flex-1 overflow-y-auto relative" ref={scrollRef}>
-        <main className="max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6] text-foreground transition-colors duration-300">
-          <header className="mb-10 text-center sm:text-left">
+        <main className="max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6]">
+          <header className="mb-10">
             <div className="flex items-center justify-between mb-8">
-               <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => router.back()}
-                className="text-muted-foreground hover:text-primary transition-colors group"
-              >
+               <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground hover:text-primary transition-colors group">
                 <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
               </Button>
 
@@ -154,7 +122,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   onClick={() => handleReadAloud(0)}
                   title={isSpeaking ? "Stop" : "Read Aloud"}
                 >
-                  {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                  {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
                 <VoiceSettingsPopover />
                 <Link href={`/chat/${novel.id}`}>
@@ -162,24 +130,15 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                     <MessageSquare className="h-4 w-4" />
                   </Button>
                 </Link>
-                <Button 
-                  variant="outline" 
-                  size="icon" 
-                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} 
-                  className="rounded-full"
-                >
+                <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full">
                   {theme === 'dark' ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
                 </Button>
                 <Sheet>
                   <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="rounded-full">
-                      <Menu className="h-4 w-4" />
-                    </Button>
+                    <Button variant="outline" size="icon" className="rounded-full"><Menu className="h-4 w-4" /></Button>
                   </SheetTrigger>
                   <SheetContent side="left" className="rounded-r-3xl border-none shadow-2xl">
-                    <SheetHeader>
-                      <SheetTitle className="font-headline font-black text-2xl">{novel.title}</SheetTitle>
-                    </SheetHeader>
+                    <SheetHeader><SheetTitle className="font-headline font-black text-2xl">{novel.title}</SheetTitle></SheetHeader>
                     <ScrollArea className="h-[calc(100vh-120px)] mt-6">
                       <div className="space-y-1">
                         {novel.chapters.map((ch, idx) => (
@@ -200,7 +159,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 text-center sm:text-left">
               <Badge variant="outline" className="uppercase tracking-widest text-[10px] font-black border-primary/20 text-primary bg-primary/5 px-3">Mock Collection</Badge>
               <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight">
                 {novel.title}
@@ -209,7 +168,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
             </div>
           </header>
 
-          <article id={`chapter-${currentChapterIndex + 1}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <article className="animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="mb-10 border-b border-border/50 pb-10">
                <h2 className="text-4xl font-headline font-black text-primary leading-tight">
                  {currentChapter.title}
@@ -221,7 +180,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                 <p 
                   key={i} 
                   onClick={() => handleReadAloud(i)}
-                  className="mb-8 cursor-pointer hover:text-foreground/80 transition-colors"
+                  className="mb-8 cursor-pointer hover:text-foreground transition-colors"
                 >
                   {para}
                 </p>
@@ -229,7 +188,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
             </div>
           </article>
 
-          <section className="mt-20 pt-12 border-t border-border/50 space-y-8">
+          <section className="mt-20 pt-12 border-t border-border/50">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-8">
               <nav className="chapter-nav flex items-center gap-6">
                 <Button 

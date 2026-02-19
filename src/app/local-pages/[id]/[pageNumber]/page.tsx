@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2 } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,11 +12,6 @@ import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } f
 import { useToast } from '@/hooks/use-toast';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 
-/**
- * @fileOverview Local Reader Component.
- * Optimized for 700px width, 18px Literata typography.
- * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
- */
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
   const { theme, setTheme } = useTheme();
@@ -35,18 +30,14 @@ export default function LocalReader() {
     return () => stopTextToSpeech();
   }, []);
 
-  // Sync state with global TTS service
   useEffect(() => {
     const interval = setInterval(() => {
-      const speaking = isSpeakingService();
-      if (speaking !== isSpeaking) {
-        setIsSpeaking(speaking);
-      }
-    }, 500);
+      const active = isSpeakingService();
+      if (active !== isSpeaking) setIsSpeaking(active);
+    }, 300);
     return () => clearInterval(interval);
   }, [isSpeaking]);
 
-  // Fetch book and all chapters once
   useEffect(() => {
     const loadLocalData = async () => {
       setLoading(true);
@@ -61,16 +52,14 @@ export default function LocalReader() {
           setAllChapters(sorted);
         }
       } catch (error) {
-        console.error("Failed to load local novel archive", error);
+        console.error("Failed to load local novel", error);
       } finally {
         setLoading(false);
       }
     };
-    
     loadLocalData();
   }, [id]);
 
-  // Save progress when chapter changes
   useEffect(() => {
     if (currentChapterNum && id) {
       saveLocalProgress(id, currentChapterNum).catch(() => {});
@@ -79,37 +68,25 @@ export default function LocalReader() {
   }, [id, currentChapterNum]);
 
   const handleReadAloud = async (startIndex: number = 0) => {
-    if (isSpeaking && startIndex === 0) {
+    if (isSpeaking) {
       stopTextToSpeech();
-      setIsSpeaking(false);
       return;
     }
 
     const chapter = allChapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
     if (!chapter?.content) return;
     
-    setIsSpeaking(true);
-    try {
-      const savedSettings = localStorage.getItem('lounge-voice-settings');
-      const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
-      
-      const rawParagraphs = (chapter.content || '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
-        .map(p => p.replace(/<[^>]*>?/gm, '').trim())
-        .filter(p => p.length > 0);
+    const saved = localStorage.getItem('lounge-voice-settings');
+    const voiceOptions = saved ? JSON.parse(saved) : {};
+    
+    const paragraphs = (chapter.content || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/\n\n/)
+      .map(p => p.replace(/<[^>]*>?/gm, '').trim())
+      .filter(p => p.length > 0);
 
-      const textToRead = rawParagraphs.slice(startIndex).join('\n\n');
-      
-      await playTextToSpeech(textToRead, voiceOptions);
-    } catch (err: any) {
-      setIsSpeaking(false);
-      toast({
-        variant: "destructive",
-        title: "Speech Error",
-        description: err.message || "Failed to generate speech."
-      });
-    }
+    const textToRead = paragraphs.slice(startIndex).join('\n\n');
+    playTextToSpeech(textToRead, voiceOptions);
   };
 
   if (loading) {
@@ -118,13 +95,12 @@ export default function LocalReader() {
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center space-y-4">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Accessing Archive...</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Reading Archive...</p>
         </div>
       </div>
     );
   }
 
-  // Find chapter using type-agnostic matching
   const chapter = allChapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
 
   if (!chapter) {
@@ -145,10 +121,9 @@ export default function LocalReader() {
 
   if (!mounted) return null;
 
-  // Process HTML content into clean paragraphs
   const paragraphs = (chapter.content || '')
     .replace(/<br\s*\/?>/gi, '\n')
-    .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
+    .split(/\n\n/)
     .map(p => p.replace(/<[^>]*>?/gm, '').trim())
     .filter(p => p.length > 0);
 
@@ -156,8 +131,8 @@ export default function LocalReader() {
     <div className="min-h-screen flex flex-col bg-background transition-colors duration-300">
       <Navbar />
       
-      <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 selection:bg-primary/20 selection:text-primary">
-        <header className="mb-10 text-center sm:text-left">
+      <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 selection:bg-primary/20">
+        <header className="mb-10">
           <div className="flex items-center justify-between mb-8">
             <Button 
               variant="ghost" 
@@ -176,7 +151,7 @@ export default function LocalReader() {
                 onClick={() => handleReadAloud(0)}
                 title={isSpeaking ? "Stop" : "Read Aloud"}
               >
-                {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
               </Button>
               <VoiceSettingsPopover />
               <Button 
@@ -190,21 +165,21 @@ export default function LocalReader() {
             </div>
           </div>
           
-          <div className="space-y-6">
+          <div className="space-y-6 text-center sm:text-left">
             <div className="flex items-center justify-center sm:justify-start gap-3">
               <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-3 py-1 text-[10px] font-black">
-                <HardDrive className="h-3 w-3" /> Private Archive
+                <HardDrive className="h-3 w-3" /> Archive
               </Badge>
               <Badge variant="secondary" className="bg-primary/5 text-primary border-none uppercase text-[10px] font-black px-3 py-1">{novelData?.genre || 'Novel'}</Badge>
             </div>
             <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight">
-              {novelData?.title || 'Untitled Manuscript'}
+              {novelData?.title || 'Untitled'}
             </h1>
-            <p className="text-xl text-muted-foreground italic font-medium opacity-80">By {novelData?.author || 'Unknown Author'}</p>
+            <p className="text-xl text-muted-foreground italic font-medium opacity-80">By {novelData?.author || 'Unknown'}</p>
           </div>
         </header>
 
-        <article id={`chapter-${currentChapterNum}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <article className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           <header className="mb-10 border-b border-border/50 pb-10">
             <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
               Chapter {currentChapterNum}
@@ -219,7 +194,7 @@ export default function LocalReader() {
                <p 
                 key={idx} 
                 onClick={() => handleReadAloud(idx)}
-                className="mb-8 cursor-pointer hover:text-foreground/80 transition-colors"
+                className="mb-8 cursor-pointer hover:text-foreground transition-colors"
                >
                  {cleanPara}
                </p>

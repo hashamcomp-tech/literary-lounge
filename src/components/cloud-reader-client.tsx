@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, CheckCircle2 } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, CheckCircle2, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -19,12 +19,6 @@ interface CloudReaderClientProps {
   chapterNumber: string;
 }
 
-/**
- * @fileOverview High-Performance Cloud Reader Client.
- * Implements Predictive Buffering for instantaneous chapter navigation.
- * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
- * Navigation buttons located at bottom for immersive start.
- */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
@@ -44,43 +38,31 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   
   const viewLoggedRef = useRef<string | null>(null);
 
-  // Authority Check
-  const profileRef = useMemoFirebase(() => (firestore && user && !user.isAnonymous) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
-  const { data: profile } = useDoc(profileRef);
-  const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
-
   useEffect(() => {
     setMounted(true);
     return () => stopTextToSpeech();
   }, []);
 
-  // Sync state with global TTS service
+  // Simplified state sync with TTS service
   useEffect(() => {
     const interval = setInterval(() => {
-      const speaking = isSpeakingService();
-      if (speaking !== isSpeaking) {
-        setIsSpeaking(speaking);
-      }
-    }, 500);
+      const active = isSpeakingService();
+      if (active !== isSpeaking) setIsSpeaking(active);
+    }, 300);
     return () => clearInterval(interval);
   }, [isSpeaking]);
 
-  /**
-   * Predictive Buffer: Background pre-fetches next chapters for seamless transition.
-   */
   const preFetchChapters = useCallback(async (start: number, count: number = 3) => {
     if (!firestore || !id || isOfflineMode) return;
-    
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
       .filter(n => n > 0 && n <= (metadata?.metadata?.info?.totalChapters || 9999));
+    const missing = targetNumbers.filter(n => !chaptersCache[n]);
     
-    const missingNumbers = targetNumbers.filter(n => !chaptersCache[n]);
-    
-    if (missingNumbers.length > 0) {
+    if (missing.length > 0) {
       if (count > 3) setIsBuffering(true);
       try {
         const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        const q = query(chaptersCol, where('chapterNumber', 'in', missingNumbers.slice(0, 10)));
+        const q = query(chaptersCol, where('chapterNumber', 'in', missing.slice(0, 10)));
         const snap = await getDocs(q);
         const newEntries: Record<number, any> = {};
         snap.docs.forEach(d => {
@@ -92,15 +74,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           setLastBufferedCount(snap.size);
           setTimeout(() => setLastBufferedCount(0), 3000);
         }
-      } catch (e) {
-        console.warn("Buffering cycle interrupted.");
-      } finally {
+      } catch (e) {} finally {
         setIsBuffering(false);
       }
-    } else if (count > 3) {
-      toast({ title: "Cache Primed", description: "The next chapters are already in memory." });
     }
-  }, [firestore, id, chaptersCache, metadata, isOfflineMode, toast]);
+  }, [firestore, id, chaptersCache, metadata, isOfflineMode]);
 
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
@@ -184,31 +162,25 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   };
 
   const handleReadAloud = async (startIndex: number = 0) => {
-    if (isSpeaking && startIndex === 0) {
+    if (isSpeaking) {
       stopTextToSpeech();
-      setIsSpeaking(false);
       return;
     }
 
     const chData = chaptersCache[currentChapterNum];
     if (!chData?.content) return;
     
-    setIsSpeaking(true);
-    try {
-      const saved = localStorage.getItem('lounge-voice-settings');
-      const voiceOptions = saved ? JSON.parse(saved) : {};
-      
-      const paragraphsArr = (chData.content || '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
-        .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-        .filter((p: string) => p.length > 0);
+    const saved = localStorage.getItem('lounge-voice-settings');
+    const voiceOptions = saved ? JSON.parse(saved) : {};
+    
+    const paragraphsArr = (chData.content || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/\n\n/)
+      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+      .filter((p: string) => p.length > 0);
 
-      const textToRead = paragraphsArr.slice(startIndex).join('\n\n');
-      await playTextToSpeech(textToRead, voiceOptions);
-    } catch (e) {
-      setIsSpeaking(false);
-    }
+    const textToRead = paragraphsArr.slice(startIndex).join('\n\n');
+    playTextToSpeech(textToRead, voiceOptions);
   };
 
   if (isOfflineMode) {
@@ -232,7 +204,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return (
       <div className="flex flex-col items-center justify-center py-32 space-y-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
-        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Syncing Manuscript...</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Opening Manuscript...</p>
       </div>
     );
   }
@@ -253,7 +225,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   const paragraphs = (chapter.content || '')
     .replace(/<br\s*\/?>/gi, '\n')
-    .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
+    .split(/\n\n/)
     .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
     .filter((p: string) => p.length > 0);
 
@@ -269,17 +241,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               variant="outline" 
               size="sm" 
               onClick={() => preFetchChapters(currentChapterNum + 1, 10)}
-              className="rounded-full h-9 px-4 text-[10px] font-black uppercase tracking-widest gap-2 border-primary/20 hover:bg-primary/5 transition-all shadow-sm group"
+              className="rounded-full h-9 px-4 text-[10px] font-black uppercase tracking-widest gap-2 border-primary/20 hover:bg-primary/5 transition-all shadow-sm"
               disabled={isBuffering}
             >
-              {isBuffering ? (
-                <Loader2 className="h-3 w-3 animate-spin text-primary" />
-              ) : lastBufferedCount > 0 ? (
-                <CheckCircle2 className="h-3 w-3 text-green-500" />
-              ) : (
-                <Zap className="h-3 w-3 text-primary group-hover:scale-110 transition-transform" />
-              )}
-              {isBuffering ? "Buffering..." : lastBufferedCount > 0 ? `Synced +${lastBufferedCount}` : "Buffer 10"}
+              {isBuffering ? <Loader2 className="h-3 w-3 animate-spin text-primary" /> : <Zap className="h-3 w-3 text-primary" />}
+              {isBuffering ? "Buffering..." : "Buffer 10"}
             </Button>
             <div className="h-4 w-px bg-border/50 mx-1" />
             <VoiceSettingsPopover />
@@ -290,7 +256,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               onClick={() => handleReadAloud(0)} 
               title={isSpeaking ? "Stop" : "Read Aloud"}
             >
-              {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+              {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
             </Button>
             <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full">
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
@@ -321,7 +287,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </h2>
         </header>
 
-        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] window.scrollTo(0,0) leading-[1.6] text-foreground/90 font-body">
+        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
           {paragraphs.map((para: string, idx: number) => (
             <p 
               key={idx} 
