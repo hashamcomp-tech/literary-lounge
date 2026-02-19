@@ -1,5 +1,6 @@
+
 import { getAuth } from "firebase/auth";
-import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
+import { FirebaseStorage } from "firebase/storage";
 
 /**
  * @fileOverview Visual Storage Utility.
@@ -23,7 +24,6 @@ export async function uploadCoverImage(storage: FirebaseStorage, file: File | nu
  */
 async function uploadToVercel(file: File, filename: string): Promise<string> {
   try {
-    // Consume body as ArrayBuffer to prevent stream locking issues
     const buffer = await file.arrayBuffer();
     
     const response = await fetch(`/api/upload?filename=${encodeURIComponent(filename)}`, {

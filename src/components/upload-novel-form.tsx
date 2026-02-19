@@ -1,12 +1,13 @@
+
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info, X, Sparkles } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, X, Sparkles } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -36,15 +37,15 @@ interface Suggestion {
 
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
- * Features Structure-First Paste Detection and High-Reliability EPUB Parsing.
- * Implements Lazy State Initialization for persistent upload settings.
+ * Features Structure-First Paste Detection and High-Reliability Client-Side Parsing.
+ * Implements Sticky Settings persistence via localStorage.
  */
 export function UploadNovelForm() {
   const router = useRouter();
   const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
-  // Lazy State Initialization from localStorage
+  // Sticky Settings Initialization
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>(() => {
     if (typeof window !== 'undefined') return (localStorage.getItem("lounge-upload-mode") as any) || 'local';
     return 'local';
@@ -69,30 +70,22 @@ export function UploadNovelForm() {
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
 
-  // Preview States
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [isExtractingPreview, setIsExtractingPreview] = useState(false);
   const [wasAutoFilled, setWasAutoFilled] = useState(false);
 
-  // Autocomplete States
   const [allBooks, setAllBooks] = useState<Suggestion[]>([]);
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  const handleSetUploadMode = (mode: 'cloud' | 'local') => {
-    setUploadMode(mode);
-    localStorage.setItem("lounge-upload-mode", mode);
-  };
-
-  const handleSetSourceMode = (mode: 'file' | 'text') => {
-    setSourceMode(mode);
-    localStorage.setItem("lounge-source-mode", mode);
+  const persistSettings = (key: string, val: string) => {
+    if (typeof window !== 'undefined') localStorage.setItem(key, val);
   };
 
   /**
    * Structure-First Positional Parser
-   * Only triggers if Line 1 matches a known book and Line 2 contains a Chapter pattern.
+   * Triggers metadata match and header discard protocol only on specific pattern.
    */
   const handleAnalyzePastedText = (text: string) => {
     if (!text || text.length < 10) return;
@@ -103,14 +96,12 @@ export function UploadNovelForm() {
     const potentialNovelName = lines[0].toLowerCase();
     const potentialChapterLine = lines[1];
 
-    // Check for "Chapter X" pattern on Line 2
     const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
     if (!chapterRegex.test(potentialChapterLine)) {
       setWasAutoFilled(false);
       return; 
     }
 
-    // Fuzzy match Line 1 against existing books
     let existing = allBooks.find(b => b.title.toLowerCase() === potentialNovelName);
     if (!existing) {
       existing = allBooks.find(b => 
@@ -130,15 +121,15 @@ export function UploadNovelForm() {
       setChapterNumber(num);
       setChapterTitle(titlePart || `Chapter ${num}`);
       setWasAutoFilled(true);
-      toast({ title: "Series Match Detected", description: `Sequence synchronized for "${existing.title}".` });
+      toast({ title: "Series Synchronized", description: `Matched "${existing.title}". Redundant headers will be removed.` });
     } else {
       setWasAutoFilled(false);
     }
   };
 
   /**
-   * High-Reliability EPUB Metadata Extractor.
-   * Uses Direct Archive Access to avoid replacements[i] errors.
+   * Robust Client-Side EPUB Extraction.
+   * Direct JSZip access avoids replacements[i] errors.
    */
   useEffect(() => {
     if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.epub')) {
@@ -167,7 +158,6 @@ export function UploadNovelForm() {
         if (titleText) setTitle(titleText);
         if (authorText) setAuthor(authorText);
 
-        // Best-effort cover extraction
         const coverId = opfDoc.querySelector("meta[name='cover']")?.getAttribute("content") || 
                         opfDoc.querySelector("item[properties='cover-image']")?.getAttribute("id");
         
@@ -219,9 +209,7 @@ export function UploadNovelForm() {
           genre: Array.isArray(b.genre) ? b.genre : [b.genre]
         })));
       }
-    } catch (e) {
-      console.warn("Index fetch failed");
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
@@ -238,34 +226,13 @@ export function UploadNovelForm() {
     setShowSuggestions(filtered.length > 0);
   }, [title, allBooks]);
 
-  const toggleGenre = (genre: string) => {
-    setSelectedGenres(prev => 
-      prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
-    );
-  };
-
-  const handleRequestAccess = async () => {
-    if (!db || !user || user.isAnonymous) return;
-    setIsRequestingAccess(true);
-    try {
-      await setDoc(doc(db, 'publishRequests', user.uid), {
-        uid: user.uid, email: user.email, requestedAt: serverTimestamp(), status: 'pending'
-      });
-      toast({ title: 'Application Submitted', description: 'Admins will review your request shortly.' });
-    } catch (err) {
-      toast({ variant: 'destructive', title: 'Submission Error' });
-    } finally {
-      setIsRequestingAccess(false);
-    }
-  };
-
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !author.trim()) return;
     
     setLoading(true);
-    setProgress(5);
-    setLoadingMessage('Initializing...');
+    setProgress(10);
+    setLoadingMessage('Processing...');
     
     try {
       const searchTitle = title.trim();
@@ -279,9 +246,7 @@ export function UploadNovelForm() {
 
       if (sourceMode === 'file' && selectedFile) {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
-          setLoadingMessage('Parsing digital volume...');
-          setProgress(30);
-          
+          setLoadingMessage('Parsing Digital Archive...');
           const zip = await JSZip.loadAsync(selectedFile);
           const containerXml = await zip.file("META-INF/container.xml")?.async("string");
           const parser = new DOMParser();
@@ -290,7 +255,6 @@ export function UploadNovelForm() {
           const opfXml = await zip.file(opfPath || "")?.async("string");
           const opfDoc = parser.parseFromString(opfXml || "", "text/xml");
 
-          // Extract spine and manifest for sequencing
           const manifest: Record<string, string> = {};
           opfDoc.querySelectorAll("manifest item").forEach(item => {
             manifest[item.getAttribute("id")!] = item.getAttribute("href")!;
@@ -320,7 +284,6 @@ export function UploadNovelForm() {
           manualContent = await selectedFile.text();
         }
       } else {
-        // Source is text
         let processedContent = pastedText;
         if (wasAutoFilled) {
           const lines = pastedText.split('\n');
@@ -337,11 +300,11 @@ export function UploadNovelForm() {
         manualContent = processedContent;
       }
 
-      setLoadingMessage('Securing to Lounge...');
-      setProgress(80);
+      setLoadingMessage('Securing to Cloud...');
+      setProgress(70);
 
       if (uploadMode === 'cloud') {
-        if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
+        if (!canUploadCloud) throw new Error("Publishing restricted.");
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
           title: searchTitle, author: searchAuthor, genres: selectedGenres,
@@ -364,14 +327,13 @@ export function UploadNovelForm() {
       }
 
       setProgress(100);
-      toast({ title: 'Volume Integrated', description: 'Manuscript secured successfully.' });
+      toast({ title: 'Volume Secured', description: 'Manuscript integrated into the library.' });
       router.push('/');
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });
     } finally {
       setLoading(false);
       setProgress(0);
-      setLoadingMessage('');
     }
   };
 
@@ -380,39 +342,16 @@ export function UploadNovelForm() {
     const checkPermissions = async () => {
       const pRef = doc(db, 'users', user.uid);
       const snap = await getDoc(pRef);
-      const userRole = snap.data()?.role;
-      let isWhitelisted = false;
-      if (user.email) {
-        const settingsRef = doc(db, 'settings', 'approvedEmails');
-        const settingsSnap = await getDoc(settingsRef);
-        if (settingsSnap.exists()) {
-          isWhitelisted = settingsSnap.data().emails?.includes(user.email);
-        }
-      }
-      const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
+      const permitted = user.email === 'hashamcomp@gmail.com' || snap.data()?.role === 'admin';
       setCanUploadCloud(permitted);
-      if (uploadMode === 'cloud' && !permitted) handleSetUploadMode('local');
+      if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
     };
     checkPermissions();
-  }, [user, db, isOfflineMode, uploadMode]);
+  }, [user, db, isOfflineMode]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
-      {!canUploadCloud && !user?.isAnonymous && !isOfflineMode && (
-        <Alert className="bg-primary/5 border-primary/20 rounded-2xl p-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <AlertTitle className="font-black text-primary">Contribute Globally</AlertTitle>
-              <AlertDescription className="text-xs">Apply for cloud publishing privileges to share your library with everyone.</AlertDescription>
-            </div>
-            <Button size="sm" variant="outline" onClick={handleRequestAccess} disabled={isRequestingAccess} className="rounded-xl border-primary/30 text-primary hover:bg-primary/10">
-              {isRequestingAccess ? <Loader2 className="h-3 w-3 animate-spin" /> : <CloudUpload className="h-3 w-3" />}
-            </Button>
-          </div>
-        </Alert>
-      )}
-
-      <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl rounded-[2rem] overflow-hidden">
+      <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl rounded-[2.5rem] overflow-hidden">
         <div className="h-2 bg-primary w-full" />
         <CardHeader>
           <div className="flex justify-between items-center">
@@ -421,10 +360,10 @@ export function UploadNovelForm() {
               <CardDescription>Expand your personal or global library.</CardDescription>
             </div>
             <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
-              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => handleSetUploadMode('cloud')} disabled={!canUploadCloud && !isOfflineMode}>
+              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => { setUploadMode('cloud'); persistSettings("lounge-upload-mode", 'cloud'); }} disabled={!canUploadCloud && !isOfflineMode}>
                 <Globe className="h-3 w-3 mr-1.5" /> Cloud
               </Button>
-              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3 transition-all" onClick={() => handleSetUploadMode('local')}>
+              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => { setUploadMode('local'); persistSettings("lounge-upload-mode", 'local'); }}>
                 <HardDrive className="h-3 w-3 mr-1.5" /> Archive
               </Button>
             </div>
@@ -434,20 +373,20 @@ export function UploadNovelForm() {
           <form onSubmit={handleUpload} className="space-y-6">
             <div className="grid gap-4">
               <div className="space-y-2 relative" ref={suggestionRef}>
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Bibliographic Data</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
                 </div>
                 {showSuggestions && (
-                  <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden">
                     <ScrollArea className="max-h-[240px]">
                       {filteredSuggestions.map((book) => (
                         <button key={book.id} type="button" onClick={() => { setTitle(book.title); setAuthor(book.author); setSelectedGenres(book.genre); setChapterNumber((book.totalChapters + 1).toString()); setShowSuggestions(false); }} className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none">
                           <div className="bg-primary/10 p-2 rounded-lg"><Book className="h-4 w-4 text-primary" /></div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold truncate">{book.title}</p>
-                            <p className="text-xs text-muted-foreground truncate flex items-center gap-1"><User className="h-3 w-3" /> {book.author}</p>
+                            <p className="text-xs text-muted-foreground truncate">By {book.author}</p>
                           </div>
                           <div className="text-primary font-black text-sm pr-2">{book.totalChapters + 1}</div>
                         </button>
@@ -461,32 +400,28 @@ export function UploadNovelForm() {
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center justify-between">
                   Categories
-                  {wasAutoFilled && <span className="text-primary flex items-center gap-1 animate-pulse"><Sparkles className="h-2.5 w-2.5" /> Series Synced</span>}
+                  {wasAutoFilled && <span className="text-primary flex items-center gap-1 animate-pulse"><Sparkles className="h-2.5 w-2.5" /> Series Mode</span>}
                 </Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50 hover:bg-muted/30 transition-colors">
                       {selectedGenres.length > 0 ? (
                         selectedGenres.map(g => (
-                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 transition-all gap-1.5 px-2 py-1 rounded-lg">
-                            {g}
-                            <span onClick={(e) => { e.stopPropagation(); toggleGenre(g); }} className="hover:text-destructive transition-colors"><X className="h-3 w-3" /></span>
+                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary gap-1.5 px-2 py-1 rounded-lg">
+                            {g} <X className="h-3 w-3 cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedGenres(prev => prev.filter(x => x !== g)); }} />
                           </Badge>
                         ))
                       ) : (
-                        <div className="flex items-center justify-between w-full text-muted-foreground">
-                          <span className="text-sm font-medium">Select genre...</span>
-                          <ChevronDown className="h-4 w-4 opacity-50" />
-                        </div>
+                        <span className="text-sm text-muted-foreground">Select genre...</span>
                       )}
                     </div>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[340px] p-0 rounded-2xl shadow-2xl border-none" align="start">
+                  <PopoverContent className="w-[340px] p-0 rounded-2xl shadow-2xl border-none">
                     <ScrollArea className="h-72 p-3">
                       <div className="grid grid-cols-2 gap-2">
                         {GENRES.map(g => (
-                          <button key={g} type="button" onClick={() => toggleGenre(g)} className={`w-full flex items-center justify-between p-3 text-[11px] font-bold rounded-xl transition-all ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'bg-muted/50 hover:bg-muted'}`}>
-                            {g} {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
+                          <button key={g} type="button" onClick={() => setSelectedGenres(p => p.includes(g) ? p.filter(x => x !== g) : [...p, g])} className={`w-full text-left p-3 text-[11px] font-bold rounded-xl ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'bg-muted/50 hover:bg-muted'}`}>
+                            {g}
                           </button>
                         ))}
                       </div>
@@ -496,56 +431,50 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <Tabs value={sourceMode} onValueChange={v => handleSetSourceMode(v as any)}>
+            <Tabs value={sourceMode} onValueChange={v => { setSourceMode(v as any); persistSettings("lounge-source-mode", v); }}>
               <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1">
                 <TabsTrigger value="file" className="rounded-lg font-bold">Manuscript File</TabsTrigger>
                 <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
               </TabsList>
-              <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center hover:bg-muted/30 transition-colors">
+              <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center">
                 <input type="file" className="hidden" id="file-upload" onChange={e => { const file = e.target.files?.[0]; if (file) setSelectedFile(file); }} />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
                   {isExtractingPreview ? (
-                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Loader2 className="h-8 w-8 text-primary animate-spin" /></div>
+                    <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
                   ) : coverPreview ? (
-                    <div className="relative aspect-[2/3] w-32 mx-auto mb-4 rounded-lg overflow-hidden shadow-xl border-2 border-primary/20 animate-in fade-in zoom-in duration-500"><img src={coverPreview} alt="Cover" className="w-full h-full object-cover" /></div>
+                    <img src={coverPreview} alt="Cover" className="aspect-[2/3] w-32 mx-auto rounded-lg shadow-xl" />
                   ) : (
-                    <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><FileText className="h-8 w-8 text-primary" /></div>
+                    <FileText className="h-8 w-8 text-primary mx-auto" />
                   )}
-                  <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
+                  <p className="text-sm font-black uppercase text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter #</Label>
-                    <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} className="rounded-xl h-12" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Title</Label>
-                    <Input placeholder="Enter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
-                  </div>
+                  <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} placeholder="Chapter #" className="rounded-xl h-12" />
+                  <Input placeholder="Chapter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
                 </div>
                 <Textarea 
                   value={pastedText} 
                   onChange={e => setPastedText(e.target.value)} 
                   onPaste={(e) => { const text = e.clipboardData.getData('text'); setTimeout(() => handleAnalyzePastedText(text), 50); }}
-                  placeholder="Paste content... (Line 1: Novel Name, Line 2: Chapter Info)" 
+                  placeholder="Paste content here..." 
                   className="min-h-[250px] rounded-2xl p-4 bg-muted/20" 
                 />
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl transition-all relative overflow-hidden group" disabled={loading || (!selectedFile && !pastedText.trim())}>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl relative overflow-hidden" disabled={loading || (!selectedFile && !pastedText.trim())}>
               {loading && (
                 <div className="absolute bottom-0 left-0 right-0 bg-primary/20 transition-all duration-700 ease-in-out z-0" style={{ height: `${progress}%` }}>
                   <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-primary/30 animate-liquid-wave opacity-80" />
                 </div>
               )}
-              <div className="relative z-10 flex flex-col items-center justify-center">
+              <div className="relative z-10 flex flex-col items-center">
                 {loading ? (
-                  <><Loader2 className="animate-spin h-5 w-5 mb-1" /><span className="text-[10px] font-black uppercase tracking-widest">{loadingMessage}</span></>
+                  <><Loader2 className="animate-spin h-5 w-5 mb-1" /><span className="text-[10px] font-black uppercase">{loadingMessage}</span></>
                 ) : (
-                  <div className="flex items-center"><CloudUpload className="mr-2" />{uploadMode === 'cloud' ? 'Publish Globally' : 'Secure to Archive'}</div>
+                  <><CloudUpload className="mr-2 h-5 w-5" />{uploadMode === 'cloud' ? 'Publish Globally' : 'Secure to Archive'}</>
                 )}
               </div>
             </Button>

@@ -1,36 +1,27 @@
+
 import { doc, setDoc, serverTimestamp, Firestore, writeBatch, getDoc } from "firebase/firestore";
 import { FirebaseStorage } from "firebase/storage";
 import { uploadCoverImage } from "./upload-cover";
 
 /**
  * Clean manuscript artifacts and normalize whitespace.
- * Automatically purges word-count noise like [1,473 words].
  */
 export function cleanContent(text: string): string {
   if (!text) return "";
   return text
     .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
     .replace(/Page\s+\d+\s+of\s+\d+/gi, "")
-    .replace(/\[\s*[\d,.\s]+\s*words\s*\]/gi, "") 
+    .replace(/\[\s*[\d,.\s]+\s*words\s*\]/gi, "") // Purge formatted word counts
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 /**
- * Uploads a book to the cloud. Supports both raw text and pre-parsed chapter arrays.
+ * Uploads a book to the cloud.
+ * Chapters saved to Firestore, Cover saved to Vercel Blob.
  */
 export async function uploadBookToCloud({
-  db,
-  storage,
-  bookId,
-  title,
-  author,
-  genres,
-  rawContent,
-  coverFile,
-  ownerId,
-  manualChapterInfo,
-  preParsedChapters
+  db, storage, bookId, title, author, genres, rawContent, coverFile, ownerId, manualChapterInfo, preParsedChapters
 }: {
   db: Firestore;
   storage: FirebaseStorage;
@@ -45,7 +36,6 @@ export async function uploadBookToCloud({
   preParsedChapters?: { title: string; content: string }[];
 }) {
   let chapters: { chapterNumber: number; title: string; content: string }[] = [];
-  let detectedTitle = title;
 
   if (preParsedChapters && preParsedChapters.length > 0) {
     chapters = preParsedChapters.map((ch, i) => ({
@@ -61,7 +51,7 @@ export async function uploadBookToCloud({
     }];
   }
 
-  if (chapters.length === 0) throw new Error("No readable content detected.");
+  if (chapters.length === 0) throw new Error("No content detected.");
 
   const bookRef = doc(db, 'books', bookId);
   const existingSnap = await getDoc(bookRef);
@@ -71,6 +61,7 @@ export async function uploadBookToCloud({
   const uploadMax = Math.max(...chapters.map(ch => ch.chapterNumber));
   const finalTotal = Math.max(currentMax, uploadMax);
 
+  // Cover goes to Vercel
   let coverURL = existingData?.coverURL || null;
   let coverSize = existingData?.coverSize || 0;
   if (coverFile && storage) {
@@ -79,17 +70,14 @@ export async function uploadBookToCloud({
   }
 
   const metadataInfo = {
-    author, bookTitle: detectedTitle, totalChapters: finalTotal, genre: genres,
+    author, bookTitle: title, totalChapters: finalTotal, genre: genres,
     coverURL, coverSize, lastUpdated: serverTimestamp()
   };
 
   const rootPayload = {
-    title: detectedTitle,
-    titleLower: detectedTitle.toLowerCase(),
-    author,
-    authorLower: author.toLowerCase(),
-    genre: genres,
-    views: existingData?.views || 0,
+    title, titleLower: title.toLowerCase(),
+    author, authorLower: author.toLowerCase(),
+    genre: genres, views: existingData?.views || 0,
     isCloud: true, ownerId,
     createdAt: existingData?.createdAt || serverTimestamp(),
     lastUpdated: serverTimestamp(),
