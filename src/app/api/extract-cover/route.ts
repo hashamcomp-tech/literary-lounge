@@ -58,24 +58,25 @@ export async function POST(req: NextRequest) {
             }
 
             // 4. Genre / Subject Extraction
+            // Aggressively split by common delimiters to get granular tags
             let genres: string[] = [];
             if (epub.metadata.subject) {
-              if (Array.isArray(epub.metadata.subject)) {
-                genres = epub.metadata.subject.map(s => String(s));
-              } else if (typeof epub.metadata.subject === 'string') {
-                genres = epub.metadata.subject.split(',').map(s => s.trim());
-              }
+              const rawSubjects = Array.isArray(epub.metadata.subject) 
+                ? epub.metadata.subject 
+                : [String(epub.metadata.subject)];
+              
+              genres = rawSubjects.flatMap(s => 
+                String(s).split(/[,;/]/).map(part => part.trim())
+              ).filter(Boolean);
             }
 
             // 5. Intelligent Cover Identification
-            // Strategy: Check standard metadata first, then sweep manifest
             let coverId = epub.metadata.cover;
             
             if (!coverId) {
               const manifest = epub.manifest;
               const keywords = ['cover', 'thumb', 'front', 'jacket'];
               
-              // First pass: Property match (OPF 3.0 standard)
               for (const id in manifest) {
                 if (manifest[id].properties === 'cover-image') {
                   coverId = id;
@@ -83,7 +84,6 @@ export async function POST(req: NextRequest) {
                 }
               }
               
-              // Second pass: ID keyword match
               if (!coverId) {
                 for (const id in manifest) {
                   if (keywords.some(k => id.toLowerCase().includes(k))) {

@@ -100,21 +100,22 @@ export function UploadNovelForm() {
             if (data.title) setTitle(data.title);
             if (data.author) setAuthor(data.author);
             
-            // Auto-select Genres
+            // Auto-select Genres with bidirectional fuzzy matching
             if (data.genres && Array.isArray(data.genres)) {
-              const matchedGenres = data.genres
-                .map((g: string) => {
-                  const search = g.toLowerCase();
-                  return GENRES.find(available => 
-                    available.toLowerCase() === search || 
-                    search.includes(available.toLowerCase())
-                  );
-                })
-                .filter(Boolean) as string[];
+              const matchedSet = new Set<string>();
               
-              const uniqueMatched = Array.from(new Set(matchedGenres));
-              if (uniqueMatched.length > 0) {
-                setSelectedGenres(uniqueMatched);
+              data.genres.forEach((subject: string) => {
+                const search = subject.toLowerCase();
+                GENRES.forEach(available => {
+                  const availLower = available.toLowerCase();
+                  if (search === availLower || search.includes(availLower) || availLower.includes(search)) {
+                    matchedSet.add(available);
+                  }
+                });
+              });
+              
+              if (matchedSet.size > 0) {
+                setSelectedGenres(Array.from(matchedSet));
               }
             }
             
@@ -126,12 +127,12 @@ export function UploadNovelForm() {
             if (data.title || data.author) {
               toast({
                 title: "Volume Identified",
-                description: `Extracted metadata for "${data.title || 'Untitled'}" by ${data.author || 'Unknown author'}.`
+                description: `Metadata successfully extracted.`
               });
             }
           }
         } catch (e) {
-          console.warn("Digital identifying failed");
+          console.warn("Identification failed");
         } finally {
           setIsExtractingPreview(false);
         }
@@ -173,7 +174,7 @@ export function UploadNovelForm() {
         })));
       }
     } catch (e) {
-      console.warn("Library index fetch failed");
+      console.warn("Index fetch failed");
     }
   };
 
@@ -296,7 +297,6 @@ export function UploadNovelForm() {
           
           preParsedChapters = parseData.chapters;
           
-          // Use pre-extracted cover if available
           if (coverPreview) {
             extractedCoverFile = dataURLtoFile(coverPreview, `epub_cover_${bookId}.jpg`);
           }
@@ -325,7 +325,6 @@ export function UploadNovelForm() {
           manualChapterInfo: manualContent ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
         });
       } else {
-        // Local Archive Path
         await saveLocalBook({ 
           id: bookId, title: searchTitle, author: searchAuthor, genre: selectedGenres, 
           isLocalOnly: true, totalChapters: preParsedChapters ? preParsedChapters.length : parseInt(chapterNumber)
