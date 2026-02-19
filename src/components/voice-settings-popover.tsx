@@ -132,49 +132,49 @@ export function VoiceSettingsPopover() {
         <Button 
           variant="outline" 
           size="icon" 
-          className="rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
+          className="h-7 w-7 rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
           title="Narration Settings"
         >
-          <Settings className="h-4 w-4" />
+          <Settings className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[350px] rounded-[2rem] shadow-2xl p-0 overflow-hidden border-none" align="end">
-        <div className="bg-primary p-6 text-primary-foreground">
-          <h4 className="font-headline font-black text-xl flex items-center gap-2">
-            <Volume2 className="h-5 w-5" />
+      <PopoverContent className="w-[320px] rounded-[2rem] shadow-2xl p-0 overflow-hidden border-none" align="end">
+        <div className="bg-primary p-5 text-primary-foreground">
+          <h4 className="font-headline font-black text-lg flex items-center gap-2">
+            <Volume2 className="h-4 w-4" />
             Audio Controls
           </h4>
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">
+          <p className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">
             Personalize your listening experience
           </p>
         </div>
 
-        <ScrollArea className="max-h-[500px]">
-          <div className="p-6 space-y-8">
+        <ScrollArea className="max-h-[400px]">
+          <div className="p-5 space-y-6">
             {/* Voice & Speed */}
-            <div className="space-y-6">
-              <div className="space-y-3">
-                <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
                   <Globe className="h-3 w-3" /> Voice Profile
                 </Label>
                 <Select value={settings.voice} onValueChange={(voice) => updateSettings({ voice })}>
-                  <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-xs h-11">
+                  <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-[11px] h-9">
                     <SelectValue placeholder="Select Profile" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
                     {voices.map((v) => (
-                      <SelectItem key={v.voiceURI} value={v.voiceURI} className="text-xs font-bold">{v.name}</SelectItem>
+                      <SelectItem key={v.voiceURI} value={v.voiceURI} className="text-[11px] font-bold">{v.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                  <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
                     <Gauge className="h-3 w-3" /> Reading Speed
                   </Label>
-                  <span className="text-xs font-black text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
                     {settings.rate.toFixed(2)}x
                   </span>
                 </div>
@@ -184,21 +184,21 @@ export function VoiceSettingsPopover() {
                   max={2.0}
                   step={0.05}
                   onValueChange={([val]) => updateSettings({ rate: val })}
-                  className="py-2"
+                  className="py-1"
                 />
               </div>
             </div>
 
             {/* Pronunciation Editor */}
-            <div className="space-y-4 pt-6 border-t">
+            <div className="space-y-3 pt-5 border-t">
               <div className="flex items-center justify-between">
-                <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
                   <MessageSquare className="h-3 w-3" /> Fix Pronunciation
                 </Label>
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="h-6 text-[10px] font-black uppercase tracking-tighter text-primary hover:bg-primary/10"
+                  className="h-5 text-[9px] font-black uppercase tracking-tighter text-primary hover:bg-primary/10"
                   onClick={() => setIsAdding(!isAdding)}
                 >
                   {isAdding ? <X className="h-3 w-3 mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
@@ -207,51 +207,51 @@ export function VoiceSettingsPopover() {
               </div>
 
               {isAdding && (
-                <div className="bg-primary/5 p-4 rounded-2xl space-y-3 animate-in fade-in slide-in-from-top-2">
+                <div className="bg-primary/5 p-3 rounded-2xl space-y-2 animate-in fade-in slide-in-from-top-2">
                   <Input 
                     placeholder="Word (e.g. Firebase)" 
                     value={newWord} 
                     onChange={e => setNewWord(e.target.value)}
-                    className="h-9 text-xs rounded-lg border-primary/20"
+                    className="h-8 text-[11px] rounded-lg border-primary/20"
                   />
                   <Input 
                     placeholder="Sounds like (e.g. Fire base)" 
                     value={newSoundsLike} 
                     onChange={e => setNewSoundsLike(e.target.value)}
-                    className="h-9 text-xs rounded-lg border-primary/20"
+                    className="h-8 text-[11px] rounded-lg border-primary/20"
                   />
-                  <Button className="w-full h-9 rounded-lg text-xs font-bold" onClick={handleAddPronunciation}>
+                  <Button className="w-full h-8 rounded-lg text-[11px] font-bold" onClick={handleAddPronunciation}>
                     <Save className="h-3 w-3 mr-2" /> Save Mapping
                   </Button>
                 </div>
               )}
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {Object.entries(pronunciations).map(([word, soundsLike]) => (
-                  <div key={word} className="flex items-center justify-between p-3 bg-muted/30 rounded-xl group hover:bg-muted/50 transition-colors">
+                  <div key={word} className="flex items-center justify-between p-2.5 bg-muted/30 rounded-xl group hover:bg-muted/50 transition-colors">
                     <div className="min-w-0">
-                      <p className="text-[11px] font-black truncate">{word}</p>
-                      <p className="text-[10px] text-muted-foreground italic truncate">Sounds like: {soundsLike}</p>
+                      <p className="text-[10px] font-black truncate">{word}</p>
+                      <p className="text-[9px] text-muted-foreground italic truncate">Sounds like: {soundsLike}</p>
                     </div>
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => handleRemovePronunciation(word)}
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-2.5 w-2.5" />
                     </Button>
                   </div>
                 ))}
                 {Object.keys(pronunciations).length === 0 && !isAdding && (
-                  <p className="text-[10px] text-center text-muted-foreground py-4 italic">No custom pronunciations added yet.</p>
+                  <p className="text-[9px] text-center text-muted-foreground py-3 italic">No custom pronunciations added yet.</p>
                 )}
               </div>
             </div>
 
             <Button 
               variant="secondary" 
-              className="w-full h-12 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-sm" 
+              className="w-full h-10 rounded-2xl font-black uppercase text-[9px] tracking-widest shadow-sm" 
               onClick={handleTestVoice}
             >
               <Play className="h-3 w-3 mr-2" />
