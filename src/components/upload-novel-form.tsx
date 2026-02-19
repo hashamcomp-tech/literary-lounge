@@ -104,35 +104,41 @@ export function UploadNovelForm() {
       };
     }
 
-    return {
-      novelName,
-      chapterNumber: '1',
-      chapterTitle: secondLine
-    };
+    return null;
   }, []);
 
   /**
    * Handles metadata detection without AI.
-   * Strictly uses the positional parser and library matching.
+   * Only triggers if Line 1 is a pre-existing book and Line 2 contains a Chapter pattern.
    */
   const handleAnalyzePastedText = (text: string) => {
     if (!text || text.length < 10) return;
     
-    // 1. Instant Positional Detection (User Rules)
-    const quick = quickDetectFromText(text);
-    if (quick) {
-      const searchTitle = quick.novelName.toLowerCase();
-      // Fuzzy match to closest existing library item
-      let existing = allBooks.find(b => b.title.toLowerCase() === searchTitle);
-      
-      if (!existing) {
-        existing = allBooks.find(b => 
-          b.title.toLowerCase().includes(searchTitle) || 
-          searchTitle.includes(b.title.toLowerCase())
-        );
-      }
+    const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) return;
 
-      if (existing) {
+    const potentialNovelName = lines[0].toLowerCase();
+    const potentialChapterLine = lines[1];
+
+    // 1. Condition: Line 2 must contain "Chapter" followed by a number
+    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
+    if (!chapterRegex.test(potentialChapterLine)) {
+      return; // Do not implement auto-functions for this structure
+    }
+
+    // 2. Condition: Line 1 must match a pre-existing book name
+    let existing = allBooks.find(b => b.title.toLowerCase() === potentialNovelName);
+    if (!existing) {
+      existing = allBooks.find(b => 
+        b.title.toLowerCase().includes(potentialNovelName) || 
+        potentialNovelName.includes(b.title.toLowerCase())
+      );
+    }
+
+    // 3. Implement detection only if both criteria are met
+    if (existing) {
+      const quick = quickDetectFromText(text);
+      if (quick) {
         setTitle(existing.title);
         setAuthor(existing.author);
         setSelectedGenres(existing.genre);
@@ -140,14 +146,9 @@ export function UploadNovelForm() {
         setChapterTitle(quick.chapterTitle);
         setWasAutoFilled(true);
         toast({ 
-          title: "Library Match Found", 
-          description: `Metadata synced for "${existing.title}".` 
+          title: "Library Match Detected", 
+          description: `Sequence recognized for "${existing.title}". Headers will be stripped from content.` 
         });
-      } else {
-        setTitle(quick.novelName);
-        setChapterNumber(quick.chapterNumber);
-        setChapterTitle(quick.chapterTitle);
-        setWasAutoFilled(true);
       }
     }
   };
@@ -322,21 +323,25 @@ export function UploadNovelForm() {
         }
       } else {
         // Source is 'text' (pastedText)
-        // CRITICAL: Strip first two non-empty lines (Novel Name and Chapter Info) from the body
-        // This ensures headers aren't redundant in the reading view.
-        const lines = pastedText.split('\n');
-        let linesToSkip = 0;
-        let nonEntryCount = 0;
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].trim().length > 0) {
-            nonEntryCount++;
-            if (nonEntryCount === 2) {
-              linesToSkip = i + 1;
-              break;
+        let processedContent = pastedText;
+        
+        // If we auto-filled from positional headers, strip those headers from the final content
+        if (wasAutoFilled) {
+          const lines = pastedText.split('\n');
+          let linesToSkip = 0;
+          let nonEntryCount = 0;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim().length > 0) {
+              nonEntryCount++;
+              if (nonEntryCount === 2) {
+                linesToSkip = i + 1;
+                break;
+              }
             }
           }
+          processedContent = lines.slice(linesToSkip).join('\n').trim();
         }
-        manualContent = lines.slice(linesToSkip).join('\n').trim();
+        manualContent = processedContent;
       }
 
       setLoadingMessage('Syncing with Lounge...');
@@ -474,7 +479,7 @@ export function UploadNovelForm() {
                   Categories
                   {wasAutoFilled && (
                     <span className="text-primary flex items-center gap-1 animate-pulse">
-                      <Sparkles className="h-2.5 w-2.5" /> Site Detected
+                      <Sparkles className="h-2.5 w-2.5" /> Sequence Synced
                     </span>
                   )}
                 </Label>
