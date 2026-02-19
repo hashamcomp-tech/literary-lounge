@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon, Settings, Sparkles, Upload, CheckCircle2 } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon, Settings, Sparkles, Upload, CheckCircle2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -70,11 +70,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   
   const viewLoggedRef = useRef<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const epubCoverInputRef = useRef<HTMLInputElement>(null);
 
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
   const [isBookDeleteDialogOpen, setIsBookDeleteDialogOpen] = useState(false);
   const [isUpdatingCover, setIsUpdatingCover] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [isExtractingEpub, setIsExtractingEpub] = useState(false);
 
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous && firestore) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: profile } = useDoc(profileRef);
@@ -247,6 +249,35 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     } catch (err: any) {
       toast({ variant: "destructive", title: "Update Failed", description: err.message });
     } finally {
+      setIsUpdatingCover(false);
+    }
+  };
+
+  const handleExtractEpubCover = async (file: File) => {
+    if (!firestore || !id) return;
+    setIsExtractingEpub(true);
+    setIsUpdatingCover(true);
+    try {
+      toast({ title: "Analyzing Archive", description: "Locating embedded visual assets..." });
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const res = await fetch('/api/extract-cover', { method: 'POST', body: formData });
+      
+      if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || "Digital extraction failed.");
+      }
+      
+      const { dataUri } = await res.json();
+      const extractedFile = dataURLtoFile(dataUri, `epub_cover_${id}.jpg`);
+      
+      await handleUpdateCover(extractedFile);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Extraction Failed", description: err.message });
+    } finally {
+      setIsExtractingEpub(false);
       setIsUpdatingCover(false);
     }
   };
@@ -544,7 +575,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                   {isUpdatingCover && (
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center text-white p-4">
                       <Loader2 className="h-10 w-10 animate-spin mb-3 text-primary" />
-                      <span className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Syncing Cloud...</span>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">
+                        {isExtractingEpub ? 'Extracting...' : isGeneratingAI ? 'Generating...' : 'Syncing...'}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -561,23 +594,44 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                     {isGeneratingAI && <span className="absolute inset-0 bg-white/10 animate-shimmer" />}
                   </Button>
                   
-                  <div className="relative">
-                    <input 
-                      type="file" 
-                      ref={coverInputRef} 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={(e) => e.target.files && handleUpdateCover(e.target.files[0])} 
-                    />
-                    <Button 
-                      variant="outline" 
-                      className="w-full rounded-2xl h-14 font-bold border-primary/20 text-primary hover:bg-primary/5 gap-2" 
-                      onClick={() => coverInputRef.current?.click()} 
-                      disabled={isUpdatingCover}
-                    >
-                      <Upload className="h-4 w-4" />
-                      Manual Upload
-                    </Button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative">
+                      <input 
+                        type="file" 
+                        ref={coverInputRef} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={(e) => e.target.files && handleUpdateCover(e.target.files[0])} 
+                      />
+                      <Button 
+                        variant="outline" 
+                        className="w-full rounded-2xl h-14 font-bold border-primary/20 text-primary hover:bg-primary/5 gap-2" 
+                        onClick={() => coverInputRef.current?.click()} 
+                        disabled={isUpdatingCover}
+                      >
+                        <Upload className="h-4 w-4" />
+                        Manual
+                      </Button>
+                    </div>
+
+                    <div className="relative">
+                      <input 
+                        type="file" 
+                        ref={epubCoverInputRef} 
+                        className="hidden" 
+                        accept=".epub" 
+                        onChange={(e) => e.target.files && handleExtractEpubCover(e.target.files[0])} 
+                      />
+                      <Button 
+                        variant="outline" 
+                        className="w-full rounded-2xl h-14 font-bold border-primary/20 text-primary hover:bg-primary/5 gap-2" 
+                        onClick={() => epubCoverInputRef.current?.click()} 
+                        disabled={isUpdatingCover}
+                      >
+                        <FileText className="h-4 w-4" />
+                        EPUB
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </TabsContent>
