@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon, Square } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, ShieldAlert, Sun, Moon, MessageSquare, Volume2, CloudOff, Trash2, MoreVertical, Zap, Image as ImageIcon, Settings, Sparkles, Upload, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -15,10 +15,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { deleteCloudBook, updateCloudBookCover } from '@/lib/cloud-library-utils';
 import { uploadCoverImage } from '@/lib/upload-cover';
-import { optimizeCoverImage } from '@/lib/image-utils';
+import { optimizeCoverImage, dataURLtoFile } from '@/lib/image-utils';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { saveToLocalHistory } from '@/lib/local-history-utils';
+import { generateBookCover } from '@/ai/flows/generate-cover';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,12 +39,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 interface CloudReaderClientProps {
   id: string;
@@ -74,6 +74,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isManageDialogOpen, setIsManageDialogOpen] = useState(false);
   const [isBookDeleteDialogOpen, setIsBookDeleteDialogOpen] = useState(false);
   const [isUpdatingCover, setIsUpdatingCover] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
   const profileRef = useMemoFirebase(() => (user && !user.isAnonymous && firestore) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
   const { data: profile } = useDoc(profileRef);
@@ -250,6 +251,29 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
+  const handleGenerateAICover = async () => {
+    if (!firestore || !storage || !id || !metadata) return;
+    setIsGeneratingAI(true);
+    setIsUpdatingCover(true);
+    try {
+      toast({ title: "Studio Active", description: "Gemini is analyzing themes and generating art..." });
+      const dataUri = await generateBookCover({
+        title: metadata.bookTitle || metadata.title,
+        author: metadata.author,
+        genres: Array.isArray(metadata.genre) ? metadata.genre : [metadata.genre],
+        description: `A unique novel in the cloud library.`
+      });
+
+      const file = dataURLtoFile(dataUri, `ai_cover_${id}.jpg`);
+      await handleUpdateCover(file);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "AI Generation Failed", description: err.message });
+    } finally {
+      setIsGeneratingAI(false);
+      setIsUpdatingCover(false);
+    }
+  };
+
   const handlePreloadNext10 = async () => {
     if (isPreloading) return;
     setIsPreloading(true);
@@ -307,7 +331,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
       
       const rawContent = chData.content || '';
-      // If we clicked a specific paragraph, start from there
       let textToRead = rawContent;
       if (startIndex > 0) {
         const paragraphs = rawContent
@@ -380,24 +403,15 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </Button>
           <div className="flex items-center gap-2">
             {isAdmin && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="rounded-full text-primary hover:bg-primary/10">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="rounded-xl w-56 shadow-2xl border-none">
-                  <DropdownMenuItem className="rounded-lg gap-2 cursor-pointer py-2.5" onClick={() => setIsManageDialogOpen(true)}>
-                    <ImageIcon className="h-4 w-4" />
-                    <span>Update Cover Art</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem className="rounded-lg gap-2 text-destructive font-bold cursor-pointer py-2.5" onClick={() => setIsBookDeleteDialogOpen(true)}>
-                    <Trash2 className="h-4 w-4" />
-                    <span>Delete Manuscript</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="rounded-full text-primary hover:bg-primary/10"
+                onClick={() => setIsManageDialogOpen(true)}
+                title="Lounge Studio"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
             )}
             
             <Button 
@@ -422,7 +436,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               onClick={() => handleReadAloud(currentChapterNum)}
               title={isSpeaking ? "Stop Reading" : "Read Aloud"}
             >
-              {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
+              {isSpeaking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
             </Button>
 
             <Link href={`/chat/${id}`}>
@@ -503,43 +517,115 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       </section>
 
       <Dialog open={isManageDialogOpen} onOpenChange={setIsManageDialogOpen}>
-        <DialogContent className="rounded-2xl shadow-2xl border-none max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline font-black">Manage Manuscript</DialogTitle>
-            <DialogDescription>Refresh visual identity.</DialogDescription>
+        <DialogContent className="rounded-[2.5rem] shadow-2xl border-none max-w-md overflow-hidden bg-card/95 backdrop-blur-xl">
+          <div className="h-2 bg-primary w-full absolute top-0 left-0" />
+          <DialogHeader className="pt-6">
+            <DialogTitle className="text-3xl font-headline font-black flex items-center gap-3">
+              <Settings className="h-6 w-6 text-primary" />
+              Lounge Studio
+            </DialogTitle>
+            <DialogDescription>Enhance and manage this manuscript.</DialogDescription>
           </DialogHeader>
-          <div className="py-6 space-y-6">
-            <div className="relative aspect-[2/3] w-40 mx-auto bg-muted rounded-xl overflow-hidden shadow-2xl border-4 border-background">
-              <img src={metadata?.coverURL || `https://picsum.photos/seed/${id}/400/600`} alt="Cover" className="w-full h-full object-cover" />
-              {isUpdatingCover && (
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4">
-                  <Loader2 className="h-8 w-8 animate-spin mb-2" />
-                  <span className="text-[10px] font-black uppercase tracking-widest">Syncing...</span>
+          
+          <div className="py-6">
+            <Tabs defaultValue="cover" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1 mb-8">
+                <TabsTrigger value="cover" className="rounded-lg font-bold">Visuals</TabsTrigger>
+                <TabsTrigger value="danger" className="rounded-lg font-bold text-destructive">Control</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="cover" className="space-y-8 animate-in fade-in duration-500">
+                <div className="relative aspect-[2/3] w-48 mx-auto bg-muted rounded-2xl overflow-hidden shadow-2xl border-4 border-background group">
+                  <img 
+                    src={metadata?.coverURL || `https://picsum.photos/seed/${id}/400/600`} 
+                    alt="Current Cover" 
+                    className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" 
+                  />
+                  {isUpdatingCover && (
+                    <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center text-white p-4">
+                      <Loader2 className="h-10 w-10 animate-spin mb-3 text-primary" />
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] animate-pulse">Syncing Cloud...</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="grid grid-cols-1">
-              <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => e.target.files && handleUpdateCover(e.target.files[0])} />
-              <Button variant="outline" className="rounded-xl h-14 font-bold" onClick={() => coverInputRef.current?.click()} disabled={isUpdatingCover}>
-                Manual Upload
-              </Button>
-            </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <Button 
+                    variant="default" 
+                    className="rounded-2xl h-16 bg-primary shadow-xl font-black gap-2 relative overflow-hidden group"
+                    onClick={handleGenerateAICover}
+                    disabled={isUpdatingCover}
+                  >
+                    <Sparkles className="h-5 w-5" />
+                    Studio AI Generation
+                    {isGeneratingAI && <span className="absolute inset-0 bg-white/10 animate-shimmer" />}
+                  </Button>
+                  
+                  <div className="relative">
+                    <input 
+                      type="file" 
+                      ref={coverInputRef} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => e.target.files && handleUpdateCover(e.target.files[0])} 
+                    />
+                    <Button 
+                      variant="outline" 
+                      className="w-full rounded-2xl h-14 font-bold border-primary/20 text-primary hover:bg-primary/5 gap-2" 
+                      onClick={() => coverInputRef.current?.click()} 
+                      disabled={isUpdatingCover}
+                    >
+                      <Upload className="h-4 w-4" />
+                      Manual Upload
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="danger" className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+                <div className="bg-destructive/5 border border-destructive/10 p-6 rounded-3xl">
+                  <h4 className="text-destructive font-black text-sm uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4" />
+                    Danger Zone
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
+                    Removing this volume will purge it globally for all readers. This action is irreversible.
+                  </p>
+                  <Button 
+                    variant="destructive" 
+                    className="w-full rounded-2xl h-14 font-black gap-2"
+                    onClick={() => setIsBookDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Manuscript
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
           </div>
-          <DialogFooter>
-            <Button variant="ghost" className="w-full rounded-xl" onClick={() => setIsManageDialogOpen(false)}>Close</Button>
+
+          <DialogFooter className="border-t pt-4">
+            <Button variant="ghost" className="w-full rounded-xl" onClick={() => setIsManageDialogOpen(false)}>Close Studio</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={isBookDeleteDialogOpen} onOpenChange={setIsBookDeleteDialogOpen}>
-        <AlertDialogContent className="rounded-2xl shadow-2xl border-none">
+        <AlertDialogContent className="rounded-[2.5rem] shadow-2xl border-none">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-headline font-black text-destructive">Final Deletion</AlertDialogTitle>
-            <AlertDialogDescription>Remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span>? Purge globally for all readers.</AlertDialogDescription>
+            <AlertDialogDescription className="text-base">
+              You are about to remove <span className="font-bold text-foreground">"{metadata?.bookTitle || metadata?.title}"</span> from the global Lounge.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteBook} className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold">Delete Forever</AlertDialogAction>
+            <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteBook} 
+              className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold px-8 h-12"
+            >
+              Confirm Global Purge
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
