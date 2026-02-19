@@ -6,8 +6,8 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * @fileOverview API Route for extracting the cover image from an EPUB file.
- * Uses the EPub metadata manifest to find the designated cover resource.
+ * @fileOverview API Route for extracting metadata and cover image from an EPUB file.
+ * Uses the EPub metadata manifest to find the designated cover resource and bibliographic info.
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
@@ -37,29 +37,49 @@ export async function POST(req: NextRequest) {
 
       epub.on('end', () => {
         try {
-          // 3. Locate the cover ID in the manifest
+          // 3. Extract Bibliographic Metadata
+          const title = epub.metadata.title || '';
+          const author = Array.isArray(epub.metadata.creator) 
+            ? epub.metadata.creator.join(', ') 
+            : epub.metadata.creator || '';
+
+          // 4. Locate the cover ID in the manifest
           const coverId = epub.metadata.cover;
           
           if (!coverId) {
             if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-            resolve(NextResponse.json({ error: 'No designated cover resource found in this EPUB manifest.' }, { status: 404 }));
+            resolve(NextResponse.json({ 
+              success: true, 
+              title, 
+              author,
+              dataUri: null,
+              message: 'No designated cover resource found in manifest.' 
+            }));
             return;
           }
 
-          // 4. Extract the binary image resource
+          // 5. Extract the binary image resource
           epub.getImage(coverId, (err, data, mimeType) => {
             // Cleanup temp file regardless of result
             if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
 
             if (err || !data) {
-              resolve(NextResponse.json({ error: 'Failed to extract cover image resource.' }, { status: 500 }));
+              resolve(NextResponse.json({ 
+                success: true, 
+                title, 
+                author,
+                dataUri: null,
+                message: 'Failed to extract cover image resource.' 
+              }));
               return;
             }
 
-            // 5. Return as a Data URI for client-side processing
+            // 6. Return as a Data URI for client-side processing
             const base64 = data.toString('base64');
             resolve(NextResponse.json({ 
               success: true, 
+              title,
+              author,
               dataUri: `data:${mimeType};base64,${base64}` 
             }));
           });

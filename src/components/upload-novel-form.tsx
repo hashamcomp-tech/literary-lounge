@@ -71,7 +71,7 @@ export function UploadNovelForm() {
     }
   }, []);
 
-  // Handle automatic cover preview extraction
+  // Handle automatic metadata and cover preview extraction
   useEffect(() => {
     if (!selectedFile) {
       setCoverPreview(null);
@@ -79,27 +79,42 @@ export function UploadNovelForm() {
     }
 
     if (selectedFile.name.toLowerCase().endsWith('.epub')) {
-      const getPreview = async () => {
+      const getMetadataAndPreview = async () => {
         setIsExtractingPreview(true);
         try {
           const formData = new FormData();
           formData.append('file', selectedFile);
           const res = await fetch('/api/extract-cover', { method: 'POST', body: formData });
           if (res.ok) {
-            const { dataUri } = await res.json();
-            setCoverPreview(dataUri);
+            const data = await res.json();
+            
+            // Auto-fill form fields if metadata is present
+            if (data.title) setTitle(data.title);
+            if (data.author) setAuthor(data.author);
+            
+            // Set cover preview if available
+            if (data.dataUri) {
+              setCoverPreview(data.dataUri);
+            }
+            
+            if (data.title || data.author) {
+              toast({
+                title: "Metadata Identified",
+                description: `Successfully recognized "${data.title || 'Untitled'}" by ${data.author || 'Unknown'}.`
+              });
+            }
           }
         } catch (e) {
-          console.warn("Cover preview extraction failed");
+          console.warn("Metadata extraction failed");
         } finally {
           setIsExtractingPreview(false);
         }
       };
-      getPreview();
+      getMetadataAndPreview();
     } else {
       setCoverPreview(null);
     }
-  }, [selectedFile]);
+  }, [selectedFile, toast]);
 
   useEffect(() => {
     localStorage.setItem("lounge-upload-mode", uploadMode);
@@ -268,7 +283,9 @@ export function UploadNovelForm() {
               });
               if (coverRes.ok) {
                 const { dataUri } = await coverRes.json();
-                extractedCoverFile = dataURLtoFile(dataUri, `epub_cover_${bookId}.jpg`);
+                if (dataUri) {
+                  extractedCoverFile = dataURLtoFile(dataUri, `epub_cover_${bookId}.jpg`);
+                }
               }
             } catch (e) {
               console.warn("Auto cover extraction failed, continuing without it.");
