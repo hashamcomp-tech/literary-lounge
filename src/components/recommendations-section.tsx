@@ -4,10 +4,11 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit, where } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { TrendingUp, Eye, Star, Zap, Clock, Book } from 'lucide-react';
+import { TrendingUp, Eye, Star, Zap, Clock, Book, Play } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
+import { useEffect, useState } from 'react';
 
 interface RecommendationsSectionProps {
   title?: string;
@@ -23,6 +24,20 @@ export default function RecommendationsSection({
   limitCount = 6 
 }: RecommendationsSectionProps) {
   const db = useFirestore();
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    // Collect local progress for all visible recommendations
+    const keys = Object.keys(localStorage);
+    const progress: Record<string, number> = {};
+    keys.forEach(k => {
+      if (k.startsWith('lounge-progress-')) {
+        const bookId = k.replace('lounge-progress-', '');
+        progress[bookId] = parseInt(localStorage.getItem(k) || '1');
+      }
+    });
+    setProgressMap(progress);
+  }, []);
 
   const cloudBooksQuery = useMemoFirebase(() => {
     if (!db) return null;
@@ -30,7 +45,6 @@ export default function RecommendationsSection({
     const booksCol = collection(db, 'books');
     
     if (genre) {
-      // Updated to use array-contains for multi-genre support
       return query(
         booksCol,
         where('genre', 'array-contains', genre),
@@ -62,7 +76,6 @@ export default function RecommendationsSection({
     );
   }
 
-  // Gracefully handle missing firebase data
   if (!db || !books || books.length === 0) return null;
 
   const sortedBooks = genre 
@@ -93,9 +106,10 @@ export default function RecommendationsSection({
         {sortedBooks.map((book) => {
           const coverImg = book.coverURL || book.metadata?.info?.coverURL || book.coverImage || `https://picsum.photos/seed/${book.id}/400/600`;
           const genres = (Array.isArray(book.genre) ? book.genre : [book.genre]).filter(Boolean);
+          const resumeChapter = progressMap[book.id] || 1;
           
           return (
-            <Link key={book.id} href={`/pages/${book.id}/1`}>
+            <Link key={book.id} href={`/pages/${book.id}/${resumeChapter}`}>
               <Card className="bg-card/50 border-none shadow-sm hover:shadow-xl transition-all duration-500 group cursor-pointer h-full flex flex-col overflow-hidden">
                 <div className="flex flex-row">
                   <div className="relative w-[100px] h-[150px] shrink-0 m-4 shadow-md bg-muted/20 flex items-center justify-center rounded-md overflow-hidden">
@@ -109,6 +123,11 @@ export default function RecommendationsSection({
                       />
                     ) : (
                       <Book className="h-8 w-8 text-muted-foreground/20" />
+                    )}
+                    {resumeChapter > 1 && (
+                      <div className="absolute inset-0 bg-primary/20 backdrop-blur-[2px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Play className="h-8 w-8 text-white fill-white" />
+                      </div>
                     )}
                   </div>
                   <div className="flex-1 flex flex-col py-4 pr-4 min-w-0">
@@ -140,7 +159,7 @@ export default function RecommendationsSection({
                           ))}
                         </div>
                         <span className="text-[10px] font-black text-primary group-hover:translate-x-1 transition-transform">
-                          Read Now →
+                          {resumeChapter > 1 ? `Ch. ${resumeChapter} →` : 'Read Now →'}
                         </span>
                       </div>
                     </CardContent>

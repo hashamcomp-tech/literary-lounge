@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,7 +50,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   /**
    * Primary Content Loading.
-   * Decoupled from buffering to prevent state-dependency loops.
+   * Includes "First Available" redirection logic for books that don't start at Chapter 1.
    */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
@@ -94,7 +94,18 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           }
           updateHistory(meta);
         } else {
-          setError(`Chapter ${currentChapterNum} is currently unavailable.`);
+          // CHAPTER NOT FOUND: Try to find the true starting chapter
+          const startQ = query(chaptersCol, orderBy('chapterNumber', 'asc'), limit(1));
+          const startSnap = await getDocs(startQ);
+          
+          if (!startSnap.empty) {
+            const firstNum = startSnap.docs[0].data().chapterNumber;
+            // Redirect to the lowest available chapter
+            router.replace(`/pages/${id}/${firstNum}`);
+            return;
+          }
+          
+          setError(`This manuscript has no chapters available.`);
         }
       } catch (err: any) {
         console.error("Chapter load failure:", err);
@@ -106,11 +117,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     loadChapter();
     stopTextToSpeech();
-  }, [firestore, id, currentChapterNum, isOfflineMode]); // REMOVED metadata dependency to prevent loop
+  }, [firestore, id, currentChapterNum, isOfflineMode]);
 
   /**
    * Predictive Buffering Effect.
-   * Runs independently of the primary loader to avoid infinite re-renders.
    */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id || isLoading) return;
@@ -132,7 +142,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
         });
         
-        // Use functional update to avoid dependency on chaptersCache
         setChaptersCache(prev => ({ ...prev, ...newEntries }));
       } catch (e) {
         console.warn("Predictive buffer failed:", e);

@@ -48,6 +48,12 @@ export default function LocalReader() {
             (Number(a.chapterNumber) || 0) - (Number(b.chapterNumber) || 0)
           );
           setAllChapters(sorted);
+
+          // If current chapter doesn't exist, redirect to the first available one
+          const exists = sorted.some(ch => Number(ch.chapterNumber) === currentChapterNum);
+          if (!exists && sorted.length > 0) {
+            router.replace(`/local-pages/${id}/${sorted[0].chapterNumber}`);
+          }
         }
       } catch (error) {
         console.error("Failed to load local novel", error);
@@ -56,7 +62,7 @@ export default function LocalReader() {
       }
     };
     loadLocalData();
-  }, [id]);
+  }, [id, currentChapterNum]);
 
   useEffect(() => {
     if (currentChapterNum && id) {
@@ -77,7 +83,6 @@ export default function LocalReader() {
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    // The engine handles internal chunking and sequential playback
     playTextToSpeech(chapter.content, { voice: voiceOptions.voice });
   };
 
