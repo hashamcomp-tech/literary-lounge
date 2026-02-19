@@ -73,8 +73,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (saved) setCurrentChapterIndex(parseInt(saved));
   }, [novel.id]);
 
-  const handleReadAloud = async (startIndex: number = 0) => {
-    if (isSpeaking) {
+  const handleReadAloud = async (textOverride?: string) => {
+    if (isSpeaking && !textOverride) {
       stopTextToSpeech();
       return;
     }
@@ -84,8 +84,32 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     const savedSettings = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
     
-    // Use the robust sequential AI engine
-    playTextToSpeech(currentChapter.content, { voice: voiceOptions.voice });
+    const textToPlay = textOverride || currentChapter.content;
+    playTextToSpeech(textToPlay, { voice: voiceOptions.voice });
+  };
+
+  const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {
+    const paragraphs = currentChapter.content
+      .split(/\n\n/)
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+
+    let offset = 0;
+    if ((document as any).caretRangeFromPoint) {
+      const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
+      if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+        offset = range.startOffset;
+      }
+    } else if ((document as any).caretPositionFromPoint) {
+      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos) offset = pos.offset;
+    }
+
+    const remainingInPara = paragraphs[paraIdx].substring(offset);
+    const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
+    const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
+
+    handleReadAloud(fullRemainingText);
   };
 
   if (!mounted) return null;
@@ -111,7 +135,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   variant="outline" 
                   size="icon" 
                   className={`rounded-full transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-                  onClick={() => handleReadAloud(0)}
+                  onClick={() => handleReadAloud()}
                   title={isSpeaking ? "Stop Narration" : "Read Aloud"}
                 >
                   {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
@@ -170,8 +194,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               {paragraphs.map((para, i) => (
                 <p 
                   key={i} 
-                  onClick={() => handleReadAloud(i)}
                   className="mb-8 cursor-pointer hover:text-foreground transition-colors"
+                  onClick={(e) => handleJumpToWord(i, e)}
                 >
                   {para}
                 </p>

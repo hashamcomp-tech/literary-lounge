@@ -49,7 +49,6 @@ export default function LocalReader() {
           );
           setAllChapters(sorted);
 
-          // If current chapter doesn't exist, redirect to the first available one
           const exists = sorted.some(ch => Number(ch.chapterNumber) === currentChapterNum);
           if (!exists && sorted.length > 0) {
             router.replace(`/local-pages/${id}/${sorted[0].chapterNumber}`);
@@ -71,8 +70,8 @@ export default function LocalReader() {
     }
   }, [id, currentChapterNum]);
 
-  const handleReadAloud = async (startIndex: number = 0) => {
-    if (isSpeaking) {
+  const handleReadAloud = async (textOverride?: string) => {
+    if (isSpeaking && !textOverride) {
       stopTextToSpeech();
       return;
     }
@@ -83,7 +82,36 @@ export default function LocalReader() {
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    playTextToSpeech(chapter.content, { voice: voiceOptions.voice });
+    const textToPlay = textOverride || chapter.content;
+    playTextToSpeech(textToPlay, { voice: voiceOptions.voice });
+  };
+
+  const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {
+    const chapter = allChapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
+    if (!chapter) return;
+
+    const paragraphs = (chapter.content || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/\n\n/)
+      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+      .filter((p: string) => p.length > 0);
+
+    let offset = 0;
+    if ((document as any).caretRangeFromPoint) {
+      const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
+      if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+        offset = range.startOffset;
+      }
+    } else if ((document as any).caretPositionFromPoint) {
+      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos) offset = pos.offset;
+    }
+
+    const remainingInPara = paragraphs[paraIdx].substring(offset);
+    const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
+    const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
+
+    handleReadAloud(fullRemainingText);
   };
 
   if (loading) {
@@ -121,8 +149,8 @@ export default function LocalReader() {
   const paragraphs = (chapter.content || '')
     .replace(/<br\s*\/?>/gi, '\n')
     .split(/\n\n/)
-    .map(p => p.replace(/<[^>]*>?/gm, '').trim())
-    .filter(p => p.length > 0);
+    .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+    .filter((p: string) => p.length > 0);
 
   return (
     <div className="min-h-screen flex flex-col bg-background transition-colors duration-300">
@@ -146,7 +174,7 @@ export default function LocalReader() {
                 variant="outline" 
                 size="icon" 
                 className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-                onClick={() => handleReadAloud(0)}
+                onClick={() => handleReadAloud()}
                 title={isSpeaking ? "Stop Narration" : "Read Aloud"}
               >
                 {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
@@ -187,13 +215,13 @@ export default function LocalReader() {
           </header>
 
           <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
-            {paragraphs.map((cleanPara: string, idx: number) => (
+            {paragraphs.map((para: string, idx: number) => (
                <p 
                 key={idx} 
-                onClick={() => handleReadAloud(idx)}
                 className="mb-8 cursor-pointer hover:text-foreground transition-colors"
+                onClick={(e) => handleJumpToWord(idx, e)}
                >
-                 {cleanPara}
+                 {para}
                </p>
             ))}
           </div>

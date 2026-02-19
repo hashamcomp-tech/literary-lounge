@@ -50,13 +50,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   /**
    * Primary Content Loading.
-   * Includes "First Available" redirection logic for books that don't start at Chapter 1.
    */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
 
     const loadChapter = async () => {
-      // 1. Check Cache first
       if (chaptersCache[currentChapterNum]) {
         setIsLoading(false);
         updateHistory(metadata);
@@ -94,13 +92,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           }
           updateHistory(meta);
         } else {
-          // CHAPTER NOT FOUND: Try to find the true starting chapter
           const startQ = query(chaptersCol, orderBy('chapterNumber', 'asc'), limit(1));
           const startSnap = await getDocs(startQ);
           
           if (!startSnap.empty) {
             const firstNum = startSnap.docs[0].data().chapterNumber;
-            // Redirect to the lowest available chapter
             router.replace(`/pages/${id}/${firstNum}`);
             return;
           }
@@ -176,8 +172,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleReadAloud = async () => {
-    if (isSpeaking) {
+  const handleReadAloud = async (textOverride?: string) => {
+    if (isSpeaking && !textOverride) {
       stopTextToSpeech();
       return;
     }
@@ -188,7 +184,36 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    playTextToSpeech(chData.content, { voice: voiceOptions.voice });
+    const textToPlay = textOverride || chData.content;
+    playTextToSpeech(textToPlay, { voice: voiceOptions.voice });
+  };
+
+  const handleJumpToWord = (paraIdx: number, e: React.MouseEvent) => {
+    const chapter = chaptersCache[currentChapterNum];
+    if (!chapter) return;
+
+    const paragraphs = (chapter.content || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/\n\n/)
+      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+      .filter((p: string) => p.length > 0);
+
+    let offset = 0;
+    if ((document as any).caretRangeFromPoint) {
+      const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
+      if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+        offset = range.startOffset;
+      }
+    } else if ((document as any).caretPositionFromPoint) {
+      const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
+      if (pos) offset = pos.offset;
+    }
+
+    const remainingInPara = paragraphs[paraIdx].substring(offset);
+    const followingParas = paragraphs.slice(paraIdx + 1).join('\n\n');
+    const fullRemainingText = remainingInPara + (followingParas ? '\n\n' + followingParas : '');
+
+    handleReadAloud(fullRemainingText);
   };
 
   if (isOfflineMode) {
@@ -250,7 +275,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               variant="outline" 
               size="icon" 
               className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-              onClick={handleReadAloud} 
+              onClick={() => handleReadAloud()} 
               title={isSpeaking ? "Stop Narration" : "Read Aloud"}
             >
               {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
@@ -286,7 +311,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
         <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
           {paragraphs.map((para: string, idx: number) => (
-            <p key={idx} className="mb-8">{para}</p>
+            <p 
+              key={idx} 
+              className="mb-8 cursor-pointer hover:text-foreground transition-colors"
+              onClick={(e) => handleJumpToWord(idx, e)}
+            >
+              {para}
+            </p>
           ))}
         </div>
       </article>
