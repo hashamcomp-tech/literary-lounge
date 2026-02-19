@@ -1,7 +1,7 @@
 /**
- * @fileOverview Sequential TTS Engine with Anticipatory Handoff and Pre-loading.
+ * @fileOverview Sequential TTS Engine with Dual-Slot Pre-loading and Anticipatory Handoff.
  * Uses dual audio elements to trigger the next sentence 0.7s early.
- * When the next audio starts, the previous one is immediately abandoned.
+ * Maintains a cache of the next 2 audio segments to eliminate network latency.
  */
 
 export interface TTSOptions {
@@ -21,13 +21,12 @@ let currentQueueIndex = 0;
 let isSpeakingGlobal = false;
 let currentOptions: TTSOptions = {};
 
-// Pre-loading state
-let preloadedUrl: string | null = null;
-let preloadedIndex = -1;
-let isPreloading = false;
+// Pre-loading state: Cache the next 2 audio blob URLs
+const preloadedCache = new Map<number, string>();
+const activePreloads = new Set<number>();
 
 /**
- * Stops any currently playing TTS audio and clears the playback queue.
+ * Stops any currently playing TTS audio and clears the playback queue and cache.
  */
 export function stopTextToSpeech(): void {
   isSpeakingGlobal = false;
@@ -41,18 +40,14 @@ export function stopTextToSpeech(): void {
       audio.onended = null;
       audio.ontimeupdate = null;
       audio.onerror = null;
-      if (audio.src && audio.src.startsWith('blob:')) {
-        URL.revokeObjectURL(audio.src);
-      }
       audio.src = "";
     });
   }
 
-  if (preloadedUrl) {
-    URL.revokeObjectURL(preloadedUrl);
-    preloadedUrl = null;
-    preloadedIndex = -1;
-  }
+  // Clear cache and revoke all URLs
+  preloadedCache.forEach(url => URL.revokeObjectURL(url));
+  preloadedCache.clear();
+  activePreloads.clear();
 }
 
 /**
@@ -87,29 +82,41 @@ async function fetchAudioBlobUrl(text: string): Promise<string> {
 }
 
 /**
- * Look-ahead fetch for the next chunk in the queue.
+ * Look-ahead fetch for upcoming chunks in the queue.
+ * Keeps the next 2 sentences buffered.
  */
-async function preloadNextChunk(index: number) {
-  if (index >= textQueue.length || isPreloading || !isSpeakingGlobal) return;
-  if (preloadedIndex === index) return;
+async function preloadUpcomingChunks(currentIndex: number) {
+  if (!isSpeakingGlobal) return;
 
-  if (preloadedUrl) {
-    URL.revokeObjectURL(preloadedUrl);
-    preloadedUrl = null;
-  }
+  // We want to keep index+1 and index+2 in the cache
+  const targets = [currentIndex + 1, currentIndex + 2];
 
-  isPreloading = true;
-  try {
-    const text = textQueue[index];
-    if (text && text.trim().length > 0) {
-      preloadedUrl = await fetchAudioBlobUrl(text);
-      preloadedIndex = index;
+  for (const target of targets) {
+    if (target >= textQueue.length || target < 0) continue;
+    if (preloadedCache.has(target) || activePreloads.has(target)) continue;
+
+    activePreloads.add(target);
+    try {
+      const text = textQueue[target];
+      if (text && text.trim().length > 0) {
+        const url = await fetchAudioBlobUrl(text);
+        preloadedCache.set(target, url);
+      }
+    } catch (e) {
+      console.warn("Preload failed for index", target, e);
+    } finally {
+      activePreloads.add(target); // Using add as a dummy to avoid re-triggering immediately
+      activePreloads.delete(target);
     }
-  } catch (e) {
-    console.warn("Preload failed for index", index, e);
-  } finally {
-    isPreloading = false;
   }
+
+  // Cleanup old cache entries (anything before currentIndex)
+  preloadedCache.forEach((url, index) => {
+    if (index < currentIndex) {
+      URL.revokeObjectURL(url);
+      preloadedCache.delete(index);
+    }
+  });
 }
 
 /**
@@ -129,10 +136,8 @@ async function playChunk(index: number): Promise<void> {
 
   try {
     let url: string;
-    if (preloadedIndex === index && preloadedUrl) {
-      url = preloadedUrl;
-      preloadedUrl = null;
-      preloadedIndex = -1;
+    if (preloadedCache.has(index)) {
+      url = preloadedCache.get(index)!;
     } else {
       url = await fetchAudioBlobUrl(text);
     }
@@ -141,7 +146,7 @@ async function playChunk(index: number): Promise<void> {
     const currentAudio = audioElements[audioSlot];
     let nextTriggered = false;
 
-    const oldSrc = currentAudio.src;
+    // Reset previous src only if it's not the one we just got from cache
     currentAudio.src = url;
     currentAudio.ontimeupdate = null;
     currentAudio.onended = null;
@@ -159,7 +164,6 @@ async function playChunk(index: number): Promise<void> {
     };
 
     currentAudio.onended = () => {
-      if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
       if (!nextTriggered) {
         nextTriggered = true;
         playChunk(index + 1);
@@ -167,12 +171,18 @@ async function playChunk(index: number): Promise<void> {
     };
 
     currentAudio.onerror = () => {
-      if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
       if (!nextTriggered) {
         nextTriggered = true;
         playChunk(index + 1);
       }
     };
+
+    // ABANDON PREVIOUS AUDIO: Immediately silence the other slot 
+    // to prevent overlapping voices when the next one starts.
+    const otherSlot = (index + 1) % 2;
+    const otherAudio = audioElements[otherSlot];
+    otherAudio.pause();
+    otherAudio.currentTime = 0;
 
     // Playback
     await currentAudio.play().catch(err => {
@@ -183,16 +193,8 @@ async function playChunk(index: number): Promise<void> {
       }
     });
 
-    // ABANDON PREVIOUS AUDIO: Now that the current one has successfully started,
-    // immediately silence the other slot to prevent overlapping voices.
-    const otherSlot = (index + 1) % 2;
-    const otherAudio = audioElements[otherSlot];
-    otherAudio.pause();
-    otherAudio.currentTime = 0;
-
-    // LOOK-AHEAD: Preload the next required resource
-    const preloadTarget = nextTriggered ? index + 2 : index + 1;
-    preloadNextChunk(preloadTarget);
+    // LOOK-AHEAD: Ensure next 2 are buffered
+    preloadUpcomingChunks(index);
 
   } catch (error) {
     console.error("Chunk processing failure for index", index, error);
@@ -252,6 +254,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     return;
   }
 
+  // Pre-warm the elements
   const silentSrc = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
   for (const audio of audioElements) {
     audio.src = silentSrc;
@@ -259,6 +262,9 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
       await audio.play();
     } catch (e) {}
   }
+
+  // Seed the cache with the first few items
+  preloadUpcomingChunks(-1);
 
   return playChunk(0);
 }
