@@ -2,14 +2,13 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
-import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, CheckCircle2, Square } from 'lucide-react';
+import { useFirebase, useUser } from '@/firebase';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
-import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { saveToLocalHistory } from '@/lib/local-history-utils';
@@ -23,7 +22,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
   const { theme, setTheme } = useTheme();
-  const { toast } = useToast();
   const router = useRouter();
   const currentChapterNum = parseInt(chapterNumber);
   
@@ -31,7 +29,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [chaptersCache, setChaptersCache] = useState<Record<number, any>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [lastBufferedCount, setLastBufferedCount] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -52,10 +49,16 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     return () => clearInterval(interval);
   }, [isSpeaking]);
 
+  /**
+   * Decoupled Pre-fetching logic.
+   * Runs in the background without affecting the primary isLoading state.
+   */
   const preFetchChapters = useCallback(async (start: number, count: number = 3) => {
     if (!firestore || !id || isOfflineMode) return;
+    const total = metadata?.metadata?.info?.totalChapters || 9999;
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
-      .filter(n => n > 0 && n <= (metadata?.metadata?.info?.totalChapters || 9999));
+      .filter(n => n > 0 && n <= total);
+    
     const missing = targetNumbers.filter(n => !chaptersCache[n]);
     
     if (missing.length > 0) {
@@ -70,24 +73,33 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
         });
         setChaptersCache(prev => ({ ...prev, ...newEntries }));
-        if (count > 3) {
-          setLastBufferedCount(snap.size);
-          setTimeout(() => setLastBufferedCount(0), 3000);
-        }
-      } catch (e) {} finally {
+      } catch (e) {
+        console.warn("Background buffer failed", e);
+      } finally {
         setIsBuffering(false);
       }
     }
   }, [firestore, id, chaptersCache, metadata, isOfflineMode]);
 
+  // Effect to trigger buffering separately from loading
+  useEffect(() => {
+    if (!isLoading && !error) {
+      preFetchChapters(currentChapterNum + 1, 3);
+    }
+  }, [currentChapterNum, isLoading, error, preFetchChapters]);
+
+  /**
+   * Primary Loading Effect.
+   * Decoupled from buffering to prevent circular dependency hangs.
+   */
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
 
     const loadChapter = async () => {
+      // Check cache first
       if (chaptersCache[currentChapterNum]) {
         setIsLoading(false);
-        updateHistory();
-        preFetchChapters(currentChapterNum + 1, 3);
+        updateHistory(metadata);
         return;
       }
 
@@ -121,11 +133,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             viewLoggedRef.current = id;
           }
           updateHistory(meta);
-          preFetchChapters(currentChapterNum + 1, 3);
         } else {
           setError(`Chapter ${currentChapterNum} is currently unavailable.`);
         }
       } catch (err: any) {
+        console.error("Chapter load failed", err);
         setError('Connection interrupted.');
       } finally {
         setIsLoading(false);
@@ -134,7 +146,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     loadChapter();
     stopTextToSpeech();
-  }, [firestore, id, currentChapterNum, isOfflineMode, metadata, preFetchChapters]);
+  }, [firestore, id, currentChapterNum, isOfflineMode, metadata]);
 
   const updateHistory = (metaOverride?: any) => {
     const meta = metaOverride || metadata;

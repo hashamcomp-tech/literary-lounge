@@ -1,7 +1,7 @@
 /**
  * @fileOverview Simplified Sequential TTS Engine.
  * Provides a robust start/stop mechanism for chapter narration.
- * Handles chunking, network fetching, and sequential playback.
+ * Handles chunking, network fetching, and sequential playback with clear error reporting.
  */
 
 export interface TTSOptions {
@@ -122,9 +122,12 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
           resolve();
         };
 
-        audio.onerror = (e) => {
+        audio.onerror = () => {
+          const mediaError = audio.error;
           URL.revokeObjectURL(url);
-          reject(e);
+          // Extract meaningful error info instead of an empty object
+          const errorMsg = mediaError ? `Audio Error ${mediaError.code}: ${mediaError.message}` : 'Unknown playback error';
+          reject(new Error(errorMsg));
         };
 
         audio.play().catch(err => {
@@ -136,10 +139,13 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     }
   } catch (error: any) {
     if (error.name !== 'AbortError') {
-      console.error("TTS Playback Error:", error);
+      console.error("TTS Playback Error:", error.message || error);
     }
   } finally {
-    isSpeakingGlobal = false;
+    // Only reset global flag if we weren't interrupted by a new request
+    if (abortController && !abortController.signal.aborted) {
+      isSpeakingGlobal = false;
+    }
     currentAudio = null;
   }
 }
