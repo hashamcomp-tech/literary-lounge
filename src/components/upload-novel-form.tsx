@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -6,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info } from 'lucide-react';
+import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, Info, X, Sparkles } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
@@ -15,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud } from '@/lib/upload-book';
 import { dataURLtoFile } from '@/lib/image-utils';
+import { Badge } from '@/components/ui/badge';
 import {
   Popover,
   PopoverContent,
@@ -57,6 +59,7 @@ export function UploadNovelForm() {
   // Preview States
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [isExtractingPreview, setIsExtractingPreview] = useState(false);
+  const [wasAutoFilled, setWasAutoFilled] = useState(false);
 
   // Autocomplete States
   const [allBooks, setAllBooks] = useState<Suggestion[]>([]);
@@ -83,6 +86,7 @@ export function UploadNovelForm() {
       const getMetadataAndPreview = async () => {
         setIsExtractingPreview(true);
         setCoverPreview(null); 
+        setWasAutoFilled(false);
         
         try {
           const formData = new FormData();
@@ -125,9 +129,10 @@ export function UploadNovelForm() {
             }
             
             if (data.title || data.author) {
+              setWasAutoFilled(true);
               toast({
                 title: "Volume Identified",
-                description: `Metadata successfully extracted.`
+                description: `Metadata and genres extracted from archive.`
               });
             }
           }
@@ -229,6 +234,14 @@ export function UploadNovelForm() {
       title: "Volume Matched",
       description: `Preparing next chapter for "${book.title}".`
     });
+  };
+
+  const toggleGenre = (genre: string) => {
+    setSelectedGenres(prev => 
+      prev.includes(genre) 
+        ? prev.filter(g => g !== genre) 
+        : [...prev, genre]
+    );
   };
 
   const handleRequestAccess = async () => {
@@ -452,30 +465,68 @@ export function UploadNovelForm() {
                 <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author" className="h-12 rounded-xl" required />
               </div>
               
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between h-12 rounded-xl text-muted-foreground">
-                    <span className="truncate">{selectedGenres.length > 0 ? selectedGenres.join(', ') : 'Categories'}</span>
-                    <ChevronDown className="h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[300px] p-0 rounded-2xl shadow-2xl border-none">
-                  <ScrollArea className="h-60 p-3">
-                    <div className="grid grid-cols-1 gap-1">
-                      {GENRES.map(g => (
-                        <button 
-                          key={g} 
-                          type="button" 
-                          onClick={() => setSelectedGenres(p => p.includes(g) ? p.filter(x => x !== g) : [...p, g])} 
-                          className={`w-full flex items-center justify-between p-3 text-xs font-bold rounded-xl transition-colors ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
-                        >
-                          {g} {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
-                        </button>
-                      ))}
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center justify-between">
+                  Categories
+                  {wasAutoFilled && (
+                    <span className="text-primary flex items-center gap-1 animate-pulse">
+                      <Sparkles className="h-2.5 w-2.5" /> AI Identified
+                    </span>
+                  )}
+                </Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50 hover:bg-muted/30 transition-colors">
+                      {selectedGenres.length > 0 ? (
+                        selectedGenres.map(g => (
+                          <Badge 
+                            key={g} 
+                            variant="secondary" 
+                            className="bg-primary/10 text-primary hover:bg-primary/20 transition-all gap-1.5 px-2 py-1 rounded-lg animate-in zoom-in-95"
+                          >
+                            {g}
+                            <span 
+                              onClick={(e) => { e.stopPropagation(); toggleGenre(g); }} 
+                              className="hover:text-destructive transition-colors"
+                            >
+                              <X className="h-3 w-3" />
+                            </span>
+                          </Badge>
+                        ))
+                      ) : (
+                        <div className="flex items-center justify-between w-full text-muted-foreground">
+                          <span className="text-sm font-medium">Select genre or themes...</span>
+                          <ChevronDown className="h-4 w-4 opacity-50" />
+                        </div>
+                      )}
                     </div>
-                  </ScrollArea>
-                </PopoverContent>
-              </Popover>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[340px] p-0 rounded-2xl shadow-2xl border-none" align="start">
+                    <div className="p-4 border-b bg-muted/30">
+                      <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-1">Library Shelves</h4>
+                      <p className="text-[10px] text-muted-foreground opacity-60">Categorize your manuscript for better discovery.</p>
+                    </div>
+                    <ScrollArea className="h-72 p-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        {GENRES.map(g => (
+                          <button 
+                            key={g} 
+                            type="button" 
+                            onClick={() => toggleGenre(g)} 
+                            className={`w-full flex items-center justify-between p-3 text-[11px] font-bold rounded-xl transition-all ${
+                              selectedGenres.includes(g) 
+                                ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' 
+                                : 'bg-muted/50 hover:bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {g} {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
+                          </button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
 
             <Tabs value={sourceMode} onValueChange={v => setSourceMode(v as any)}>
