@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * @fileOverview Robust EPUB Metadata & Visual Extraction API.
- * Identifies bibliographic info and locates the best available cover image.
+ * Identifies bibliographic info, genres, and locates the best available cover image.
  */
 export async function POST(req: NextRequest) {
   let tempFilePath: string | null = null;
@@ -57,7 +57,17 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // 4. Intelligent Cover Identification
+            // 4. Genre / Subject Extraction
+            let genres: string[] = [];
+            if (epub.metadata.subject) {
+              if (Array.isArray(epub.metadata.subject)) {
+                genres = epub.metadata.subject.map(s => String(s));
+              } else if (typeof epub.metadata.subject === 'string') {
+                genres = epub.metadata.subject.split(',').map(s => s.trim());
+              }
+            }
+
+            // 5. Intelligent Cover Identification
             // Strategy: Check standard metadata first, then sweep manifest
             let coverId = epub.metadata.cover;
             
@@ -90,13 +100,14 @@ export async function POST(req: NextRequest) {
                 success: true, 
                 title, 
                 author,
+                genres,
                 dataUri: null,
                 message: 'Bibliographic data found, but no cover resource detected.' 
               }));
               return;
             }
 
-            // 5. Extract Binary Resource
+            // 6. Extract Binary Resource
             epub.getImage(coverId, (err, data, mimeType) => {
               if (tempFilePath && fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
 
@@ -105,6 +116,7 @@ export async function POST(req: NextRequest) {
                   success: true, 
                   title, 
                   author,
+                  genres,
                   dataUri: null,
                   message: 'Visual asset extraction failed.' 
                 }));
@@ -116,6 +128,7 @@ export async function POST(req: NextRequest) {
                 success: true, 
                 title,
                 author,
+                genres,
                 dataUri: `data:${mimeType || 'image/jpeg'};base64,${base64}` 
               }));
             });

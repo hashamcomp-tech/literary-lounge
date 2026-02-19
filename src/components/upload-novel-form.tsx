@@ -71,7 +71,7 @@ export function UploadNovelForm() {
     }
   }, []);
 
-  // Handle automatic metadata and cover preview extraction
+  // Handle automatic metadata, cover preview, and genre extraction
   useEffect(() => {
     if (!selectedFile) {
       setCoverPreview(null);
@@ -82,7 +82,7 @@ export function UploadNovelForm() {
     if (isEpub) {
       const getMetadataAndPreview = async () => {
         setIsExtractingPreview(true);
-        setCoverPreview(null); // Clear previous
+        setCoverPreview(null); 
         
         try {
           const formData = new FormData();
@@ -96,11 +96,29 @@ export function UploadNovelForm() {
           if (res.ok) {
             const data = await res.json();
             
-            // Priority: Apply extracted metadata
+            // Apply title and author
             if (data.title) setTitle(data.title);
             if (data.author) setAuthor(data.author);
             
-            // Set cover preview if available
+            // Auto-select Genres
+            if (data.genres && Array.isArray(data.genres)) {
+              const matchedGenres = data.genres
+                .map((g: string) => {
+                  const search = g.toLowerCase();
+                  return GENRES.find(available => 
+                    available.toLowerCase() === search || 
+                    search.includes(available.toLowerCase())
+                  );
+                })
+                .filter(Boolean) as string[];
+              
+              const uniqueMatched = Array.from(new Set(matchedGenres));
+              if (uniqueMatched.length > 0) {
+                setSelectedGenres(uniqueMatched);
+              }
+            }
+            
+            // Set cover preview
             if (data.dataUri) {
               setCoverPreview(data.dataUri);
             }
@@ -108,19 +126,12 @@ export function UploadNovelForm() {
             if (data.title || data.author) {
               toast({
                 title: "Volume Identified",
-                description: `Successfully recognized "${data.title || 'Untitled'}" by ${data.author || 'Unknown author'}.`
-              });
-            } else {
-              toast({
-                title: "Partial Identification",
-                description: "Recognized digital volume, but some metadata is missing.",
+                description: `Extracted metadata for "${data.title || 'Untitled'}" by ${data.author || 'Unknown author'}.`
               });
             }
-          } else {
-            console.warn("API returned error status during metadata extraction");
           }
         } catch (e) {
-          console.warn("Metadata extraction failed due to network or server error");
+          console.warn("Digital identifying failed");
         } finally {
           setIsExtractingPreview(false);
         }
