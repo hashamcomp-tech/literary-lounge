@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Volume2, Globe, Play, Loader2 } from 'lucide-react';
+import { Volume2, Globe, Play, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -23,29 +23,39 @@ export interface VoiceSettings {
   voice: string;
 }
 
-const VOICES = [
-  { label: 'Algenib (Neutral)', value: 'Algenib' },
-  { label: 'Achernar (Deep)', value: 'Achernar' },
-  { label: 'Hamal (Soft)', value: 'Hamal' },
-  { label: 'Rigel (Commanding)', value: 'Rigel' },
-  { label: 'Fenrir (Expressive)', value: 'Fenrir' },
-];
-
 export function VoiceSettingsPopover() {
   const { toast } = useToast();
-  const [isTesting, setIsTesting] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [settings, setSettings] = useState<VoiceSettings>({
-    voice: 'Algenib',
+    voice: '',
   });
 
+  const loadVoices = () => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const available = window.speechSynthesis.getVoices();
+      // Filter for common languages or just show all
+      setVoices(available.sort((a, b) => a.name.localeCompare(b.name)));
+      
+      // Default to first English voice if none selected
+      if (!settings.voice && available.length > 0) {
+        const preferred = available.find(v => v.lang.startsWith('en')) || available[0];
+        updateSettings({ voice: preferred.voiceURI });
+      }
+    }
+  };
+
   useEffect(() => {
+    loadVoices();
+    // Some browsers load voices asynchronously
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
     const saved = localStorage.getItem('lounge-voice-settings');
     if (saved) {
       try {
         setSettings(JSON.parse(saved));
-      } catch (e) {
-        console.warn("Could not parse saved voice settings");
-      }
+      } catch (e) {}
     }
   }, []);
 
@@ -56,17 +66,14 @@ export function VoiceSettingsPopover() {
   };
 
   const handleTestVoice = async () => {
-    setIsTesting(true);
     try {
-      await playTextToSpeech("Welcome to the Literary Lounge. This is your selected AI narration voice.", { voice: settings.voice });
+      await playTextToSpeech("This is your selected reading voice in the Lounge.", { voice: settings.voice });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Narration Unavailable",
-        description: err.message || "Failed to initialize the AI voice."
+        title: "Voice Test Failed",
+        description: "Browser speech engine is currently unavailable."
       });
-    } finally {
-      setIsTesting(false);
     }
   };
 
@@ -87,10 +94,10 @@ export function VoiceSettingsPopover() {
           <div className="space-y-2">
             <h4 className="font-headline font-black text-lg flex items-center gap-2">
               <Volume2 className="h-5 w-5 text-primary" />
-              AI Voice Settings
+              Narration Settings
             </h4>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">
-              Powered by Gemini Flash
+              Powered by Browser Native Voice
             </p>
           </div>
 
@@ -103,15 +110,20 @@ export function VoiceSettingsPopover() {
                 value={settings.voice} 
                 onValueChange={(voice) => updateSettings({ voice })}
               >
-                <SelectTrigger className="rounded-xl border-muted bg-muted/20">
-                  <SelectValue placeholder="Select Voice" />
+                <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-xs">
+                  <SelectValue placeholder="Select Browser Voice" />
                 </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  {VOICES.map((v) => (
-                    <SelectItem key={v.value} value={v.value}>
-                      {v.label}
+                <SelectContent className="rounded-xl max-h-60">
+                  {voices.length > 0 ? voices.map((v) => (
+                    <SelectItem key={v.voiceURI} value={v.voiceURI} className="text-xs">
+                      {v.name} ({v.lang})
                     </SelectItem>
-                  ))}
+                  )) : (
+                    <div className="p-2 text-xs text-muted-foreground flex items-center gap-2">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      Loading system voices...
+                    </div>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -120,9 +132,8 @@ export function VoiceSettingsPopover() {
               variant="secondary" 
               className="w-full rounded-xl font-bold gap-2 mt-2" 
               onClick={handleTestVoice}
-              disabled={isTesting}
             >
-              {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              <Play className="h-4 w-4" />
               Test Voice
             </Button>
           </div>

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, Square } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [metadata, setMetadata] = useState<any>(null);
   const [chaptersCache, setChaptersCache] = useState<Record<number, any>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [isBuffering, setIsBuffering] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -57,6 +56,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (isOfflineMode || !firestore || !id) return;
 
     const loadChapter = async () => {
+      // 1. Check Cache first
       if (chaptersCache[currentChapterNum]) {
         setIsLoading(false);
         updateHistory(metadata);
@@ -106,7 +106,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     loadChapter();
     stopTextToSpeech();
-  }, [firestore, id, currentChapterNum, isOfflineMode, metadata]);
+  }, [firestore, id, currentChapterNum, isOfflineMode]); // REMOVED metadata dependency to prevent loop
 
   /**
    * Predictive Buffering Effect.
@@ -132,6 +132,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
         });
         
+        // Use functional update to avoid dependency on chaptersCache
         setChaptersCache(prev => ({ ...prev, ...newEntries }));
       } catch (e) {
         console.warn("Predictive buffer failed:", e);
@@ -166,7 +167,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleReadAloud = async (startIndex: number = 0) => {
+  const handleReadAloud = async () => {
     if (isSpeaking) {
       stopTextToSpeech();
       return;
@@ -178,7 +179,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    // Pass the specific voice choice to the sequential engine
     playTextToSpeech(chData.content, { voice: voiceOptions.voice });
   };
 
@@ -241,7 +241,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               variant="outline" 
               size="icon" 
               className={`rounded-full shadow-sm transition-colors ${isSpeaking ? 'bg-primary text-primary-foreground border-primary' : 'text-primary border-primary/20 hover:bg-primary/5'}`}
-              onClick={() => handleReadAloud(0)} 
+              onClick={handleReadAloud} 
               title={isSpeaking ? "Stop Narration" : "Read Aloud"}
             >
               {isSpeaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
@@ -277,13 +277,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
         <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
           {paragraphs.map((para: string, idx: number) => (
-            <p 
-              key={idx} 
-              onClick={() => handleReadAloud(idx)}
-              className="mb-8 cursor-pointer hover:text-foreground transition-colors"
-            >
-              {para}
-            </p>
+            <p key={idx} className="mb-8">{para}</p>
           ))}
         </div>
       </article>

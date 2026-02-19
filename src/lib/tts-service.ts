@@ -1,34 +1,24 @@
 /**
- * @fileOverview High-Performance AI Narration Engine.
- * Utilizes Genkit TTS flows for strictly sequential, chunked playback.
- * Features instantaneous cancellation and zero residual network activity.
+ * @fileOverview Native Browser Narration Engine.
+ * Utilizes the Web Speech API (speechSynthesis) for zero-latency, unlimited narration.
+ * Eliminates cloud subscription dependencies and network latency.
  */
-import { generateAudio } from '@/ai/flows/tts-flow';
 
 export interface TTSOptions {
-  voice?: string;
-  onStartChunk?: (index: number) => void;
+  voice?: string; // Voice URI or Name
+  rate?: number;
+  pitch?: number;
 }
 
 let isSpeakingGlobal = false;
-let currentAudio: HTMLAudioElement | null = null;
-let abortController: AbortController | null = null;
 
 /**
- * Instantly stops all narration and network activity.
+ * Instantly stops all browser narration.
  */
 export function stopTextToSpeech(): void {
   isSpeakingGlobal = false;
-  
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
-  }
-
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.src = "";
-    currentAudio = null;
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
   }
 }
 
@@ -36,13 +26,16 @@ export function stopTextToSpeech(): void {
  * Global status check for the narration engine.
  */
 export function isSpeaking(): boolean {
+  // We check our internal flag because speechSynthesis.speaking can 
+  // stay true during pauses or between utterances.
   return isSpeakingGlobal;
 }
 
 /**
- * Core chunking logic to divide text into digestible segments for the AI.
+ * Core chunking logic to divide text into digestible segments for the browser.
  */
 function chunkText(text: string): string[] {
+  if (!text) return [];
   return text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>?/gm, '')
@@ -52,62 +45,51 @@ function chunkText(text: string): string[] {
 }
 
 /**
- * Initiates the sequential narration process.
- * Processes paragraphs one-by-one to maintain responsiveness.
+ * Initiates the sequential narration process using native browser voices.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
-  // 1. Force stop existing streams
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    console.warn("Speech Synthesis not supported in this browser.");
+    return;
+  }
+
+  // 1. Reset state
   stopTextToSpeech();
 
   const paragraphs = chunkText(fullText);
   if (paragraphs.length === 0) return;
 
   isSpeakingGlobal = true;
-  abortController = new AbortController();
 
-  try {
-    for (let i = 0; i < paragraphs.length; i++) {
-      if (!isSpeakingGlobal) break;
-
-      // 2. Notify UI of progress
-      if (options.onStartChunk) options.onStartChunk(i);
-
-      // 3. Fetch current chunk audio via AI flow
-      const { audioDataUri } = await generateAudio(paragraphs[i], options.voice);
-      
-      // Safety check after network delay
-      if (!isSpeakingGlobal) break;
-
-      // 4. Handle playback
-      await new Promise<void>((resolve, reject) => {
-        const audio = new Audio(audioDataUri);
-        currentAudio = audio;
-
-        audio.onended = () => {
-          currentAudio = null;
-          resolve();
-        };
-
-        audio.onerror = () => {
-          currentAudio = null;
-          reject(new Error("Playback failure on segment " + i));
-        };
-
-        audio.play().catch(err => {
-          if (err.name === 'AbortError' || !isSpeakingGlobal) resolve();
-          else reject(err);
-        });
-      });
+  // 2. Queue up paragraphs
+  // Browser handles the queue natively via .speak()
+  paragraphs.forEach((para, index) => {
+    const utterance = new SpeechSynthesisUtterance(para);
+    
+    // Configure Voice
+    if (options.voice) {
+      const voices = window.speechSynthesis.getVoices();
+      const selected = voices.find(v => v.voiceURI === options.voice || v.name === options.voice);
+      if (selected) utterance.voice = selected;
     }
-  } catch (error: any) {
-    if (error.name !== 'AbortError' && isSpeakingGlobal) {
-      console.error("AI Narration Error:", error.message || error);
+
+    utterance.rate = options.rate || 1.0;
+    utterance.pitch = options.pitch || 1.0;
+
+    // Last paragraph cleanup
+    if (index === paragraphs.length - 1) {
+      utterance.onend = () => {
+        isSpeakingGlobal = false;
+      };
     }
-  } finally {
-    // Only reset global flag if we weren't interrupted by a new request
-    if (abortController && !abortController.signal.aborted) {
+
+    utterance.onerror = (event) => {
+      if (event.error !== 'interrupted') {
+        console.error("Speech Synthesis Error:", event);
+      }
       isSpeakingGlobal = false;
-    }
-    currentAudio = null;
-  }
+    };
+
+    window.speechSynthesis.speak(utterance);
+  });
 }
