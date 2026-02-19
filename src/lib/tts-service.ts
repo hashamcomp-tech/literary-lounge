@@ -1,7 +1,7 @@
 /**
- * @fileOverview Refined Sequential TTS Engine with Autoplay Policy handling.
+ * @fileOverview Refined Sequential TTS Engine with Look-Ahead Pre-loading.
  * Handles long-form content by chunking text into individual lines/sentences 
- * and playing them in a queue for maximum responsiveness.
+ * and pre-fetching the next segment while the current one plays.
  */
 
 export interface TTSOptions {
@@ -21,6 +21,11 @@ let currentQueueIndex = 0;
 let isSpeakingGlobal = false;
 let currentOptions: TTSOptions = {};
 
+// Pre-loading state
+let preloadedUrl: string | null = null;
+let preloadedIndex = -1;
+let isPreloading = false;
+
 /**
  * Stops any currently playing TTS audio and clears the playback queue.
  */
@@ -38,6 +43,13 @@ export function stopTextToSpeech(): void {
     }
     globalAudio.src = "";
   }
+
+  // Cleanup pre-loaded resource
+  if (preloadedUrl) {
+    URL.revokeObjectURL(preloadedUrl);
+    preloadedUrl = null;
+    preloadedIndex = -1;
+  }
 }
 
 /**
@@ -48,7 +60,60 @@ export function isSpeaking(): boolean {
 }
 
 /**
- * Internal helper to fetch and play a specific chunk.
+ * Internal helper to fetch audio for a specific text chunk.
+ */
+async function fetchAudioBlobUrl(text: string): Promise<string> {
+  const response = await fetch('/api/tts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ 
+      text: text.substring(0, 1000), // API reliability cap
+      lang: currentOptions.lang || 'en-us',
+      rate: currentOptions.rate || '0'
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error("TTS chunk request failed.");
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * Look-ahead fetch for the next chunk in the queue.
+ */
+async function preloadNextChunk(index: number) {
+  if (index >= textQueue.length || isPreloading || !isSpeakingGlobal) return;
+  
+  // If we already have this index preloaded, skip
+  if (preloadedIndex === index) return;
+
+  // Cleanup old preloaded URL if it wasn't used
+  if (preloadedUrl) {
+    URL.revokeObjectURL(preloadedUrl);
+    preloadedUrl = null;
+  }
+
+  isPreloading = true;
+  try {
+    const text = textQueue[index];
+    if (text && text.trim().length > 0) {
+      preloadedUrl = await fetchAudioBlobUrl(text);
+      preloadedIndex = index;
+    }
+  } catch (e) {
+    console.warn("Preload failed for index", index, e);
+  } finally {
+    isPreloading = false;
+  }
+}
+
+/**
+ * Internal helper to play a specific chunk.
  */
 async function playChunk(index: number): Promise<void> {
   if (!isSpeakingGlobal || index >= textQueue.length || !globalAudio) {
@@ -58,43 +123,37 @@ async function playChunk(index: number): Promise<void> {
 
   const text = textQueue[index];
   if (!text || text.trim().length === 0) {
-    return playNextChunk();
+    currentQueueIndex++;
+    return playChunk(currentQueueIndex);
   }
 
   try {
-    const response = await fetch('/api/tts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        text: text.substring(0, 1000), // API reliability cap
-        lang: currentOptions.lang || 'en-us',
-        rate: currentOptions.rate || '0'
-      })
-    });
+    let url: string;
 
-    if (!response.ok) {
-      throw new Error("TTS chunk request failed.");
+    // Use pre-loaded URL if available
+    if (preloadedIndex === index && preloadedUrl) {
+      url = preloadedUrl;
+      preloadedUrl = null;
+      preloadedIndex = -1;
+    } else {
+      // Fetch immediately if not pre-loaded
+      url = await fetchAudioBlobUrl(text);
     }
 
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    
-    // Revoke previous blob if applicable
     const oldSrc = globalAudio.src;
-    
     globalAudio.src = url;
 
     globalAudio.onended = () => {
       if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
-      playNextChunk();
+      currentQueueIndex++;
+      playChunk(currentQueueIndex);
     };
 
     globalAudio.onerror = () => {
       console.warn("Audio playback error, attempting next chunk...");
       if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
-      playNextChunk();
+      currentQueueIndex++;
+      playChunk(currentQueueIndex);
     };
 
     // Playback is permitted because we unlocked the element in the initial click handler
@@ -103,30 +162,25 @@ async function playChunk(index: number): Promise<void> {
       isSpeakingGlobal = false;
     });
 
+    // While current is playing, trigger preload for NEXT
+    preloadNextChunk(index + 1);
+
   } catch (error) {
     console.error("Chunk playback processing error:", error);
     isSpeakingGlobal = false;
   }
 }
 
-function playNextChunk() {
-  currentQueueIndex++;
-  playChunk(currentQueueIndex);
-}
-
 /**
  * Splits text into individual lines and sentences.
- * This ensures the engine loads "one line at a time" as requested.
  */
 function chunkText(text: string): string[] {
-  // 1. Clean HTML artifacts
   const cleanText = text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
-  // 2. Split by sentences and line breaks
-  // This matches periods, question marks, and exclamation points followed by space or newline
+  // Split by sentences and line breaks
   const sentences = cleanText.split(/([.!?]+(?:\s+|\n+|$))/);
   
   const finalUnits: string[] = [];
@@ -134,16 +188,13 @@ function chunkText(text: string): string[] {
 
   for (const part of sentences) {
     if (part.match(/[.!?]/)) {
-      // It's a delimiter, attach to current unit and finish it
       currentUnit += part;
       if (currentUnit.trim()) finalUnits.push(currentUnit.trim());
       currentUnit = "";
     } else {
-      // It's text, or newline
       if (part.includes('\n')) {
-        // If there's a hard newline, break the current unit if it exists
         if (currentUnit.trim()) finalUnits.push(currentUnit.trim());
-        currentUnit = part.replace(/\n/g, ' '); // Keep the newline text for splitting but normalize space
+        currentUnit = part.replace(/\n/g, ' '); 
       } else {
         currentUnit += part;
       }
@@ -152,12 +203,11 @@ function chunkText(text: string): string[] {
   
   if (currentUnit.trim()) finalUnits.push(currentUnit.trim());
 
-  // Filter out empty strings and items that are just whitespace
   return finalUnits.filter(u => u.trim().length > 0);
 }
 
 /**
- * Initiates the line-by-line reading process.
+ * Initiates the line-by-line reading process with pre-loading.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
   // Stop any existing session
