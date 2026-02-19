@@ -1,60 +1,67 @@
-import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
+import { uploadToVercelBlob } from "@/app/actions/upload";
 
 /**
- * Uploads a cover image for a book to Firebase Storage.
+ * @fileOverview Refined Image Upload Utility.
+ * Now exclusively uses Vercel Blob Storage for all visual assets.
  */
+
 const UPLOAD_TIMEOUT = 60000; // 60 seconds
 
-export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string): Promise<string | null> {
-  if (!file || !storage) return null;
+/**
+ * Uploads a cover image for a book to Vercel Blob.
+ * The 'storage' parameter is maintained for interface compatibility but ignored.
+ */
+export async function uploadCoverImage(_storage: any, file: File | null | undefined, bookId: string): Promise<string | null> {
+  if (!file) return null;
 
   const auth = getAuth();
   if (!auth.currentUser) {
-    throw new Error("Authentication required to upload assets.");
+    throw new Error("Authentication required to upload Lounge assets.");
   }
 
-  const storageRef = ref(storage, `bookCovers/${bookId}`);
+  const formData = new FormData();
+  formData.append('file', file);
   
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Upload timed out.")), UPLOAD_TIMEOUT)
-  );
+  // Create a unique, timestamped filename for Vercel Blob
+  const filename = `bookCovers/${bookId}_${Date.now()}.jpg`;
 
   try {
-    const uploadPromise = uploadBytes(storageRef, file);
-    await Promise.race([uploadPromise, timeoutPromise]);
-    return await getDownloadURL(storageRef);
+    const url = await uploadToVercelBlob(formData, filename);
+    return url;
   } catch (error: any) {
-    console.error("Cover upload error:", error);
-    throw error;
+    console.error("Vercel Blob Cover Upload Error:", error);
+    throw new Error(error.message || "Visual sync failed.");
   }
 }
 
 /**
- * Uploads a raw manuscript file (EPUB/TXT) to temporary storage for server-side ingestion.
+ * Uploads a raw manuscript file (EPUB/TXT) to Vercel Blob.
  */
-export async function uploadManuscriptFile(storage: FirebaseStorage, file: File, bookId: string): Promise<string> {
+export async function uploadManuscriptFile(_storage: any, file: File, bookId: string): Promise<string> {
   const auth = getAuth();
   if (!auth.currentUser) {
     throw new Error("Authentication required to process manuscripts.");
   }
 
-  const storageRef = ref(storage, `manuscripts/${bookId}_${file.name}`);
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  const filename = `manuscripts/${bookId}_${Date.now()}_${file.name}`;
   
   try {
-    const uploadTask = await uploadBytes(storageRef, file);
-    return await getDownloadURL(uploadTask.ref);
+    return await uploadToVercelBlob(formData, filename);
   } catch (error: any) {
-    console.error("Manuscript upload error:", error);
+    console.error("Vercel Blob Manuscript Upload Error:", error);
     throw new Error("Failed to prepare manuscript for cloud processing.");
   }
 }
 
 /**
- * Uploads a profile photo for a user to Firebase Storage.
+ * Uploads a profile photo for a user to Vercel Blob.
  */
-export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, userId: string): Promise<string> {
-  if (!file || !storage || !userId) {
+export async function uploadProfilePhoto(_storage: any, file: File, userId: string): Promise<string> {
+  if (!file || !userId) {
     throw new Error("Missing required parameters for profile photo upload.");
   }
 
@@ -63,18 +70,15 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
     throw new Error("You must be signed in to update your avatar.");
   }
 
-  const storageRef = ref(storage, `profilePhotos/${userId}`);
+  const formData = new FormData();
+  formData.append('file', file);
   
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Upload timed out.")), UPLOAD_TIMEOUT)
-  );
+  const filename = `profilePhotos/${userId}_${Date.now()}.jpg`;
 
   try {
-    const uploadPromise = uploadBytes(storageRef, file);
-    await Promise.race([uploadPromise, timeoutPromise]);
-    return await getDownloadURL(storageRef);
+    return await uploadToVercelBlob(formData, filename);
   } catch (error: any) {
-    console.error("Photo upload error:", error);
+    console.error("Vercel Blob Photo Upload Error:", error);
     throw new Error(error.message || "Failed to upload profile photo.");
   }
 }

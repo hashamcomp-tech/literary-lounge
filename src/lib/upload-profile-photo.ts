@@ -1,13 +1,13 @@
-import { ref, uploadBytes, getDownloadURL, FirebaseStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
+import { uploadToVercelBlob } from "@/app/actions/upload";
 
 /**
- * Uploads a profile photo for a user to Firebase Storage.
+ * @fileOverview Profile Photo Utility.
+ * Migrated to Vercel Blob Storage for global edge delivery.
  */
-const UPLOAD_TIMEOUT = 60000; // 60 seconds
 
-export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, userId: string): Promise<string> {
-  if (!file || !storage || !userId) {
+export async function uploadProfilePhoto(_storage: any, file: File, userId: string): Promise<string> {
+  if (!file || !userId) {
     throw new Error("Missing required parameters for profile photo upload.");
   }
 
@@ -16,18 +16,17 @@ export async function uploadProfilePhoto(storage: FirebaseStorage, file: File, u
     throw new Error("You must be signed in to update your avatar.");
   }
 
-  const storageRef = ref(storage, `profilePhotos/${userId}`);
+  const formData = new FormData();
+  formData.append('file', file);
   
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Upload timed out.")), UPLOAD_TIMEOUT)
-  );
+  // Append timestamp to ensure fresh avatar loads
+  const filename = `profilePhotos/${userId}_${Date.now()}.jpg`;
 
   try {
-    const uploadPromise = uploadBytes(storageRef, file);
-    await Promise.race([uploadPromise, timeoutPromise]);
-    return await getDownloadURL(storageRef);
+    const url = await uploadToVercelBlob(formData, filename);
+    return url;
   } catch (error: any) {
-    console.error("Photo upload error:", error);
+    console.error("Vercel Blob Profile Upload Error:", error);
     throw new Error(error.message || "Failed to upload profile photo.");
   }
 }
