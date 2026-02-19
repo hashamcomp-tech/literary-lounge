@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,6 +75,75 @@ export function UploadNovelForm() {
     }
   }, []);
 
+  /**
+   * High-speed client-side regex detection for instant feedback.
+   */
+  const quickDetectFromText = useCallback((text: string) => {
+    const lines = text.trim().split('\n').filter(l => l.trim().length > 0);
+    if (lines.length === 0) return null;
+
+    const firstLine = lines[0].trim();
+    // Pattern: Chapter 1: The Beginning OR Ch 1 - The Beginning
+    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)\s*(\d+)(?::|\s+|-)?\s*(.*)$/i;
+    const match = firstLine.match(chapterRegex);
+
+    if (match) {
+      return {
+        number: match[1],
+        title: match[2] || `Chapter ${match[1]}`
+      };
+    }
+    return null;
+  }, []);
+
+  const handleAnalyzePastedText = async (text: string) => {
+    if (!text || text.length < 50 || isParsingText) return;
+    
+    // 1. Instant Detection (Site Logic)
+    const quick = quickDetectFromText(text);
+    if (quick) {
+      if (!chapterNumber || chapterNumber === '1') setChapterNumber(quick.number);
+      if (!chapterTitle) setChapterTitle(quick.title);
+    }
+
+    // 2. Deep Detection (AI Logic) for Title, Author, and Genres
+    if (text.length < 150) return; // Skip deep AI for very short snippets
+
+    setIsParsingText(true);
+    setWasAutoFilled(false);
+    
+    try {
+      const result = await parsePastedChapter(text);
+      
+      if (result.bookTitle && !title) setTitle(result.bookTitle);
+      if (result.author && !author) setAuthor(result.author);
+      if (result.chapterNumber) setChapterNumber(result.chapterNumber.toString());
+      if (result.chapterTitle) setChapterTitle(result.chapterTitle);
+      if (result.chapterContent && text.length > 500) setPastedText(result.chapterContent);
+      
+      if (result.genres && Array.isArray(result.genres)) {
+        const matchedSet = new Set<string>(selectedGenres);
+        result.genres.forEach(g => {
+          const search = g.toLowerCase();
+          GENRES.forEach(available => {
+            const availLower = available.toLowerCase();
+            if (search === availLower || search.includes(availLower) || availLower.includes(search)) {
+              matchedSet.add(available);
+            }
+          });
+        });
+        setSelectedGenres(Array.from(matchedSet));
+      }
+      
+      setWasAutoFilled(true);
+      toast({ title: "Intelligence Scan Complete", description: "Metadata identified from manuscript context." });
+    } catch (e) {
+      console.warn("AI Detection failed", e);
+    } finally {
+      setIsParsingText(false);
+    }
+  };
+
   // Handle automatic metadata, cover preview, and genre extraction for files
   useEffect(() => {
     if (!selectedFile) {
@@ -136,44 +205,6 @@ export function UploadNovelForm() {
       setCoverPreview(null);
     }
   }, [selectedFile, toast]);
-
-  const handleAnalyzePastedText = async (text: string) => {
-    if (!text || text.length < 100 || isParsingText) return;
-    
-    setIsParsingText(true);
-    setWasAutoFilled(false);
-    
-    try {
-      const result = await parsePastedChapter(text);
-      
-      if (result.bookTitle) setTitle(result.bookTitle);
-      if (result.author) setAuthor(result.author);
-      if (result.chapterNumber) setChapterNumber(result.chapterNumber.toString());
-      if (result.chapterTitle) setChapterTitle(result.chapterTitle);
-      if (result.chapterContent) setPastedText(result.chapterContent);
-      
-      if (result.genres && Array.isArray(result.genres)) {
-        const matchedSet = new Set<string>(selectedGenres);
-        result.genres.forEach(g => {
-          const search = g.toLowerCase();
-          GENRES.forEach(available => {
-            const availLower = available.toLowerCase();
-            if (search === availLower || search.includes(availLower) || availLower.includes(search)) {
-              matchedSet.add(available);
-            }
-          });
-        });
-        setSelectedGenres(Array.from(matchedSet));
-      }
-      
-      setWasAutoFilled(true);
-      toast({ title: "Content Parsed", description: "Metadata identified from your text." });
-    } catch (e) {
-      console.warn("AI Parsing failed", e);
-    } finally {
-      setIsParsingText(false);
-    }
-  };
 
   useEffect(() => {
     localStorage.setItem("lounge-upload-mode", uploadMode);
@@ -436,7 +467,7 @@ export function UploadNovelForm() {
                   Categories
                   {wasAutoFilled && (
                     <span className="text-primary flex items-center gap-1 animate-pulse">
-                      <Sparkles className="h-2.5 w-2.5" /> AI Identified
+                      <Sparkles className="h-2.5 w-2.5" /> Site Detected
                     </span>
                   )}
                 </Label>
@@ -513,11 +544,11 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => {
                       const text = e.clipboardData.getData('text');
-                      if (text.length > 200) {
+                      if (text.length > 50) {
                         handleAnalyzePastedText(text);
                       }
                     }}
-                    placeholder="Paste novel content here... (Min 200 chars for AI detection)" 
+                    placeholder="Paste novel content here... (Smart Detection active on paste)" 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" 
                   />
                   {isParsingText && (
@@ -525,7 +556,7 @@ export function UploadNovelForm() {
                       <div className="bg-primary/10 p-4 rounded-full mb-3">
                         <Wand2 className="h-8 w-8 text-primary animate-bounce" />
                       </div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary animate-pulse">Reading Text...</p>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary animate-pulse">Smart Detecting...</p>
                     </div>
                   )}
                 </div>
@@ -535,11 +566,11 @@ export function UploadNovelForm() {
                     variant="ghost" 
                     size="sm" 
                     onClick={() => handleAnalyzePastedText(pastedText)}
-                    disabled={isParsingText || pastedText.length < 100}
+                    disabled={isParsingText || pastedText.length < 50}
                     className="text-[10px] font-black uppercase tracking-widest gap-2"
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    Manually Analyze
+                    Refine with AI
                   </Button>
                 </div>
               </TabsContent>
