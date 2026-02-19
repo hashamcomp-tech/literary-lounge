@@ -323,6 +323,11 @@ export function UploadNovelForm() {
 
       setProgress(100);
       toast({ title: 'Volume Secured', description: 'Manuscript integrated into the library.' });
+      
+      // Persist preferences before routing
+      persistSettings("lounge-upload-mode", uploadMode);
+      persistSettings("lounge-source-mode", sourceMode);
+      
       router.push('/');
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });

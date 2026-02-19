@@ -2,6 +2,7 @@
  * @fileOverview Sequential TTS Engine with Dual-Slot Pre-loading and Anticipatory Handoff.
  * Uses dual audio elements to trigger the next sentence 0.7s early.
  * Maintains a cache of the next 2 audio segments to eliminate network latency.
+ * Handles AbortErrors caused by fast overlapping transitions.
  */
 
 export interface TTSOptions {
@@ -20,6 +21,7 @@ let textQueue: string[] = [];
 let currentQueueIndex = 0;
 let isSpeakingGlobal = false;
 let currentOptions: TTSOptions = {};
+let activeAbortController: AbortController | null = null;
 
 // Pre-loading state: Cache the next 2 audio blob URLs
 const preloadedCache = new Map<number, string>();
@@ -33,6 +35,11 @@ export function stopTextToSpeech(): void {
   textQueue = [];
   currentQueueIndex = 0;
   
+  if (activeAbortController) {
+    activeAbortController.abort();
+    activeAbortController = null;
+  }
+
   if (audioElements) {
     audioElements.forEach(audio => {
       audio.pause();
@@ -60,7 +67,7 @@ export function isSpeaking(): boolean {
 /**
  * Internal helper to fetch audio for a specific text chunk.
  */
-async function fetchAudioBlobUrl(text: string): Promise<string> {
+async function fetchAudioBlobUrl(text: string, signal?: AbortSignal): Promise<string> {
   const response = await fetch('/api/tts', {
     method: 'POST',
     headers: {
@@ -70,7 +77,8 @@ async function fetchAudioBlobUrl(text: string): Promise<string> {
       text: text.substring(0, 1000), 
       lang: currentOptions.lang || 'en-us',
       rate: currentOptions.rate || '0'
-    })
+    }),
+    signal
   });
 
   if (!response.ok) {
@@ -88,7 +96,6 @@ async function fetchAudioBlobUrl(text: string): Promise<string> {
 async function preloadUpcomingChunks(currentIndex: number) {
   if (!isSpeakingGlobal) return;
 
-  // We want to keep index+1 and index+2 in the cache
   const targets = [currentIndex + 1, currentIndex + 2];
 
   for (const target of targets) {
@@ -99,13 +106,14 @@ async function preloadUpcomingChunks(currentIndex: number) {
     try {
       const text = textQueue[target];
       if (text && text.trim().length > 0) {
-        const url = await fetchAudioBlobUrl(text);
+        const url = await fetchAudioBlobUrl(text, activeAbortController?.signal);
         preloadedCache.set(target, url);
       }
-    } catch (e) {
-      console.warn("Preload failed for index", target, e);
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        console.warn("Preload failed for index", target, e);
+      }
     } finally {
-      activePreloads.add(target); // Using add as a dummy to avoid re-triggering immediately
       activePreloads.delete(target);
     }
   }
@@ -139,14 +147,14 @@ async function playChunk(index: number): Promise<void> {
     if (preloadedCache.has(index)) {
       url = preloadedCache.get(index)!;
     } else {
-      url = await fetchAudioBlobUrl(text);
+      url = await fetchAudioBlobUrl(text, activeAbortController?.signal);
     }
 
     const audioSlot = index % 2;
     const currentAudio = audioElements[audioSlot];
     let nextTriggered = false;
 
-    // Reset previous src only if it's not the one we just got from cache
+    // Reset previous state
     currentAudio.src = url;
     currentAudio.ontimeupdate = null;
     currentAudio.onended = null;
@@ -158,7 +166,6 @@ async function playChunk(index: number): Promise<void> {
           currentAudio.currentTime >= currentAudio.duration - 0.7 && 
           !nextTriggered) {
         nextTriggered = true;
-        // The next chunk will start and stop this one via the abandonment logic below
         playChunk(index + 1);
       }
     };
@@ -186,6 +193,8 @@ async function playChunk(index: number): Promise<void> {
 
     // Playback
     await currentAudio.play().catch(err => {
+      // AbortError is expected when we pause/reset an element during handoff
+      if (err.name === 'AbortError') return;
       console.error("Playback failed for index", index, err);
       if (!nextTriggered) {
         nextTriggered = true;
@@ -196,9 +205,11 @@ async function playChunk(index: number): Promise<void> {
     // LOOK-AHEAD: Ensure next 2 are buffered
     preloadUpcomingChunks(index);
 
-  } catch (error) {
-    console.error("Chunk processing failure for index", index, error);
-    playChunk(index + 1);
+  } catch (error: any) {
+    if (error.name !== 'AbortError') {
+      console.error("Chunk processing failure for index", index, error);
+      playChunk(index + 1);
+    }
   }
 }
 
@@ -211,6 +222,7 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
+  // Split by common sentence delimiters while keeping the delimiter
   const sentences = cleanText.split(/([.!?]+(?:\s+|\n+|$))/);
   
   const finalUnits: string[] = [];
@@ -248,6 +260,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
   textQueue = chunkText(fullText);
   currentQueueIndex = 0;
   isSpeakingGlobal = true;
+  activeAbortController = new AbortController();
 
   if (textQueue.length === 0) {
     isSpeakingGlobal = false;
