@@ -1,7 +1,7 @@
 /**
- * @fileOverview Overlapping Sequential TTS Engine with Anticipatory Triggering.
- * Uses dual audio elements to allow the next line to start 0.7s before the current one ends,
- * creating a seamless, human-like reading cadence.
+ * @fileOverview Overlapping Sequential TTS Engine with Anticipatory Pre-loading.
+ * Uses dual audio elements to allow the next line to start 0.7s before the current one ends.
+ * Implements a look-ahead buffer to pre-fetch upcoming chunks for zero-latency playback.
  */
 
 export interface TTSOptions {
@@ -137,13 +137,13 @@ async function playChunk(index: number): Promise<void> {
   try {
     let url: string;
 
-    // Use pre-loaded URL if available
+    // USE PRE-LOADED URL IF AVAILABLE
     if (preloadedIndex === index && preloadedUrl) {
       url = preloadedUrl;
       preloadedUrl = null;
       preloadedIndex = -1;
     } else {
-      // Fetch immediately if not pre-loaded
+      // Fetch immediately if not pre-loaded (fallback)
       url = await fetchAudioBlobUrl(text);
     }
 
@@ -186,7 +186,7 @@ async function playChunk(index: number): Promise<void> {
       }
     };
 
-    // Playback is permitted because we unlocked BOTH elements in the initial click handler
+    // Playback
     await currentAudio.play().catch(err => {
       console.error("Playback failed for index", index, err);
       if (!nextTriggered) {
@@ -195,12 +195,13 @@ async function playChunk(index: number): Promise<void> {
       }
     });
 
-    // While current is playing, trigger preload for NEXT
-    preloadNextChunk(index + 1);
+    // LOOK-AHEAD: While current is playing, trigger preload for NEXT index (current + 1)
+    // Note: If we just triggered current + 1 via ontimeupdate, we preload current + 2
+    const preloadTarget = nextTriggered ? index + 2 : index + 1;
+    preloadNextChunk(preloadTarget);
 
   } catch (error) {
     console.error("Chunk processing failure for index", index, error);
-    // Attempt to move to next line anyway
     playChunk(index + 1);
   }
 }
@@ -267,9 +268,7 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     audio.src = silentSrc;
     try {
       await audio.play();
-    } catch (e) {
-      // Proceed; playChunk will attempt the first real segment.
-    }
+    } catch (e) {}
   }
 
   // Start the actual queue from the first chunk
