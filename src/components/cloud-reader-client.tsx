@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
@@ -24,6 +25,7 @@ interface CloudReaderClientProps {
  * Implements Predictive Buffering for instantaneous chapter navigation.
  * Navigation buttons located at bottom for immersive start.
  * Manual 'Buffer 10' trigger added to header.
+ * Features 'Click to Read from Here' paragraph triggers.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -63,7 +65,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       if (count > 3) setIsBuffering(true);
       try {
         const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        // Firestore 'in' queries are limited to 10-30 items depending on version, 10 is safe here
         const q = query(chaptersCol, where('chapterNumber', 'in', missingNumbers.slice(0, 10)));
         const snap = await getDocs(q);
         const newEntries: Record<number, any> = {};
@@ -168,11 +169,21 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleReadAloud = async () => {
+  const handleReadAloud = async (startIndex: number = 0) => {
     const chData = chaptersCache[currentChapterNum];
     if (!chData?.content) return;
+    
     const saved = localStorage.getItem('lounge-voice-settings');
-    await playTextToSpeech(chData.content, saved ? JSON.parse(saved) : {});
+    const voiceOptions = saved ? JSON.parse(saved) : {};
+    
+    const paragraphsArr = (chData.content || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .split(/<\/p>|<div>|<\/div>|\n\n|\r\n/)
+      .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
+      .filter((p: string) => p.length > 0);
+
+    const textToRead = paragraphsArr.slice(startIndex).join('\n\n');
+    await playTextToSpeech(textToRead, voiceOptions);
   };
 
   if (isOfflineMode) {
@@ -247,7 +258,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             </Button>
             <div className="h-4 w-px bg-border/50 mx-1" />
             <VoiceSettingsPopover />
-            <Button variant="outline" size="icon" className="rounded-full shadow-sm" onClick={handleReadAloud} title="Read Aloud">
+            <Button variant="outline" size="icon" className="rounded-full shadow-sm" onClick={() => handleReadAloud(0)} title="Read Aloud">
               <Volume2 className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full">
@@ -281,7 +292,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
         <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
           {paragraphs.map((para: string, idx: number) => (
-            <p key={idx} className="mb-8 cursor-pointer hover:text-foreground transition-colors">
+            <p 
+              key={idx} 
+              onClick={() => handleReadAloud(idx)}
+              className="mb-8 cursor-pointer hover:text-foreground transition-colors"
+            >
               {para}
             </p>
           ))}

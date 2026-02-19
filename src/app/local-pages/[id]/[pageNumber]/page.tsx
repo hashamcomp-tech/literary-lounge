@@ -205,7 +205,7 @@ export default function LocalReader() {
                <p 
                 key={idx} 
                 onClick={() => handleReadAloud(idx)}
-                className="mb-8 cursor-pointer"
+                className="mb-8 cursor-pointer hover:text-foreground/80 transition-colors"
                >
                  {cleanPara}
                </p>

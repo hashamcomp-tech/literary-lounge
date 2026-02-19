@@ -207,7 +207,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                 <p 
                   key={i} 
                   onClick={() => handleReadAloud(i)}
-                  className="mb-8 cursor-pointer"
+                  className="mb-8 cursor-pointer hover:text-foreground/80 transition-colors"
                 >
                   {para}
                 </p>
