@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc } from 'firebase/firestore';
-import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, CheckCircle2 } from 'lucide-react';
+import { useFirebase, useUser, useDoc, useMemoFirebase } from '@/firebase';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Zap, CheckCircle2, Eraser } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -13,6 +13,18 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { saveToLocalHistory } from '@/lib/local-history-utils';
+import { deleteCloudChapter } from '@/lib/cloud-library-utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface CloudReaderClientProps {
   id: string;
@@ -24,6 +36,7 @@ interface CloudReaderClientProps {
  * Implements Predictive Buffering for instantaneous chapter navigation.
  * Features 'Toggle-to-Pause' TTS logic and reactive state synchronization.
  * Navigation buttons located at bottom for immersive start.
+ * NEW: Eraser tool for administrators to purge segments from global library.
  */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
@@ -43,6 +56,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mounted, setMounted] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
+
+  // Authority Check
+  const profileRef = useMemoFirebase(() => (firestore && user && !user.isAnonymous) ? doc(firestore, 'users', user.uid) : null, [firestore, user]);
+  const { data: profile } = useDoc(profileRef);
+  const isAdmin = user?.email === 'hashamcomp@gmail.com' || profile?.role === 'admin';
 
   useEffect(() => {
     setMounted(true);
@@ -206,6 +224,28 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
+  /**
+   * Global Library Purge Protocol (Admins Only)
+   */
+  const handleDeleteCurrentChapter = async () => {
+    if (!firestore || !id) return;
+    try {
+      await deleteCloudChapter(firestore, id, currentChapterNum);
+      toast({ 
+        title: "Segment Purged", 
+        description: `Chapter ${currentChapterNum} has been erased from the global Lounge.` 
+      });
+      // Redirect to book start or library
+      router.push(`/pages/${id}/1`);
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Purge Failed", 
+        description: err.message 
+      });
+    }
+  };
+
   if (isOfflineMode) {
     return (
       <div className="max-w-[700px] mx-auto px-5 py-24 text-center">
@@ -260,6 +300,37 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
           </Button>
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    className="rounded-full text-destructive border-destructive/20 hover:bg-destructive/5 shadow-sm"
+                    title="Purge Current Chapter"
+                  >
+                    <Eraser className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-2xl font-headline font-black">Global Purge Protocol</AlertDialogTitle>
+                    <AlertDialogDescription className="text-base">
+                      You are about to permanently delete <span className="font-bold text-foreground">Chapter {currentChapterNum}</span> of <span className="font-bold">"{metadata?.title}"</span> from the global cloud library. This will remove the segment for all readers.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter className="pt-4">
+                    <AlertDialogCancel className="rounded-xl font-bold">Cancel</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleDeleteCurrentChapter}
+                      className="bg-destructive hover:bg-destructive/90 rounded-xl font-bold px-6"
+                    >
+                      Confirm Global Purge
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
             <Button 
               variant="outline" 
               size="sm" 
@@ -316,7 +387,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </h2>
         </header>
 
-        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
+        <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] window.scrollTo(0,0) leading-[1.6] text-foreground/90 font-body">
           {paragraphs.map((para: string, idx: number) => (
             <p 
               key={idx} 
