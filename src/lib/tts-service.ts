@@ -1,7 +1,7 @@
 /**
- * @fileOverview Refined Sequential TTS Engine with Look-Ahead Pre-loading.
- * Handles long-form content by chunking text into individual lines/sentences 
- * and pre-fetching the next segment while the current one plays.
+ * @fileOverview Overlapping Sequential TTS Engine with Anticipatory Triggering.
+ * Uses dual audio elements to allow the next line to start 0.3s before the current one ends,
+ * creating a seamless, human-like reading cadence.
  */
 
 export interface TTSOptions {
@@ -9,11 +9,11 @@ export interface TTSOptions {
   rate?: string;
 }
 
-// Reuse a single audio element to maintain "unlocked" status from user gestures
-let globalAudio: HTMLAudioElement | null = null;
+// Persistent dual audio elements to allow overlapping playback
+let audioElements: [HTMLAudioElement, HTMLAudioElement] | null = null;
 
 if (typeof window !== 'undefined') {
-  globalAudio = new Audio();
+  audioElements = [new Audio(), new Audio()];
 }
 
 let textQueue: string[] = [];
@@ -34,14 +34,19 @@ export function stopTextToSpeech(): void {
   textQueue = [];
   currentQueueIndex = 0;
   
-  if (globalAudio) {
-    globalAudio.pause();
-    globalAudio.currentTime = 0;
-    // Cleanup blob URLs to prevent memory leaks
-    if (globalAudio.src && globalAudio.src.startsWith('blob:')) {
-      URL.revokeObjectURL(globalAudio.src);
-    }
-    globalAudio.src = "";
+  if (audioElements) {
+    audioElements.forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.onended = null;
+      audio.ontimeupdate = null;
+      audio.onerror = null;
+      // Cleanup blob URLs to prevent memory leaks
+      if (audio.src && audio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(audio.src);
+      }
+      audio.src = "";
+    });
   }
 
   // Cleanup pre-loaded resource
@@ -113,18 +118,20 @@ async function preloadNextChunk(index: number) {
 }
 
 /**
- * Internal helper to play a specific chunk.
+ * Internal helper to play a specific chunk using alternating audio slots.
  */
 async function playChunk(index: number): Promise<void> {
-  if (!isSpeakingGlobal || index >= textQueue.length || !globalAudio) {
+  if (!isSpeakingGlobal || index >= textQueue.length || !audioElements) {
     isSpeakingGlobal = false;
     return;
   }
 
+  // Update global index tracker
+  currentQueueIndex = index;
+
   const text = textQueue[index];
   if (!text || text.trim().length === 0) {
-    currentQueueIndex++;
-    return playChunk(currentQueueIndex);
+    return playChunk(index + 1);
   }
 
   try {
@@ -140,39 +147,66 @@ async function playChunk(index: number): Promise<void> {
       url = await fetchAudioBlobUrl(text);
     }
 
-    const oldSrc = globalAudio.src;
-    globalAudio.src = url;
+    // Determine which audio slot to use (alternating A/B)
+    const audioSlot = index % 2;
+    const currentAudio = audioElements[audioSlot];
+    let nextTriggered = false;
 
-    globalAudio.onended = () => {
-      if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
-      currentQueueIndex++;
-      playChunk(currentQueueIndex);
+    // Reset and Load
+    const oldSrc = currentAudio.src;
+    currentAudio.src = url;
+    currentAudio.ontimeupdate = null;
+    currentAudio.onended = null;
+    currentAudio.onerror = null;
+
+    // ANTICIPATORY TRIGGER: Start next line 0.3s before current ends
+    currentAudio.ontimeupdate = () => {
+      if (currentAudio.duration > 0 && 
+          currentAudio.currentTime >= currentAudio.duration - 0.3 && 
+          !nextTriggered) {
+        nextTriggered = true;
+        playChunk(index + 1);
+      }
     };
 
-    globalAudio.onerror = () => {
-      console.warn("Audio playback error, attempting next chunk...");
+    currentAudio.onended = () => {
       if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
-      currentQueueIndex++;
-      playChunk(currentQueueIndex);
+      if (!nextTriggered) {
+        nextTriggered = true;
+        playChunk(index + 1);
+      }
     };
 
-    // Playback is permitted because we unlocked the element in the initial click handler
-    await globalAudio.play().catch(err => {
-      console.error("Playback failed after source swap:", err);
-      isSpeakingGlobal = false;
+    currentAudio.onerror = () => {
+      console.warn("Audio playback error on index", index, "skipping...");
+      if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
+      if (!nextTriggered) {
+        nextTriggered = true;
+        playChunk(index + 1);
+      }
+    };
+
+    // Playback is permitted because we unlocked BOTH elements in the initial click handler
+    await currentAudio.play().catch(err => {
+      console.error("Playback failed for index", index, err);
+      if (!nextTriggered) {
+        nextTriggered = true;
+        playChunk(index + 1);
+      }
     });
 
     // While current is playing, trigger preload for NEXT
     preloadNextChunk(index + 1);
 
   } catch (error) {
-    console.error("Chunk playback processing error:", error);
-    isSpeakingGlobal = false;
+    console.error("Chunk processing failure for index", index, error);
+    // Attempt to move to next line anyway
+    playChunk(index + 1);
   }
 }
 
 /**
- * Splits text into individual lines and sentences.
+ * Splits text into individual lines and sentences for granular reading.
  */
 function chunkText(text: string): string[] {
   const cleanText = text
@@ -207,13 +241,13 @@ function chunkText(text: string): string[] {
 }
 
 /**
- * Initiates the line-by-line reading process with pre-loading.
+ * Initiates the multi-stream reading process with pre-loading and anticipatory triggers.
  */
 export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
   // Stop any existing session
   stopTextToSpeech();
 
-  if (!fullText || fullText.trim().length === 0 || !globalAudio) return;
+  if (!fullText || fullText.trim().length === 0 || !audioElements) return;
 
   // Prepare new session
   currentOptions = options;
@@ -226,15 +260,18 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
     return;
   }
 
-  // UNLOCK: Call play() immediately on the persistent audio element 
-  // with a silent source to satisfy browser Autoplay policies.
-  globalAudio.src = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-  try {
-    await globalAudio.play();
-  } catch (e) {
-    // Proceed; playChunk will attempt the first real segment.
+  // UNLOCK BOTH ELEMENTS: Call play() immediately on both persistent elements 
+  // with a silent source to satisfy browser Autoplay policies for the entire session.
+  const silentSrc = "data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+  for (const audio of audioElements) {
+    audio.src = silentSrc;
+    try {
+      await audio.play();
+    } catch (e) {
+      // Proceed; playChunk will attempt the first real segment.
+    }
   }
 
-  // Start the actual queue
+  // Start the actual queue from the first chunk
   return playChunk(0);
 }
