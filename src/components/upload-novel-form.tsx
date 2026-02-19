@@ -99,7 +99,7 @@ export function UploadNovelForm() {
       
       // CLEANUP LOGIC:
       // Strip leading separators (:, -, .), potential sub-indexing numbers, and more separators.
-      // regex handles patterns like " - 5 : Title" or " : 10 - Title" or just " : Title"
+      // Handles patterns like " - 5 : Title" or " : 10 - Title" or just " : Title"
       titlePart = titlePart.replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
 
       return {
@@ -127,11 +127,19 @@ export function UploadNovelForm() {
       setChapterNumber(quick.chapterNumber);
       setChapterTitle(quick.chapterTitle);
       
-      // Auto-fill Author/Genre if the Novel Name matches something in our existing library
+      // AUTO-FILL LOGIC:
+      // If the detected Novel Name matches an existing book in our current scope (Cloud or Local),
+      // we inherit the Author and Categories immediately.
       const existing = allBooks.find(b => b.title.toLowerCase() === quick.novelName.toLowerCase());
       if (existing) {
         setAuthor(existing.author);
         setSelectedGenres(existing.genre);
+        setWasAutoFilled(true);
+        toast({ 
+          title: "Library Sync", 
+          description: `Identified existing volume. Metadata synced for "${existing.title}".` 
+        });
+        return; // Skip AI if we have a perfect library match
       }
     }
 
@@ -144,7 +152,7 @@ export function UploadNovelForm() {
     try {
       const result = await parsePastedChapter(text);
       
-      // Only fill Author and Genres if they are currently empty or weren't matched by quick-sync
+      // Only fill Author and Genres if they were not already matched by library sync
       if (result.author && !author) setAuthor(result.author);
       
       if (result.genres && Array.isArray(result.genres) && selectedGenres.length === 0) {
@@ -162,7 +170,7 @@ export function UploadNovelForm() {
       }
       
       setWasAutoFilled(true);
-      toast({ title: "Scan Complete", description: "Manuscript context identified." });
+      toast({ title: "Analysis Complete", description: "Prose analyzed and metadata extracted." });
     } catch (e) {
       console.warn("AI Detection failed", e);
     } finally {
