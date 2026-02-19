@@ -5,13 +5,14 @@ import { uploadCoverImage } from "./upload-cover";
 /**
  * Clean manuscript artifacts and normalize whitespace.
  * Removes common noise like ISBNs, page numbers, and word counts.
+ * Handles formatted numbers like [1,473 words].
  */
 function cleanContent(text: string): string {
   if (!text) return "";
   return text
     .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
     .replace(/Page\s+\d+\s+of\s+\d+/gi, "")
-    .replace(/\[\s*\d+\s*words\s*\]/gi, "") // NEW: Remove "[anynumber words]"
+    .replace(/\[\s*[\d,.\s]+\s*words\s*\]/gi, "") // REMOVE: word counts with commas/dots
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
