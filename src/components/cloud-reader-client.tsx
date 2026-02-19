@@ -50,6 +50,11 @@ interface CloudReaderClientProps {
   chapterNumber: string;
 }
 
+/**
+ * @fileOverview High-Performance Cloud Reader Client.
+ * Implements Predictive Buffering for seamless chapter transitions.
+ * Features Lounge Studio for manuscript management and AI enhancements.
+ */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, storage, isOfflineMode } = useFirebase();
   const { user } = useUser();
@@ -97,8 +102,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     setVisibleChapterNums([currentChapterNum]);
   }, [currentChapterNum]);
 
-  const fetchChaptersRange = useCallback(async (start: number, count: number) => {
-    if (!firestore || !id) return [];
+  /**
+   * Predictive Buffer: Silently fetches a range of upcoming chapters.
+   */
+  const preFetchNextChapters = useCallback(async (start: number, count: number = 3) => {
+    if (!firestore || !id || isOfflineMode) return;
     
     const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
       .filter(n => n > 0 && n <= (metadata?.totalChapters || 9999));
@@ -116,18 +124,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
         });
         setChaptersCache(prev => ({ ...prev, ...newEntries }));
-        return targetNumbers.filter(n => newEntries[n] || chaptersCache[n]);
-      } catch (err: any) {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: `books/${id}/chapters`,
-          operation: 'list',
-        }));
-        return [];
+      } catch (err) {
+        // Silent fail for background pre-fetching
       }
     }
-    
-    return targetNumbers;
-  }, [firestore, id, chaptersCache, metadata]);
+  }, [firestore, id, chaptersCache, metadata, isOfflineMode]);
 
   useEffect(() => {
     if (isOfflineMode) {
@@ -137,13 +138,16 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (!firestore || !id) return;
 
     const loadChapter = async () => {
-      if (metadata && chaptersCache[currentChapterNum]) {
+      // 1. SEAMLESS CHECK: If the chapter is already in cache, skip the loader
+      if (chaptersCache[currentChapterNum]) {
+        setIsLoading(false);
         if (viewLoggedRef.current !== id) {
           updateDoc(doc(firestore, 'books', id), { views: increment(1) }).catch(() => {});
           viewLoggedRef.current = id;
         }
         updateHistory();
-        setIsLoading(false);
+        // Background pre-fetch next few chapters for subsequent seamless clicks
+        preFetchNextChapters(currentChapterNum + 1, 3);
         return;
       }
 
@@ -151,40 +155,41 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setError(null);
       
       try {
-        const bookRef = doc(firestore, 'books', id);
-        const snapshot = await getDoc(bookRef);
-        if (!snapshot.exists()) {
-          setError('Document not found in the cloud library.');
-          setIsLoading(false);
-          return;
-        }
-        const bookData = snapshot.data();
-        const meta = bookData.metadata?.info || bookData;
-        setMetadata(meta);
-
-        const chapterRef = doc(firestore, 'books', id, 'chapters', currentChapterNum.toString());
-        const chapterSnap = await getDoc(chapterRef);
-        
-        if (chapterSnap.exists()) {
-          const chData = { id: chapterSnap.id, ...chapterSnap.data() };
-          setChaptersCache(prev => ({ ...prev, [currentChapterNum]: chData }));
-        } else {
-          const chaptersCol = collection(firestore, 'books', id, 'chapters');
-          const q = query(chaptersCol, where('chapterNumber', '==', currentChapterNum), limit(1));
-          const querySnap = await getDocs(q);
-          if (!querySnap.empty) {
-            const chData = { id: querySnap.docs[0].id, ...querySnap.docs[0].data() };
-            setChaptersCache(prev => ({ ...prev, [currentChapterNum]: chData }));
-          } else {
-            setError(`Chapter ${currentChapterNum} is not yet available in the cloud.`);
+        // Fetch metadata if missing
+        let meta = metadata;
+        if (!meta) {
+          const bookRef = doc(firestore, 'books', id);
+          const snapshot = await getDoc(bookRef);
+          if (!snapshot.exists()) {
+            setError('Document not found in the cloud library.');
+            setIsLoading(false);
+            return;
           }
+          const bookData = snapshot.data();
+          meta = bookData.metadata?.info || bookData;
+          setMetadata(meta);
         }
 
-        if (viewLoggedRef.current !== id) {
-          updateDoc(bookRef, { views: increment(1) }).catch(() => {});
-          viewLoggedRef.current = id;
+        // Fetch target chapter
+        const chaptersCol = collection(firestore, 'books', id, 'chapters');
+        const q = query(chaptersCol, where('chapterNumber', '==', currentChapterNum), limit(1));
+        const querySnap = await getDocs(q);
+        
+        if (!querySnap.empty) {
+          const chData = { id: querySnap.docs[0].id, ...querySnap.docs[0].data() };
+          setChaptersCache(prev => ({ ...prev, [currentChapterNum]: chData }));
+          
+          if (viewLoggedRef.current !== id) {
+            updateDoc(doc(firestore, 'books', id), { views: increment(1) }).catch(() => {});
+            viewLoggedRef.current = id;
+          }
+          updateHistory(meta);
+          
+          // Background pre-fetch next
+          preFetchNextChapters(currentChapterNum + 1, 3);
+        } else {
+          setError(`Chapter ${currentChapterNum} is not yet available in the cloud.`);
         }
-        updateHistory(meta);
       } catch (err: any) {
         setError('Insufficient permissions or network error.');
       } finally {
@@ -194,7 +199,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     loadChapter();
     stopTextToSpeech();
-  }, [firestore, id, currentChapterNum, isOfflineMode, user]);
+  }, [firestore, id, currentChapterNum, isOfflineMode, user, metadata, preFetchNextChapters]);
 
   const updateHistory = (metaOverride?: any) => {
     const meta = metaOverride || metadata;
@@ -319,13 +324,27 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
 
     try {
-      const fetchedNums = await fetchChaptersRange(lastVisible + 1, 10);
-      if (fetchedNums.length > 0) {
-        setVisibleChapterNums(prev => [...prev, ...fetchedNums]);
-        toast({ title: "Reader Extended", description: `${fetchedNums.length} chapters added seamlessly.` });
-      } else {
-        toast({ variant: "destructive", title: "Sync Failed", description: "Upcoming chapters not found." });
+      const start = lastVisible + 1;
+      const count = 10;
+      const targetNumbers = Array.from({ length: count }, (_, i) => start + i)
+        .filter(n => n > 0 && n <= (metadata?.totalChapters || 9999));
+      
+      const missingNumbers = targetNumbers.filter(n => !chaptersCache[n]);
+      
+      if (missingNumbers.length > 0) {
+        const chaptersCol = collection(firestore!, 'books', id, 'chapters');
+        const q = query(chaptersCol, where('chapterNumber', 'in', missingNumbers));
+        const snap = await getDocs(q);
+        const newEntries: Record<number, any> = {};
+        snap.docs.forEach(d => {
+          const data = d.data();
+          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
+        });
+        setChaptersCache(prev => ({ ...prev, ...newEntries }));
       }
+      
+      setVisibleChapterNums(prev => [...prev, ...targetNumbers]);
+      toast({ title: "Reader Extended", description: `Chapter buffer increased.` });
     } catch (e) {
       toast({ variant: "destructive", title: "Sync Interrupted", description: "Cloud connection unstable." });
     } finally {

@@ -1,11 +1,9 @@
 /**
  * @fileOverview Client-side utilities for processing and optimizing images.
- * Handles resizing and compression to ensure Firebase Storage efficiency.
  */
 
 /**
  * Resizes an image to a maximum dimension while maintaining aspect ratio.
- * Converts the result to an optimized JPEG Blob.
  */
 export async function optimizeCoverImage(file: File | Blob, maxDimension: number = 1000): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -41,16 +39,26 @@ export async function optimizeCoverImage(file: File | Blob, maxDimension: number
         canvas.toBlob(
           (blob) => {
             if (blob) resolve(blob);
-            else reject(new Error('Canvas to Blob conversion failed'));
+            else reject(new Error('Canvas to Blob failed'));
           },
           'image/jpeg',
-          0.85 // Quality setting
+          0.85
         );
       };
       img.onerror = reject;
     };
     reader.onerror = reject;
   });
+}
+
+/**
+ * High-Reliability URL-to-File converter.
+ * Handles Blob, Data, and standard URLs safely.
+ */
+export async function urlToFile(url: string, filename: string): Promise<File> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: blob.type });
 }
 
 /**

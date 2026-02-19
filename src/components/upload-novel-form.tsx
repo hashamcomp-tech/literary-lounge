@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -15,7 +14,7 @@ import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-l
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
-import { dataURLtoFile } from '@/lib/image-utils';
+import { urlToFile } from '@/lib/image-utils';
 import { Badge } from '@/components/ui/badge';
 import {
   Popover,
@@ -25,6 +24,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import JSZip from 'jszip';
 
 interface Suggestion {
   id: string;
@@ -34,11 +34,27 @@ interface Suggestion {
   genre: string[];
 }
 
+/**
+ * @fileOverview Universal Manuscript Ingestion Form.
+ * Features Structure-First Paste Detection and High-Reliability EPUB Parsing.
+ * Implements Lazy State Initialization for persistent upload settings.
+ */
 export function UploadNovelForm() {
   const router = useRouter();
   const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
+  // Lazy State Initialization from localStorage
+  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>(() => {
+    if (typeof window !== 'undefined') return (localStorage.getItem("lounge-upload-mode") as any) || 'local';
+    return 'local';
+  });
+  
+  const [sourceMode, setSourceMode] = useState<'file' | 'text'>(() => {
+    if (typeof window !== 'undefined') return (localStorage.getItem("lounge-source-mode") as any) || 'file';
+    return 'file';
+  });
+
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [chapterNumber, setChapterNumber] = useState('1');
@@ -46,15 +62,12 @@ export function UploadNovelForm() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pastedText, setPastedText] = useState('');
-  const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
   
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [progress, setProgress] = useState(0);
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
-  
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
-  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
 
   // Preview States
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -66,17 +79,6 @@ export function UploadNovelForm() {
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
-
-  // Initialize and Sync Settings from LocalStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedMode = localStorage.getItem("lounge-upload-mode") as 'cloud' | 'local';
-      if (savedMode) setUploadMode(savedMode);
-      
-      const savedSource = localStorage.getItem("lounge-source-mode") as 'file' | 'text';
-      if (savedSource) setSourceMode(savedSource);
-    }
-  }, []);
 
   const handleSetUploadMode = (mode: 'cloud' | 'local') => {
     setUploadMode(mode);
@@ -90,37 +92,6 @@ export function UploadNovelForm() {
 
   /**
    * Structure-First Positional Parser
-   */
-  const quickDetectFromText = useCallback((text: string) => {
-    const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length < 2) return null;
-
-    const novelName = lines[0];
-    const secondLine = lines[1];
-
-    // Pattern for second line: "Chapter 1", "Ch 1", or just "1"
-    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
-    const match = secondLine.match(chapterRegex);
-
-    if (match) {
-      const num = match[1];
-      let titlePart = secondLine.substring(match[0].length);
-      
-      // CLEANUP: Strip indexing noise like " - 5 : Title"
-      titlePart = titlePart.replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
-
-      return {
-        novelName,
-        chapterNumber: num,
-        chapterTitle: titlePart || `Chapter ${num}`
-      };
-    }
-
-    return null;
-  }, []);
-
-  /**
-   * Implementation Protocol: 
    * Only triggers if Line 1 matches a known book and Line 2 contains a Chapter pattern.
    */
   const handleAnalyzePastedText = (text: string) => {
@@ -132,14 +103,14 @@ export function UploadNovelForm() {
     const potentialNovelName = lines[0].toLowerCase();
     const potentialChapterLine = lines[1];
 
-    // 1. Condition: Line 2 must contain "Chapter" followed by a number
+    // Check for "Chapter X" pattern on Line 2
     const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
     if (!chapterRegex.test(potentialChapterLine)) {
       setWasAutoFilled(false);
       return; 
     }
 
-    // 2. Condition: Line 1 must fuzzy match a pre-existing book name
+    // Fuzzy match Line 1 against existing books
     let existing = allBooks.find(b => b.title.toLowerCase() === potentialNovelName);
     if (!existing) {
       existing = allBooks.find(b => 
@@ -148,74 +119,76 @@ export function UploadNovelForm() {
       );
     }
 
-    // 3. Implement detection only if both structural criteria are met
     if (existing) {
-      const quick = quickDetectFromText(text);
-      if (quick) {
-        setTitle(existing.title);
-        setAuthor(existing.author);
-        setSelectedGenres(existing.genre);
-        setChapterNumber(quick.chapterNumber);
-        setChapterTitle(quick.chapterTitle);
-        setWasAutoFilled(true);
-        toast({ 
-          title: "Library Match Detected", 
-          description: `Series metadata synced for "${existing.title}".` 
-        });
-      }
+      const match = potentialChapterLine.match(chapterRegex);
+      const num = match![1];
+      let titlePart = potentialChapterLine.substring(match![0].length).replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
+
+      setTitle(existing.title);
+      setAuthor(existing.author);
+      setSelectedGenres(existing.genre);
+      setChapterNumber(num);
+      setChapterTitle(titlePart || `Chapter ${num}`);
+      setWasAutoFilled(true);
+      toast({ title: "Series Match Detected", description: `Sequence synchronized for "${existing.title}".` });
     } else {
       setWasAutoFilled(false);
     }
   };
 
+  /**
+   * High-Reliability EPUB Metadata Extractor.
+   * Uses Direct Archive Access to avoid replacements[i] errors.
+   */
   useEffect(() => {
-    if (!selectedFile) {
+    if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.epub')) {
       setCoverPreview(null);
       return;
     }
 
-    const isEpub = selectedFile.name.toLowerCase().endsWith('.epub');
-    if (isEpub) {
-      const getMetadataAndPreview = async () => {
-        setIsExtractingPreview(true);
-        setCoverPreview(null); 
-        setWasAutoFilled(false);
-        try {
-          const formData = new FormData();
-          formData.append('file', selectedFile);
-          const res = await fetch('/api/extract-cover', { method: 'POST', body: formData });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.title) setTitle(data.title);
-            if (data.author) setAuthor(data.author);
-            if (data.genres && Array.isArray(data.genres)) {
-              const matchedSet = new Set<string>();
-              data.genres.forEach((subject: string) => {
-                const search = subject.toLowerCase();
-                GENRES.forEach(available => {
-                  const availLower = available.toLowerCase();
-                  if (search === availLower || search.includes(availLower) || availLower.includes(search)) {
-                    matchedSet.add(available);
-                  }
-                });
-              });
-              if (matchedSet.size > 0) setSelectedGenres(Array.from(matchedSet));
-            }
-            if (data.dataUri) setCoverPreview(data.dataUri);
-            if (data.title || data.author) {
-              setWasAutoFilled(true);
-              toast({ title: "Volume Identified", description: `Metadata extracted from digital volume.` });
-            }
+    const extractMetadata = async () => {
+      setIsExtractingPreview(true);
+      try {
+        const zip = await JSZip.loadAsync(selectedFile);
+        const containerXml = await zip.file("META-INF/container.xml")?.async("string");
+        if (!containerXml) throw new Error("Invalid Archive");
+
+        const parser = new DOMParser();
+        const containerDoc = parser.parseFromString(containerXml, "text/xml");
+        const opfPath = containerDoc.querySelector("rootfile")?.getAttribute("full-path");
+        if (!opfPath) throw new Error("OPF missing");
+
+        const opfXml = await zip.file(opfPath)?.async("string");
+        const opfDoc = parser.parseFromString(opfXml || "", "text/xml");
+
+        const titleText = opfDoc.querySelector("title")?.textContent || "";
+        const authorText = opfDoc.querySelector("creator")?.textContent || "";
+        
+        if (titleText) setTitle(titleText);
+        if (authorText) setAuthor(authorText);
+
+        // Best-effort cover extraction
+        const coverId = opfDoc.querySelector("meta[name='cover']")?.getAttribute("content") || 
+                        opfDoc.querySelector("item[properties='cover-image']")?.getAttribute("id");
+        
+        if (coverId) {
+          const coverItem = opfDoc.querySelector(`item[id='${coverId}']`);
+          const coverHref = coverItem?.getAttribute("href");
+          if (coverHref) {
+            const fullPath = opfPath.substring(0, opfPath.lastIndexOf('/') + 1) + coverHref;
+            const coverData = await zip.file(fullPath)?.async("blob");
+            if (coverData) setCoverPreview(URL.createObjectURL(coverData));
           }
-        } catch (e) {
-          console.warn("Identification failed");
-        } finally {
-          setIsExtractingPreview(false);
         }
-      };
-      getMetadataAndPreview();
-    }
-  }, [selectedFile, toast]);
+        setWasAutoFilled(true);
+      } catch (e) {
+        console.warn("EPUB metadata extraction failed", e);
+      } finally {
+        setIsExtractingPreview(false);
+      }
+    };
+    extractMetadata();
+  }, [selectedFile]);
 
   useEffect(() => {
     fetchLibraryIndex();
@@ -265,15 +238,6 @@ export function UploadNovelForm() {
     setShowSuggestions(filtered.length > 0);
   }, [title, allBooks]);
 
-  const handleSelectBook = (book: Suggestion) => {
-    setTitle(book.title);
-    setAuthor(book.author);
-    setSelectedGenres(book.genre);
-    setChapterNumber((book.totalChapters + 1).toString());
-    setShowSuggestions(false);
-    toast({ title: "Volume Matched", description: `Preparing next chapter for "${book.title}".` });
-  };
-
   const toggleGenre = (genre: string) => {
     setSelectedGenres(prev => 
       prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
@@ -306,12 +270,7 @@ export function UploadNovelForm() {
     try {
       const searchTitle = title.trim();
       const searchAuthor = author.trim();
-      
-      const existingBook = allBooks.find(b => 
-        b.title.trim().toLowerCase() === searchTitle.toLowerCase() && 
-        b.author.trim().toLowerCase() === searchAuthor.toLowerCase()
-      );
-
+      const existingBook = allBooks.find(b => b.title.trim().toLowerCase() === searchTitle.toLowerCase());
       const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
       
       let preParsedChapters: { title: string; content: string }[] | undefined = undefined;
@@ -320,58 +279,74 @@ export function UploadNovelForm() {
 
       if (sourceMode === 'file' && selectedFile) {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
-          setLoadingMessage('Decompressing Archive...');
-          setProgress(20);
-          const formData = new FormData();
-          formData.append('file', selectedFile);
-          const parseRes = await fetch('/api/ingest', { method: 'POST', body: formData });
-          if (!parseRes.ok) throw new Error("Digital parsing failed.");
-          const parseData = await parseRes.json();
-          if (!parseData.chapters || parseData.chapters.length === 0) throw new Error("Digital volume empty.");
-          preParsedChapters = parseData.chapters;
-          if (coverPreview) extractedCoverFile = dataURLtoFile(coverPreview, `epub_cover_${bookId}.jpg`);
-          setLoadingMessage('Content Structured...');
-          setProgress(60);
-        } else {
-          manualContent = cleanContent(await selectedFile.text());
-        }
-      } else {
-        // Source is 'text' (pastedText)
-        let processedContent = pastedText;
-        
-        // If we auto-filled from positional headers, strip those headers from the final content body
-        if (wasAutoFilled) {
-          const lines = pastedText.split('\n');
-          let linesToSkip = 0;
-          let nonEntryCount = 0;
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].trim().length > 0) {
-              nonEntryCount++;
-              if (nonEntryCount === 2) {
-                linesToSkip = i + 1;
-                break;
+          setLoadingMessage('Parsing digital volume...');
+          setProgress(30);
+          
+          const zip = await JSZip.loadAsync(selectedFile);
+          const containerXml = await zip.file("META-INF/container.xml")?.async("string");
+          const parser = new DOMParser();
+          const containerDoc = parser.parseFromString(containerXml || "", "text/xml");
+          const opfPath = containerDoc.querySelector("rootfile")?.getAttribute("full-path");
+          const opfXml = await zip.file(opfPath || "")?.async("string");
+          const opfDoc = parser.parseFromString(opfXml || "", "text/xml");
+
+          // Extract spine and manifest for sequencing
+          const manifest: Record<string, string> = {};
+          opfDoc.querySelectorAll("manifest item").forEach(item => {
+            manifest[item.getAttribute("id")!] = item.getAttribute("href")!;
+          });
+
+          const spineIds = Array.from(opfDoc.querySelectorAll("spine itemref")).map(i => i.getAttribute("idref")!);
+          const chapters: { title: string; content: string }[] = [];
+
+          for (let i = 0; i < spineIds.length; i++) {
+            const href = manifest[spineIds[i]];
+            if (href) {
+              const fullPath = opfPath!.substring(0, opfPath!.lastIndexOf('/') + 1) + href;
+              const content = await zip.file(fullPath)?.async("string");
+              if (content) {
+                const doc = parser.parseFromString(content, "text/html");
+                const bodyText = doc.body.innerText || doc.body.textContent || "";
+                if (bodyText.trim().length > 100) {
+                  const heading = doc.querySelector("h1, h2, h3")?.textContent || `Chapter ${chapters.length + 1}`;
+                  chapters.push({ title: heading, content: bodyText });
+                }
               }
             }
           }
-          processedContent = lines.slice(linesToSkip).join('\n').trim();
+          preParsedChapters = chapters;
+          if (coverPreview) extractedCoverFile = await urlToFile(coverPreview, `epub_cover_${bookId}.jpg`);
+        } else {
+          manualContent = await selectedFile.text();
         }
-        manualContent = cleanContent(processedContent);
+      } else {
+        // Source is text
+        let processedContent = pastedText;
+        if (wasAutoFilled) {
+          const lines = pastedText.split('\n');
+          let skip = 0;
+          let count = 0;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim()) {
+              count++;
+              if (count === 2) { skip = i + 1; break; }
+            }
+          }
+          processedContent = lines.slice(skip).join('\n').trim();
+        }
+        manualContent = processedContent;
       }
 
-      setLoadingMessage('Syncing with Lounge...');
+      setLoadingMessage('Securing to Lounge...');
       setProgress(80);
 
       if (uploadMode === 'cloud') {
-        if (!canUploadCloud) {
-          throw new Error("Cloud publishing restricted.");
-        }
+        if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
           title: searchTitle, author: searchAuthor, genres: selectedGenres,
-          rawContent: manualContent, 
-          preParsedChapters,
-          coverFile: extractedCoverFile,
-          ownerId: user!.uid,
+          rawContent: manualContent, preParsedChapters,
+          coverFile: extractedCoverFile, ownerId: user!.uid,
           manualChapterInfo: manualContent ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
         });
       } else {
@@ -381,25 +356,15 @@ export function UploadNovelForm() {
         });
         if (preParsedChapters) {
           for (let i = 0; i < preParsedChapters.length; i++) {
-            await saveLocalChapter({ 
-              bookId, 
-              chapterNumber: i + 1, 
-              content: cleanContent(preParsedChapters[i].content), 
-              title: preParsedChapters[i].title 
-            });
+            await saveLocalChapter({ bookId, chapterNumber: i + 1, content: cleanContent(preParsedChapters[i].content), title: preParsedChapters[i].title });
           }
         } else if (manualContent) {
-          await saveLocalChapter({ 
-            bookId, 
-            chapterNumber: parseInt(chapterNumber), 
-            content: cleanContent(manualContent), 
-            title: chapterTitle 
-          });
+          await saveLocalChapter({ bookId, chapterNumber: parseInt(chapterNumber), content: cleanContent(manualContent), title: chapterTitle });
         }
       }
 
       setProgress(100);
-      toast({ title: 'Manuscript Secured', description: 'Volume successfully integrated into the library.' });
+      toast({ title: 'Volume Integrated', description: 'Manuscript secured successfully.' });
       router.push('/');
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });
@@ -421,17 +386,12 @@ export function UploadNovelForm() {
         const settingsRef = doc(db, 'settings', 'approvedEmails');
         const settingsSnap = await getDoc(settingsRef);
         if (settingsSnap.exists()) {
-          const emails = settingsSnap.data().emails || [];
-          isWhitelisted = emails.includes(user.email);
+          isWhitelisted = settingsSnap.data().emails?.includes(user.email);
         }
       }
       const permitted = user.email === 'hashamcomp@gmail.com' || userRole === 'admin' || isWhitelisted;
       setCanUploadCloud(permitted);
-      
-      // Safety reset: if mode is cloud but they aren't permitted, drop back to local
-      if (uploadMode === 'cloud' && !permitted && !isOfflineMode) {
-        handleSetUploadMode('local');
-      }
+      if (uploadMode === 'cloud' && !permitted) handleSetUploadMode('local');
     };
     checkPermissions();
   }, [user, db, isOfflineMode, uploadMode]);
@@ -481,13 +441,9 @@ export function UploadNovelForm() {
                 </div>
                 {showSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-2 border-b bg-muted/30 text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center justify-between">
-                      <span>Matches Found</span>
-                      <span>Target Ch</span>
-                    </div>
                     <ScrollArea className="max-h-[240px]">
                       {filteredSuggestions.map((book) => (
-                        <button key={book.id} type="button" onClick={() => handleSelectBook(book)} className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none">
+                        <button key={book.id} type="button" onClick={() => { setTitle(book.title); setAuthor(book.author); setSelectedGenres(book.genre); setChapterNumber((book.totalChapters + 1).toString()); setShowSuggestions(false); }} className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none">
                           <div className="bg-primary/10 p-2 rounded-lg"><Book className="h-4 w-4 text-primary" /></div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold truncate">{book.title}</p>
@@ -505,39 +461,31 @@ export function UploadNovelForm() {
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center justify-between">
                   Categories
-                  {wasAutoFilled && (
-                    <span className="text-primary flex items-center gap-1 animate-pulse">
-                      <Sparkles className="h-2.5 w-2.5" /> Sequence Synced
-                    </span>
-                  )}
+                  {wasAutoFilled && <span className="text-primary flex items-center gap-1 animate-pulse"><Sparkles className="h-2.5 w-2.5" /> Series Synced</span>}
                 </Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50 hover:bg-muted/30 transition-colors">
                       {selectedGenres.length > 0 ? (
                         selectedGenres.map(g => (
-                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 transition-all gap-1.5 px-2 py-1 rounded-lg animate-in zoom-in-95">
+                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 transition-all gap-1.5 px-2 py-1 rounded-lg">
                             {g}
                             <span onClick={(e) => { e.stopPropagation(); toggleGenre(g); }} className="hover:text-destructive transition-colors"><X className="h-3 w-3" /></span>
                           </Badge>
                         ))
                       ) : (
                         <div className="flex items-center justify-between w-full text-muted-foreground">
-                          <span className="text-sm font-medium">Select genre or themes...</span>
+                          <span className="text-sm font-medium">Select genre...</span>
                           <ChevronDown className="h-4 w-4 opacity-50" />
                         </div>
                       )}
                     </div>
                   </PopoverTrigger>
                   <PopoverContent className="w-[340px] p-0 rounded-2xl shadow-2xl border-none" align="start">
-                    <div className="p-4 border-b bg-muted/30">
-                      <h4 className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-1">Library Shelves</h4>
-                      <p className="text-[10px] text-muted-foreground opacity-60">Categorize your manuscript for better discovery.</p>
-                    </div>
                     <ScrollArea className="h-72 p-3">
                       <div className="grid grid-cols-2 gap-2">
                         {GENRES.map(g => (
-                          <button key={g} type="button" onClick={() => toggleGenre(g)} className={`w-full flex items-center justify-between p-3 text-[11px] font-bold rounded-xl transition-all ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-[0.98]' : 'bg-muted/50 hover:bg-muted text-muted-foreground'}`}>
+                          <button key={g} type="button" onClick={() => toggleGenre(g)} className={`w-full flex items-center justify-between p-3 text-[11px] font-bold rounded-xl transition-all ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'bg-muted/50 hover:bg-muted'}`}>
                             {g} {selectedGenres.includes(g) && <Check className="h-3 w-3" />}
                           </button>
                         ))}
@@ -559,47 +507,38 @@ export function UploadNovelForm() {
                   {isExtractingPreview ? (
                     <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Loader2 className="h-8 w-8 text-primary animate-spin" /></div>
                   ) : coverPreview ? (
-                    <div className="relative aspect-[2/3] w-32 mx-auto mb-4 rounded-lg overflow-hidden shadow-xl border-2 border-primary/20 animate-in fade-in zoom-in duration-500"><img src={coverPreview} alt="Extracted Cover" className="w-full h-full object-cover" /></div>
+                    <div className="relative aspect-[2/3] w-32 mx-auto mb-4 rounded-lg overflow-hidden shadow-xl border-2 border-primary/20 animate-in fade-in zoom-in duration-500"><img src={coverPreview} alt="Cover" className="w-full h-full object-cover" /></div>
                   ) : (
                     <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><FileText className="h-8 w-8 text-primary" /></div>
                   )}
                   <p className="text-sm font-black uppercase tracking-widest text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
-                  <p className="text-[10px] text-muted-foreground opacity-60">Digital Volumes or Standard Text.</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter #</Label>
-                    <Input type="number" placeholder="1" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} className="rounded-xl h-12" />
+                    <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} className="rounded-xl h-12" />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Chapter Title</Label>
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Title</Label>
                     <Input placeholder="Enter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
                   </div>
                 </div>
-                <div className="relative">
-                  <Textarea 
-                    value={pastedText} 
-                    onChange={e => setPastedText(e.target.value)} 
-                    onPaste={(e) => {
-                      const text = e.clipboardData.getData('text');
-                      if (text.length >= 10) {
-                        setTimeout(() => handleAnalyzePastedText(text), 50);
-                      }
-                    }}
-                    placeholder="Paste novel content here... (Line 1: Novel Name, Line 2: Chapter Info)" 
-                    className="min-h-[250px] rounded-2xl p-4 bg-muted/20 selection:bg-primary/20" 
-                  />
-                </div>
+                <Textarea 
+                  value={pastedText} 
+                  onChange={e => setPastedText(e.target.value)} 
+                  onPaste={(e) => { const text = e.clipboardData.getData('text'); setTimeout(() => handleAnalyzePastedText(text), 50); }}
+                  placeholder="Paste content... (Line 1: Novel Name, Line 2: Chapter Info)" 
+                  className="min-h-[250px] rounded-2xl p-4 bg-muted/20" 
+                />
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl hover:scale-[1.01] active:scale-95 transition-all relative overflow-hidden group" disabled={loading || (!selectedFile && !pastedText.trim())}>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl transition-all relative overflow-hidden group" disabled={loading || (!selectedFile && !pastedText.trim())}>
               {loading && (
-                <div className="absolute bottom-0 left-0 right-0 bg-[#1e293b] transition-all duration-700 ease-in-out z-0" style={{ height: `${progress}%` }}>
-                  <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-[#1e293b] animate-liquid-wave opacity-80" />
-                  <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[88%] rounded-[38%] bg-[#334155] animate-liquid-wave-fast opacity-40" />
+                <div className="absolute bottom-0 left-0 right-0 bg-primary/20 transition-all duration-700 ease-in-out z-0" style={{ height: `${progress}%` }}>
+                  <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-primary/30 animate-liquid-wave opacity-80" />
                 </div>
               )}
               <div className="relative z-10 flex flex-col items-center justify-center">
