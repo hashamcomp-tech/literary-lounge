@@ -120,6 +120,7 @@ export function UploadNovelForm() {
     const quick = quickDetectFromText(text);
     if (quick) {
       const searchTitle = quick.novelName.toLowerCase();
+      // Fuzzy match to closest existing library item
       let existing = allBooks.find(b => b.title.toLowerCase() === searchTitle);
       
       if (!existing) {
@@ -350,6 +351,7 @@ export function UploadNovelForm() {
       } else {
         // Source is 'text' (pastedText)
         // CRITICAL: Strip first two non-empty lines (Novel Name and Chapter Info) from the body
+        // This ensures headers aren't redundant in the reading view.
         const lines = pastedText.split('\n');
         let linesToSkip = 0;
         let nonEntryCount = 0;
