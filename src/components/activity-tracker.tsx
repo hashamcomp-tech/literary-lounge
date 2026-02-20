@@ -10,14 +10,20 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
  * @fileOverview Global Site Traffic Monitor.
  * Silently records page transitions to Firestore for administrative auditing.
  * Helps Super Admins understand reader behavior and popular content.
+ * 
+ * NOTE: Tracking is suppressed for the Super Admin to maintain clean analytics.
  */
 export function ActivityTracker() {
   const pathname = usePathname();
-  const { user } = useUser();
+  const { user, isUserLoading } = useUser();
   const db = useFirestore();
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || isUserLoading) return;
+
+    // Suppression Protocol: Do not log activity for the Super Admin
+    const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
+    if (isSuperAdmin) return;
 
     // Log the visit to Firestore
     const logVisit = async () => {
@@ -40,7 +46,7 @@ export function ActivityTracker() {
     // Small delay to ensure route stabilization
     const timer = setTimeout(logVisit, 1000);
     return () => clearTimeout(timer);
-  }, [pathname, user, db]);
+  }, [pathname, user, isUserLoading, db]);
 
   return null; // This component has no visual presence
 }
