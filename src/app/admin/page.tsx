@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -9,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase, useStorage } from '@/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX, MousePointer2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -260,6 +261,11 @@ export default function AdminPage() {
               <h1 className="text-5xl font-headline font-black leading-none">Lounge Control</h1>
             </div>
             <div className="flex items-center gap-3">
+              <Link href="/admin/activity">
+                <Button variant="outline" className="rounded-2xl gap-2 border-primary/20">
+                  <MousePointer2 className="h-4 w-4" /> Activity Feed
+                </Button>
+              </Link>
               <Link href="/admin/requests">
                 <Button variant="outline" className="rounded-2xl relative">
                   Submissions

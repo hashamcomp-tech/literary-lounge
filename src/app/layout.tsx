@@ -4,6 +4,7 @@ import './globals.css';
 import { FirebaseClientProvider } from '@/firebase';
 import { Toaster } from '@/components/ui/toaster';
 import { ThemeProvider } from '@/components/theme-provider';
+import { ActivityTracker } from '@/components/activity-tracker';
 
 export const metadata: Metadata = {
   title: 'Literary Lounge | Your Personalized Library',
@@ -30,6 +31,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <FirebaseClientProvider>
+            <ActivityTracker />
             {children}
             <Toaster />
           </FirebaseClientProvider>

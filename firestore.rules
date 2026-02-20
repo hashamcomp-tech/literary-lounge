@@ -21,6 +21,12 @@ service cloud.firestore {
       );
     }
 
+    // Activity Logs: Everyone can create a record of their visit, only admins can audit
+    match /activityLogs/{logId} {
+      allow create: if true;
+      allow read: if isAdmin();
+    }
+
     // Public Library Access: Anyone can browse the shelf
     match /books/{bookId} {
       allow read: if true;
