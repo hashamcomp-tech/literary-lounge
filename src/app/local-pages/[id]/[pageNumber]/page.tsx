@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark, Menu } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -210,6 +212,38 @@ export default function LocalReader() {
               >
                 {theme === 'dark' ? <Sun className="h-4 w-4 text-orange-400" /> : <Moon className="h-4 w-4 text-indigo-400" />}
               </Button>
+              
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="icon" className="rounded-full shadow-sm">
+                    <Menu className="h-4 w-4" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="rounded-l-3xl border-none shadow-2xl w-80">
+                  <SheetHeader>
+                    <SheetTitle className="font-headline font-black text-2xl truncate">{novelData?.title || 'Archive TOC'}</SheetTitle>
+                  </SheetHeader>
+                  <ScrollArea className="h-[calc(100vh-120px)] mt-6">
+                    <div className="space-y-1">
+                      {allChapters.map((ch) => (
+                        <Button
+                          key={ch.chapterNumber}
+                          variant={currentChapterNum === Number(ch.chapterNumber) ? "secondary" : "ghost"}
+                          className={`w-full justify-start text-left rounded-xl h-auto py-3 px-4 ${currentChapterNum === Number(ch.chapterNumber) ? 'bg-primary/10 text-primary font-bold shadow-sm' : 'hover:bg-muted/50'}`}
+                          onClick={() => {
+                            router.push(`/local-pages/${id}/${ch.chapterNumber}`);
+                          }}
+                        >
+                          <span className={`text-[10px] font-mono mr-3 shrink-0 ${currentChapterNum === Number(ch.chapterNumber) ? 'text-primary' : 'opacity-30'}`}>
+                            {ch.chapterNumber.toString().padStart(2, '0')}
+                          </span>
+                          <span className="truncate text-sm">{ch.title || `Chapter ${ch.chapterNumber}`}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </SheetContent>
+              </Sheet>
             </div>
           </div>
           

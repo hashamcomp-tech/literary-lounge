@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,8 @@ import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } f
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { saveToLocalHistory } from '@/lib/local-history-utils';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface CloudReaderClientProps {
   id: string;
@@ -33,6 +35,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mounted, setMounted] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
+  
+  // Table of Contents State
+  const [tocChapters, setTocChapters] = useState<any[]>([]);
+  const [isLoadingToc, setIsLoadingToc] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
 
@@ -114,34 +120,20 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     setMergedRange([currentChapterNum]);
   }, [firestore, id, currentChapterNum, isOfflineMode]);
 
-  useEffect(() => {
-    if (isOfflineMode || !firestore || !id || isLoading) return;
-
-    const bufferAhead = async () => {
-      const nextNumbers = [currentChapterNum + 1, currentChapterNum + 2, currentChapterNum + 3];
-      const missing = nextNumbers.filter(n => !chaptersCache[n] && n > 0);
-      
-      if (missing.length === 0) return;
-
-      try {
-        const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        const q = query(chaptersCol, where('chapterNumber', 'in', missing));
-        const snap = await getDocs(q);
-        
-        const newEntries: Record<number, any> = {};
-        snap.docs.forEach(d => {
-          const data = d.data();
-          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
-        });
-        
-        setChaptersCache(prev => ({ ...prev, ...newEntries }));
-      } catch (e) {
-        console.warn("Predictive buffer failed:", e);
-      }
-    };
-
-    bufferAhead();
-  }, [currentChapterNum, firestore, id, isOfflineMode, isLoading]);
+  const loadToc = async () => {
+    if (!firestore || !id || tocChapters.length > 0) return;
+    setIsLoadingToc(true);
+    try {
+      const chaptersCol = collection(firestore, 'books', id, 'chapters');
+      const q = query(chaptersCol, orderBy('chapterNumber', 'asc'));
+      const snap = await getDocs(q);
+      setTocChapters(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.warn("Failed to load TOC", e);
+    } finally {
+      setIsLoadingToc(false);
+    }
+  };
 
   const handleMergeNext = async () => {
     if (!firestore || !id || isMerging) return;
@@ -200,13 +192,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const getFullContent = () => {
-    return mergedRange
-      .map(num => chaptersCache[n]?.content || '')
-      .filter(Boolean)
-      .join('\n\n');
-  };
-
   const handleReadAloud = async (charOffset?: number) => {
     if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
@@ -262,7 +247,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           localOffset += paragraphs[i].length + 2;
         }
         
-        // Account for "Chapter X. Title." prefix in TTS string
         const prefix = `Chapter ${n}. ${chapter.title || ''}. `;
         absoluteOffset += prefix.length + localOffset;
         break;
@@ -328,6 +312,42 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full shadow-sm">
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
             </Button>
+            
+            <Sheet onOpenChange={(open) => open && loadToc()}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon" className="rounded-full shadow-sm">
+                  <Menu className="h-4 w-4" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="rounded-l-3xl border-none shadow-2xl w-80">
+                <SheetHeader>
+                  <SheetTitle className="font-headline font-black text-2xl truncate">{metadata?.title || 'Chapters'}</SheetTitle>
+                </SheetHeader>
+                <ScrollArea className="h-[calc(100vh-120px)] mt-6">
+                  <div className="space-y-1">
+                    {isLoadingToc ? (
+                      <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
+                    ) : (
+                      tocChapters.map((ch) => (
+                        <Button
+                          key={ch.id}
+                          variant={currentChapterNum === ch.chapterNumber ? "secondary" : "ghost"}
+                          className={`w-full justify-start text-left rounded-xl h-auto py-3 px-4 ${currentChapterNum === ch.chapterNumber ? 'bg-primary/10 text-primary font-bold shadow-sm' : 'hover:bg-muted/50'}`}
+                          onClick={() => {
+                            router.push(`/pages/${id}/${ch.chapterNumber}`);
+                          }}
+                        >
+                          <span className={`text-[10px] font-mono mr-3 shrink-0 ${currentChapterNum === ch.chapterNumber ? 'text-primary' : 'opacity-30'}`}>
+                            {ch.chapterNumber.toString().padStart(2, '0')}
+                          </span>
+                          <span className="truncate text-sm">{ch.title || `Chapter ${ch.chapterNumber}`}</span>
+                        </Button>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
 
