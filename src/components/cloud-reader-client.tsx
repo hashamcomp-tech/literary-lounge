@@ -47,6 +47,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   
   const viewLoggedRef = useRef<string | null>(null);
   const scrollRestoredRef = useRef<boolean>(false);
+  const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -67,9 +68,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Save
+    // Scroll Persistence: Save position manually when not auto-scrolling
     const handleScroll = () => {
-      if (isLoading) return;
+      if (isLoading || autoScrollEnabled) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -86,28 +87,41 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, isLoading]);
+  }, [id, isLoading, autoScrollEnabled]);
 
-  // Auto Scroll Engine
+  // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
     if (!autoScrollEnabled || isLoading || error) return;
 
     let lastTime = performance.now();
     let animationId: number;
 
-    const scroll = (time: number) => {
+    const scrollLoop = (time: number) => {
       const delta = time - lastTime;
       lastTime = time;
       
-      const pixelsPerMs = (scrollSpeed * 5) / 1000;
-      window.scrollBy(0, pixelsPerMs * delta);
+      // If speaking, glided towards the active segment to keep it centered
+      if (isSpeaking && activeSegmentRef.current) {
+        const rect = activeSegmentRef.current.getBoundingClientRect();
+        const viewportCenter = window.innerHeight / 2;
+        const offset = rect.top + rect.height / 2 - viewportCenter;
+        
+        // Smooth pursuit: move 5% of the distance each frame for a silky glide
+        if (Math.abs(offset) > 2) {
+          window.scrollBy(0, offset * 0.05);
+        }
+      } else {
+        // Otherwise, perform the selected fixed-speed crawl
+        const pixelsPerMs = (scrollSpeed * 5) / 1000;
+        window.scrollBy(0, pixelsPerMs * delta);
+      }
       
-      animationId = requestAnimationFrame(scroll);
+      animationId = requestAnimationFrame(scrollLoop);
     };
 
-    animationId = requestAnimationFrame(scroll);
+    animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [autoScrollEnabled, scrollSpeed, isLoading, error]);
+  }, [autoScrollEnabled, scrollSpeed, isLoading, error, isSpeaking, activeIndex]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -186,7 +200,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     scrollRestoredRef.current = false;
   }, [firestore, id, currentChapterNum, isOfflineMode]);
 
-  // Scroll Restoration Logic
   useEffect(() => {
     if (!isLoading && !scrollRestoredRef.current && mounted) {
       const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
@@ -279,7 +292,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  // Pre-calculate segments for highlighting
   const mergedSegments = useMemo(() => {
     const segments: { text: string; chapterNum: number; globalIndex: number }[] = [];
     let globalCounter = 0;
@@ -444,6 +456,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                   Chapter {num}
                 </div>
                 <h2 
+                  ref={highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? activeSegmentRef : null}
                   className={cn(
                     "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
                     highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
@@ -458,6 +471,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                 {chContentSegments.map((seg) => (
                   <span 
                     key={seg.globalIndex}
+                    ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
                     className={cn(
                       "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
                       highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"

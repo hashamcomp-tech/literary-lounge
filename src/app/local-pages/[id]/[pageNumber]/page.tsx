@@ -33,6 +33,7 @@ export default function LocalReader() {
   const [isMerging, setIsMerging] = useState(false);
 
   const scrollRestoredRef = useRef<boolean>(false);
+  const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -53,9 +54,9 @@ export default function LocalReader() {
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Save
+    // Scroll Persistence: Save manually when not auto-scrolling
     const handleScroll = () => {
-      if (loading) return;
+      if (loading || autoScrollEnabled) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -72,28 +73,38 @@ export default function LocalReader() {
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, loading]);
+  }, [id, loading, autoScrollEnabled]);
 
-  // Auto Scroll Engine
+  // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
     if (!autoScrollEnabled || loading) return;
 
     let lastTime = performance.now();
     let animationId: number;
 
-    const scroll = (time: number) => {
+    const scrollLoop = (time: number) => {
       const delta = time - lastTime;
       lastTime = time;
       
-      const pixelsPerMs = (scrollSpeed * 5) / 1000;
-      window.scrollBy(0, pixelsPerMs * delta);
+      if (isSpeaking && activeSegmentRef.current) {
+        const rect = activeSegmentRef.current.getBoundingClientRect();
+        const viewportCenter = window.innerHeight / 2;
+        const offset = rect.top + rect.height / 2 - viewportCenter;
+        
+        if (Math.abs(offset) > 2) {
+          window.scrollBy(0, offset * 0.05);
+        }
+      } else {
+        const pixelsPerMs = (scrollSpeed * 5) / 1000;
+        window.scrollBy(0, pixelsPerMs * delta);
+      }
       
-      animationId = requestAnimationFrame(scroll);
+      animationId = requestAnimationFrame(scrollLoop);
     };
 
-    animationId = requestAnimationFrame(scroll);
+    animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [autoScrollEnabled, scrollSpeed, loading]);
+  }, [autoScrollEnabled, scrollSpeed, loading, isSpeaking, activeIndex]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -136,7 +147,6 @@ export default function LocalReader() {
     scrollRestoredRef.current = false;
   }, [id, currentChapterNum]);
 
-  // Scroll Restoration Logic
   useEffect(() => {
     if (!loading && !scrollRestoredRef.current && mounted) {
       const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
@@ -341,6 +351,7 @@ export default function LocalReader() {
                     Chapter {num}
                   </div>
                   <h2 
+                    ref={highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? activeSegmentRef : null}
                     className={cn(
                       "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
                       highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
@@ -355,6 +366,7 @@ export default function LocalReader() {
                   {chContentSegments.map((seg) => (
                     <span 
                       key={seg.globalIndex}
+                      ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
                       className={cn(
                         "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
                         highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"

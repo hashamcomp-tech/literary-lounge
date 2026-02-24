@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Volume2, Globe, Play, Settings, Gauge, MessageSquare, Plus, Trash2, Save, X, MousePointer2, Zap } from 'lucide-react';
+import { Volume2, Globe, Play, Settings, Gauge, MessageSquare, Plus, Trash2, Save, X, MousePointer2, Zap, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -22,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { playTextToSpeech, PronunciationMap } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export interface VoiceSettings {
   voice: string;
@@ -187,9 +188,21 @@ export function VoiceSettingsPopover() {
 
               <div className="flex items-center justify-between py-2 border-b border-muted">
                 <div className="flex flex-col gap-0.5">
-                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
-                    <MousePointer2 className="h-2.5 w-2.5" /> Auto Scroll
-                  </Label>
+                  <div className="flex items-center gap-1">
+                    <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                      <MousePointer2 className="h-2.5 w-2.5" /> Auto Scroll
+                    </Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground opacity-40 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-[200px] text-[10px] p-2 rounded-xl">
+                          When narration is active, Auto Scroll will automatically follow the highlighted text.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                   <p className="text-[9px] text-muted-foreground opacity-60">Hands-free reading mode</p>
                 </div>
                 <Switch 
@@ -202,7 +215,7 @@ export function VoiceSettingsPopover() {
                 <div className="space-y-3 px-1 animate-in slide-in-from-top-2 duration-300">
                   <div className="flex items-center justify-between">
                     <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
-                      Scroll Speed
+                      Crawl Speed
                     </Label>
                     <span className="text-[10px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
                       Level {settings.scrollSpeed}
@@ -216,6 +229,7 @@ export function VoiceSettingsPopover() {
                     onValueChange={([val]) => updateSettings({ scrollSpeed: val })}
                     className="py-1"
                   />
+                  <p className="text-[8px] text-muted-foreground italic text-center">Applied only when narration is paused.</p>
                 </div>
               )}
             </div>

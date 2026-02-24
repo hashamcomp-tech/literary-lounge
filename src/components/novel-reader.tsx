@@ -35,8 +35,10 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollRestoredRef = useRef<boolean>(false);
+  const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -62,7 +64,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     };
   }, []);
 
-  // Auto Scroll Engine for internal container
+  // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
     if (!autoScrollEnabled || !scrollRef.current) return;
 
@@ -73,9 +75,21 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       const delta = time - lastTime;
       lastTime = time;
       
-      const pixelsPerMs = (scrollSpeed * 5) / 1000;
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop += (pixelsPerMs * delta);
+      const container = scrollRef.current;
+      if (!container) return;
+
+      if (isSpeaking && activeSegmentRef.current) {
+        const rect = activeSegmentRef.current.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const viewportCenter = containerRect.top + containerRect.height / 2;
+        const offset = rect.top + rect.height / 2 - viewportCenter;
+        
+        if (Math.abs(offset) > 2) {
+          container.scrollTop += (offset * 0.05);
+        }
+      } else {
+        const pixelsPerMs = (scrollSpeed * 5) / 1000;
+        container.scrollTop += (pixelsPerMs * delta);
       }
       
       animationId = requestAnimationFrame(scrollLoop);
@@ -83,7 +97,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
     animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [autoScrollEnabled, scrollSpeed]);
+  }, [autoScrollEnabled, scrollSpeed, isSpeaking, activeIndex]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -122,12 +136,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     }
   }, [currentChapterIndex, novel.id, user, db]);
 
-  // Scroll Persistence Logic for internal scrollRef
   useEffect(() => {
     const container = scrollRef.current;
     if (!container) return;
 
     const handleScroll = () => {
+      if (autoScrollEnabled) return;
       localStorage.setItem(`lounge-scroll-${novel.id}`, container.scrollTop.toString());
     };
 
@@ -139,14 +153,13 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
     container.addEventListener('scroll', debounced);
     return () => container.removeEventListener('scroll', debounced);
-  }, [novel.id]);
+  }, [novel.id, autoScrollEnabled]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
     if (saved) setCurrentChapterIndex(parseInt(saved));
   }, [novel.id]);
 
-  // Restore Scroll Position
   useEffect(() => {
     if (mounted && !scrollRestoredRef.current && scrollRef.current) {
       const savedScroll = localStorage.getItem(`lounge-scroll-${novel.id}`);
@@ -290,6 +303,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                       Chapter {idx + 1}
                     </div>
                     <h2 
+                      ref={highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? activeSegmentRef : null}
                       className={cn(
                         "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
                         highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
@@ -304,6 +318,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                     {chContentSegments.map((seg) => (
                       <span 
                         key={seg.globalIndex}
+                        ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
                         className={cn(
                           "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
                           highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
