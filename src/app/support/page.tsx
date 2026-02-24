@@ -269,18 +269,6 @@ export default function SupportPage() {
                   </p>
                 </CardContent>
               </Card>
-
-              <div className="p-6 border-2 border-dashed rounded-[2rem] text-center space-y-4">
-                <MousePointer2 className="h-8 w-8 text-muted-foreground mx-auto opacity-20" />
-                <p className="text-sm font-medium text-muted-foreground">
-                  Looking for administrative tools?
-                </p>
-                <Link href="/admin">
-                  <Button variant="ghost" size="sm" className="text-xs font-bold gap-1 text-primary">
-                    Lounge Control <ChevronRight className="h-3 w-3" />
-                  </Button>
-                </Link>
-              </div>
             </div>
           </div>
         </div>
