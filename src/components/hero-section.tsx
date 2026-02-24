@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { Edit3, Loader2, ImagePlus, Save, X, Sparkles } from 'lucide-react';
+import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +26,7 @@ import Image from 'next/image';
 /**
  * @fileOverview Dynamic Landing Page Hero.
  * Allows administrators to customize the welcome experience in real-time.
+ * Supports both Image and Short Video backgrounds.
  */
 export default function HeroSection() {
   const db = useFirestore();
@@ -46,7 +47,8 @@ export default function HeroSection() {
     subheadline: '',
     tagline: '',
     buttonText: '',
-    backgroundImageURL: ''
+    backgroundImageURL: '',
+    mediaType: 'image' as 'image' | 'video'
   });
 
   useEffect(() => {
@@ -56,7 +58,8 @@ export default function HeroSection() {
         subheadline: heroData.subheadline || '',
         tagline: heroData.tagline || '',
         buttonText: heroData.buttonText || '',
-        backgroundImageURL: heroData.backgroundImageURL || ''
+        backgroundImageURL: heroData.backgroundImageURL || '',
+        mediaType: heroData.mediaType || 'image'
       });
     }
   }, [heroData]);
@@ -90,15 +93,30 @@ export default function HeroSection() {
 
     setIsUploading(true);
     try {
-      const optimizedBlob = await optimizeCoverImage(file, 1920); // Higher res for hero
-      const optimizedFile = new File([optimizedBlob], `hero_bg_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const isVideo = file.type.startsWith('video/');
+      let fileToUpload: File;
+
+      if (isVideo) {
+        // Skip optimization for videos to preserve codec and quality
+        fileToUpload = file;
+      } else {
+        const optimizedBlob = await optimizeCoverImage(file, 1920); // Higher res for hero
+        fileToUpload = new File([optimizedBlob], `hero_bg_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      }
       
       // Reusing cover upload logic for hero assets
-      const url = await uploadCoverImage(storage, optimizedFile, 'global_hero');
+      const url = await uploadCoverImage(storage, fileToUpload, 'global_hero');
       if (!url) throw new Error("Cloud rejection.");
 
-      setForm(prev => ({ ...prev, backgroundImageURL: url }));
-      toast({ title: "Image Prepared", description: "Preview loaded. Click Save to publish globally." });
+      setForm(prev => ({ 
+        ...prev, 
+        backgroundImageURL: url,
+        mediaType: isVideo ? 'video' : 'image'
+      }));
+      toast({ 
+        title: isVideo ? "Video Prepared" : "Image Prepared", 
+        description: "Preview loaded. Click Save to publish globally." 
+      });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Upload Failed", description: err.message });
     } finally {
@@ -111,7 +129,8 @@ export default function HeroSection() {
     subheadline: heroData?.subheadline || "Explore a sanctuary of hand-picked literature. Your next great chapter is waiting in the Lounge.",
     tagline: heroData?.tagline || "Curation • Connection • Comfort",
     buttonText: heroData?.buttonText || "Explore Library",
-    backgroundImageURL: heroData?.backgroundImageURL || ""
+    backgroundImageURL: heroData?.backgroundImageURL || "",
+    mediaType: heroData?.mediaType || 'image'
   };
 
   if (isLoading) {
@@ -134,13 +153,24 @@ export default function HeroSection() {
       <div className="bg-primary/5 rounded-[2.5rem] p-8 sm:p-16 mb-8 relative overflow-hidden border border-primary/10 min-h-[400px] flex items-center">
         {display.backgroundImageURL && (
           <div className="absolute inset-0 z-0">
-            <Image 
-              src={display.backgroundImageURL} 
-              alt="Lounge Background" 
-              fill 
-              className="object-cover opacity-20 transition-opacity duration-1000"
-              priority
-            />
+            {display.mediaType === 'video' ? (
+              <video 
+                src={display.backgroundImageURL} 
+                autoPlay 
+                loop 
+                muted 
+                playsInline 
+                className="object-cover w-full h-full opacity-20 transition-opacity duration-1000"
+              />
+            ) : (
+              <Image 
+                src={display.backgroundImageURL} 
+                alt="Lounge Background" 
+                fill 
+                className="object-cover opacity-20 transition-opacity duration-1000"
+                priority
+              />
+            )}
             <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent" />
           </div>
         )}
@@ -231,14 +261,21 @@ export default function HeroSection() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Atmosphere Image</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Atmosphere Media (Image/Video)</Label>
               <div className="flex items-center gap-4">
                 {form.backgroundImageURL ? (
-                  <div className="relative h-20 w-32 rounded-xl overflow-hidden shadow-inner group/img">
-                    <img src={form.backgroundImageURL} className="object-cover h-full w-full" alt="Hero Background" />
+                  <div className="relative h-20 w-32 rounded-xl overflow-hidden shadow-inner group/img bg-muted/20 flex items-center justify-center">
+                    {form.mediaType === 'video' ? (
+                      <div className="flex flex-col items-center justify-center">
+                        <Video className="h-6 w-6 text-primary" />
+                        <span className="text-[8px] font-black uppercase">Video</span>
+                      </div>
+                    ) : (
+                      <img src={form.backgroundImageURL} className="object-cover h-full w-full" alt="Hero Background" />
+                    )}
                     <button 
                       className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
-                      onClick={() => setForm(p => ({ ...p, backgroundImageURL: '' }))}
+                      onClick={() => setForm(p => ({ ...p, backgroundImageURL: '', mediaType: 'image' }))}
                     >
                       <X className="h-5 w-5 text-white" />
                     </button>
@@ -252,10 +289,10 @@ export default function HeroSection() {
                     <span className="text-[8px] font-black uppercase mt-1 opacity-40">Upload</span>
                   </div>
                 )}
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onFileChange} />
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={onFileChange} />
                 <div className="flex-1">
                   <p className="text-[10px] text-muted-foreground leading-relaxed italic">
-                    Choose a high-definition image to set the mood of the Lounge. 
+                    Choose a high-definition image or short video to set the mood. 
                     The background will be subtly faded to ensure readability.
                   </p>
                 </div>

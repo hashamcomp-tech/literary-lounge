@@ -8,7 +8,8 @@ import { FirebaseStorage } from "firebase/storage";
  */
 
 /**
- * Uploads a cover image for a book directly to Vercel Blob.
+ * Uploads a cover image or video for a book directly to Vercel Blob.
+ * Preserves the file extension for correct media playback.
  */
 export async function uploadCoverImage(storage: FirebaseStorage, file: File | null | undefined, bookId: string): Promise<string | null> {
   if (!file) return null;
@@ -16,7 +17,8 @@ export async function uploadCoverImage(storage: FirebaseStorage, file: File | nu
   const auth = getAuth();
   if (!auth.currentUser) throw new Error("Authentication required.");
 
-  return await uploadToVercel(file, `bookCovers/${bookId}_${Date.now()}.jpg`);
+  const extension = file.name.split('.').pop() || (file.type.startsWith('video/') ? 'mp4' : 'jpg');
+  return await uploadToVercel(file, `bookCovers/${bookId}_${Date.now()}.${extension}`);
 }
 
 /**

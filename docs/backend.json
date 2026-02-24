@@ -73,7 +73,8 @@
         "subheadline": { "type": "string" },
         "buttonText": { "type": "string" },
         "backgroundImageURL": { "type": "string" },
-        "tagline": { "type": "string" }
+        "tagline": { "type": "string" },
+        "mediaType": { "type": "string", "enum": ["image", "video"] }
       }
     }
   },
