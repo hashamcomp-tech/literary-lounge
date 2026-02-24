@@ -258,7 +258,7 @@ export default function LocalReader() {
 
         <div className="space-y-20">
           {mergedRange.map((num) => {
-            const ch = allChapters.find(c => Number(c.chapterNumber) === num);
+            const ch = allChapters.find(c => Number(ch.chapterNumber) === num);
             if (!ch) return null;
             
             const chTitleSegment = mergedSegments.find(s => s.chapterNum === num && s.text.startsWith(`Chapter ${num}`));
@@ -281,7 +281,7 @@ export default function LocalReader() {
                   </h2>
                 </header>
 
-                <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
+                <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
                   {chContentSegments.map((seg) => (
                     <span 
                       key={seg.globalIndex}

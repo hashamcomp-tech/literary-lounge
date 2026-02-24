@@ -72,8 +72,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       const delta = time - lastTime;
       lastTime = time;
       
-      // Speed mapping slowed down from 12 multiplier to 8
-      const pixelsPerMs = (scrollSpeed * 8) / 1000;
+      // Speed mapping slowed down from 8 to 5 for maximum comfort
+      const pixelsPerMs = (scrollSpeed * 5) / 1000;
       scrollRef.current.scrollTop += (pixelsPerMs * delta);
       
       requestAnimationFrame(scrollLoop);
@@ -298,7 +298,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                     </h2>
                   </header>
 
-                  <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
+                  <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
                     {chContentSegments.map((seg) => (
                       <span 
                         key={seg.globalIndex}

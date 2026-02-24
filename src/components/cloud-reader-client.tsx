@@ -98,8 +98,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       const delta = time - lastTime;
       lastTime = time;
       
-      // Speed mapping: 1 = ~8px/sec, 10 = ~80px/sec (Slowed down from 12 multiplier)
-      const pixelsPerMs = (scrollSpeed * 8) / 1000;
+      // Speed mapping: 1 = ~5px/sec, 10 = ~50px/sec (Further slowed for maximum comfort)
+      const pixelsPerMs = (scrollSpeed * 5) / 1000;
       window.scrollBy(0, pixelsPerMs * delta);
       
       requestAnimationFrame(scroll);
@@ -454,7 +454,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                 </h2>
               </header>
 
-              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
+              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
                 {chContentSegments.map((seg) => (
                   <span 
                     key={seg.globalIndex}
