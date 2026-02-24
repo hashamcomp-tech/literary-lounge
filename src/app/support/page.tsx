@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -83,7 +82,7 @@ export default function SupportPage() {
 
       toast({
         title: "Report Synchronized",
-        description: "Your feedback has been sent to the Lounge stewards."
+        description: "Your feedback has been sent to the Lounge admins."
       });
       
       setIsReportOpen(false);
@@ -237,7 +236,7 @@ export default function SupportPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm leading-relaxed">
-                    Help us refine the Lounge. Submit a report directly to our technical stewards.
+                    Help us refine the Lounge. Submit a report directly to our technical admins.
                   </p>
                   <Button 
                     variant="secondary" 
@@ -335,7 +334,7 @@ export default function SupportPage() {
               disabled={isSubmitting || !reportDescription.trim()}
               onClick={handleSendReport}
             >
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send to Stewards"}
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send to Admins"}
             </Button>
           </DialogFooter>
         </DialogContent>
