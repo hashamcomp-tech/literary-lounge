@@ -40,13 +40,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mounted, setMounted] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
+  const [isScrollRestored, setIsScrollRestored] = useState(false);
   
   // Table of Contents State
   const [tocChapters, setTocChapters] = useState<any[]>([]);
   const [isLoadingToc, setIsLoadingToc] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
-  const scrollRestoredRef = useRef<boolean>(false);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
@@ -68,9 +68,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Save position manually when not auto-scrolling
+    // Scroll Persistence: Always save position, even when auto-scrolling
     const handleScroll = () => {
-      if (isLoading || autoScrollEnabled) return;
+      if (isLoading) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -87,11 +87,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, isLoading, autoScrollEnabled]);
+  }, [id, isLoading]);
 
   // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
-    if (!autoScrollEnabled || isLoading || error) return;
+    if (!autoScrollEnabled || isLoading || error || !isScrollRestored) return;
 
     let lastTime = performance.now();
     let animationId: number;
@@ -100,18 +100,15 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       const delta = time - lastTime;
       lastTime = time;
       
-      // If speaking, glided towards the active segment to keep it centered
       if (isSpeaking && activeSegmentRef.current) {
         const rect = activeSegmentRef.current.getBoundingClientRect();
         const viewportCenter = window.innerHeight / 2;
         const offset = rect.top + rect.height / 2 - viewportCenter;
         
-        // Smooth pursuit: move 5% of the distance each frame for a silky glide
         if (Math.abs(offset) > 2) {
           window.scrollBy(0, offset * 0.05);
         }
       } else {
-        // Otherwise, perform the selected fixed-speed crawl
         const pixelsPerMs = (scrollSpeed * 5) / 1000;
         window.scrollBy(0, pixelsPerMs * delta);
       }
@@ -121,7 +118,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [autoScrollEnabled, scrollSpeed, isLoading, error, isSpeaking, activeIndex]);
+  }, [autoScrollEnabled, scrollSpeed, isLoading, error, isSpeaking, activeIndex, isScrollRestored]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -146,6 +143,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
       setIsLoading(true);
       setError(null);
+      setIsScrollRestored(false);
       
       try {
         let meta = metadata;
@@ -197,11 +195,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     loadChapter();
     stopTextToSpeech();
     setMergedRange([currentChapterNum]);
-    scrollRestoredRef.current = false;
   }, [firestore, id, currentChapterNum, isOfflineMode]);
 
   useEffect(() => {
-    if (!isLoading && !scrollRestoredRef.current && mounted) {
+    if (!isLoading && !isScrollRestored && mounted) {
       const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
       const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
       
@@ -211,11 +208,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             top: parseInt(savedScroll),
             behavior: 'smooth'
           });
-          scrollRestoredRef.current = true;
+          setIsScrollRestored(true);
         }, 100);
       } else {
         window.scrollTo(0, 0);
-        scrollRestoredRef.current = true;
+        setIsScrollRestored(true);
       }
     }
   }, [isLoading, id, currentChapterNum, mounted]);

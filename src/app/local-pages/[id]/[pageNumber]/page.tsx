@@ -31,8 +31,8 @@ export default function LocalReader() {
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
+  const [isScrollRestored, setIsScrollRestored] = useState(false);
 
-  const scrollRestoredRef = useRef<boolean>(false);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
@@ -54,9 +54,9 @@ export default function LocalReader() {
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Save manually when not auto-scrolling
+    // Scroll Persistence: Always save position, even when auto-scrolling
     const handleScroll = () => {
-      if (loading || autoScrollEnabled) return;
+      if (loading) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -73,11 +73,11 @@ export default function LocalReader() {
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, loading, autoScrollEnabled]);
+  }, [id, loading]);
 
   // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
-    if (!autoScrollEnabled || loading) return;
+    if (!autoScrollEnabled || loading || !isScrollRestored) return;
 
     let lastTime = performance.now();
     let animationId: number;
@@ -104,7 +104,7 @@ export default function LocalReader() {
 
     animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [autoScrollEnabled, scrollSpeed, loading, isSpeaking, activeIndex]);
+  }, [autoScrollEnabled, scrollSpeed, loading, isSpeaking, activeIndex, isScrollRestored]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -120,6 +120,7 @@ export default function LocalReader() {
   useEffect(() => {
     const loadLocalData = async () => {
       setLoading(true);
+      setIsScrollRestored(false);
       try {
         const book = await getLocalBook(id);
         if (book) {
@@ -144,11 +145,10 @@ export default function LocalReader() {
     loadLocalData();
     stopTextToSpeech();
     setMergedRange([currentChapterNum]);
-    scrollRestoredRef.current = false;
   }, [id, currentChapterNum]);
 
   useEffect(() => {
-    if (!loading && !scrollRestoredRef.current && mounted) {
+    if (!loading && !isScrollRestored && mounted) {
       const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
       const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
       
@@ -158,11 +158,11 @@ export default function LocalReader() {
             top: parseInt(savedScroll),
             behavior: 'smooth'
           });
-          scrollRestoredRef.current = true;
+          setIsScrollRestored(true);
         }, 100);
       } else {
         window.scrollTo(0, 0);
-        scrollRestoredRef.current = true;
+        setIsScrollRestored(true);
       }
     }
   }, [loading, id, currentChapterNum, mounted]);

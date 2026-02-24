@@ -35,9 +35,9 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
+  const [isScrollRestored, setIsScrollRestored] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollRestoredRef = useRef<boolean>(false);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
   // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
-    if (!autoScrollEnabled || !scrollRef.current) return;
+    if (!autoScrollEnabled || !scrollRef.current || !isScrollRestored) return;
 
     let lastTime = performance.now();
     let animationId: number;
@@ -97,7 +97,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
     animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
-  }, [autoScrollEnabled, scrollSpeed, isSpeaking, activeIndex]);
+  }, [autoScrollEnabled, scrollSpeed, isSpeaking, activeIndex, isScrollRestored]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -117,7 +117,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     stopTextToSpeech();
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
     setMergedRange([currentChapterIndex]);
-    scrollRestoredRef.current = false;
+    setIsScrollRestored(false);
 
     if (user && !user.isAnonymous && db) {
       const historyRef = doc(db, 'users', user.uid, 'history', novel.id);
@@ -141,7 +141,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (!container) return;
 
     const handleScroll = () => {
-      if (autoScrollEnabled) return;
       localStorage.setItem(`lounge-scroll-${novel.id}`, container.scrollTop.toString());
     };
 
@@ -153,7 +152,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
     container.addEventListener('scroll', debounced);
     return () => container.removeEventListener('scroll', debounced);
-  }, [novel.id, autoScrollEnabled]);
+  }, [novel.id]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
@@ -161,7 +160,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   }, [novel.id]);
 
   useEffect(() => {
-    if (mounted && !scrollRestoredRef.current && scrollRef.current) {
+    if (mounted && !isScrollRestored && scrollRef.current) {
       const savedScroll = localStorage.getItem(`lounge-scroll-${novel.id}`);
       const savedProgress = localStorage.getItem(`progress-${novel.id}`);
       
@@ -170,7 +169,9 @@ export default function NovelReader({ novel }: NovelReaderProps) {
           top: parseInt(savedScroll),
           behavior: 'smooth'
         });
-        scrollRestoredRef.current = true;
+        setIsScrollRestored(true);
+      } else {
+        setIsScrollRestored(true);
       }
     }
   }, [mounted, currentChapterIndex, novel.id]);
