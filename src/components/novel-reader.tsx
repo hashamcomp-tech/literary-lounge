@@ -30,6 +30,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [highlightEnabled, setHighlightEnabled] = useState(true);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
@@ -40,11 +42,18 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     setMounted(true);
     const saved = localStorage.getItem('lounge-voice-settings');
     if (saved) {
-      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+      try { 
+        const parsed = JSON.parse(saved);
+        setHighlightEnabled(parsed.highlightEnabled ?? true);
+        setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
+        setScrollSpeed(parsed.scrollSpeed ?? 1);
+      } catch (e) {}
     }
 
     const handleSettingsChange = (e: any) => {
       setHighlightEnabled(e.detail.highlightEnabled);
+      setAutoScrollEnabled(e.detail.autoScrollEnabled);
+      setScrollSpeed(e.detail.scrollSpeed);
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
     return () => {
@@ -52,6 +61,26 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
     };
   }, []);
+
+  // Auto Scroll Engine for internal container
+  useEffect(() => {
+    if (!autoScrollEnabled || !scrollRef.current) return;
+
+    let lastTime = performance.now();
+    const scrollLoop = (time: number) => {
+      if (!autoScrollEnabled || !scrollRef.current) return;
+      const delta = time - lastTime;
+      lastTime = time;
+      
+      const pixelsPerMs = (scrollSpeed * 12) / 1000;
+      scrollRef.current.scrollTop += (pixelsPerMs * delta);
+      
+      requestAnimationFrame(scrollLoop);
+    };
+
+    const animationId = requestAnimationFrame(scrollLoop);
+    return () => cancelAnimationFrame(animationId);
+  }, [autoScrollEnabled, scrollSpeed]);
 
   useEffect(() => {
     const interval = setInterval(() => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Volume2, Globe, Play, RefreshCw, Settings, Gauge, MessageSquare, Plus, Trash2, Edit3, Save, X, HighlightingOhNo as Highlighter } from 'lucide-react';
+import { Volume2, Globe, Play, Settings, Gauge, MessageSquare, Plus, Trash2, Save, X, MousePointer2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -27,6 +27,8 @@ export interface VoiceSettings {
   voice: string;
   rate: number;
   highlightEnabled: boolean;
+  autoScrollEnabled: boolean;
+  scrollSpeed: number;
 }
 
 export function VoiceSettingsPopover() {
@@ -36,6 +38,8 @@ export function VoiceSettingsPopover() {
     voice: '',
     rate: 1.0,
     highlightEnabled: true,
+    autoScrollEnabled: false,
+    scrollSpeed: 1,
   });
 
   // Pronunciation State
@@ -58,7 +62,13 @@ export function VoiceSettingsPopover() {
       if (!saved && sortedVoices.length > 0) {
         const daniel = sortedVoices.find(v => v.name.toLowerCase().includes('daniel'));
         if (daniel) {
-          const defaultSettings = { voice: daniel.voiceURI, rate: 1.0, highlightEnabled: true };
+          const defaultSettings = { 
+            voice: daniel.voiceURI, 
+            rate: 1.0, 
+            highlightEnabled: true,
+            autoScrollEnabled: false,
+            scrollSpeed: 1
+          };
           setSettings(defaultSettings);
           localStorage.setItem('lounge-voice-settings', JSON.stringify(defaultSettings));
         }
@@ -79,7 +89,9 @@ export function VoiceSettingsPopover() {
         setSettings({
           voice: parsed.voice || '',
           rate: parsed.rate || 1.0,
-          highlightEnabled: parsed.highlightEnabled !== undefined ? parsed.highlightEnabled : true
+          highlightEnabled: parsed.highlightEnabled !== undefined ? parsed.highlightEnabled : true,
+          autoScrollEnabled: parsed.autoScrollEnabled || false,
+          scrollSpeed: parsed.scrollSpeed || 1
         });
       } catch (e) {}
     }
@@ -140,7 +152,7 @@ export function VoiceSettingsPopover() {
           variant="outline" 
           size="icon" 
           className="h-7 w-7 rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
-          title="Narration Settings"
+          title="Reader Settings"
         >
           <Settings className="h-3.5 w-3.5" />
         </Button>
@@ -148,35 +160,71 @@ export function VoiceSettingsPopover() {
       <PopoverContent className="w-[320px] rounded-[2rem] shadow-2xl p-0 overflow-hidden border-none" align="end">
         <div className="bg-primary p-5 text-primary-foreground">
           <h4 className="font-headline font-black text-lg flex items-center gap-2">
-            <Volume2 className="h-4 w-4" />
-            Audio Controls
+            <Settings className="h-4 w-4" />
+            Lounge Settings
           </h4>
           <p className="text-[9px] font-bold uppercase tracking-[0.2em] opacity-70 mt-1">
-            Personalize your listening experience
+            Personalize your reading session
           </p>
         </div>
 
-        <ScrollArea className="max-h-[400px]">
+        <ScrollArea className="max-h-[450px]">
           <div className="p-5 space-y-6">
-            {/* Visuals */}
-            <div className="flex items-center justify-between py-2 border-b border-muted">
-              <div className="flex flex-col gap-0.5">
-                <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
-                  Highlight Text
-                </Label>
-                <p className="text-[9px] text-muted-foreground opacity-60">Visually track narration</p>
+            {/* Visuals & Reading Mode */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between py-2 border-b border-muted">
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                    Highlight Text
+                  </Label>
+                  <p className="text-[9px] text-muted-foreground opacity-60">Visually track narration</p>
+                </div>
+                <Switch 
+                  checked={settings.highlightEnabled} 
+                  onCheckedChange={(checked) => updateSettings({ highlightEnabled: checked })}
+                />
               </div>
-              <Switch 
-                checked={settings.highlightEnabled} 
-                onCheckedChange={(checked) => updateSettings({ highlightEnabled: checked })}
-              />
+
+              <div className="flex items-center justify-between py-2 border-b border-muted">
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                    <MousePointer2 className="h-2.5 w-2.5" /> Auto Scroll
+                  </Label>
+                  <p className="text-[9px] text-muted-foreground opacity-60">Hands-free reading mode</p>
+                </div>
+                <Switch 
+                  checked={settings.autoScrollEnabled} 
+                  onCheckedChange={(checked) => updateSettings({ autoScrollEnabled: checked })}
+                />
+              </div>
+
+              {settings.autoScrollEnabled && (
+                <div className="space-y-3 px-1 animate-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                      Scroll Speed
+                    </Label>
+                    <span className="text-[10px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
+                      Level {settings.scrollSpeed}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[settings.scrollSpeed]}
+                    min={1}
+                    max={10}
+                    step={1}
+                    onValueChange={([val]) => updateSettings({ scrollSpeed: val })}
+                    className="py-1"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Voice & Speed */}
-            <div className="space-y-5">
+            <div className="space-y-5 pt-4 border-t">
               <div className="space-y-2">
                 <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
-                  <Globe className="h-3 w-3" /> Voice Profile
+                  <Globe className="h-3 w-3" /> Narration Voice
                 </Label>
                 <Select value={settings.voice} onValueChange={(voice) => updateSettings({ voice })}>
                   <SelectTrigger className="rounded-xl border-muted bg-muted/20 text-[11px] h-9">
@@ -193,7 +241,7 @@ export function VoiceSettingsPopover() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
-                    <Gauge className="h-3 w-3" /> Reading Speed
+                    <Gauge className="h-3 w-3" /> Narration Pace
                   </Label>
                   <span className="text-[10px] font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded-md">
                     {settings.rate.toFixed(2)}x

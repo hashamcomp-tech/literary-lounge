@@ -34,6 +34,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [highlightEnabled, setHighlightEnabled] = useState(true);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -50,11 +52,18 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     setMounted(true);
     const saved = localStorage.getItem('lounge-voice-settings');
     if (saved) {
-      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+      try { 
+        const parsed = JSON.parse(saved);
+        setHighlightEnabled(parsed.highlightEnabled ?? true);
+        setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
+        setScrollSpeed(parsed.scrollSpeed ?? 1);
+      } catch (e) {}
     }
 
     const handleSettingsChange = (e: any) => {
       setHighlightEnabled(e.detail.highlightEnabled);
+      setAutoScrollEnabled(e.detail.autoScrollEnabled);
+      setScrollSpeed(e.detail.scrollSpeed);
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
@@ -78,6 +87,27 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       window.removeEventListener('scroll', debouncedScroll);
     };
   }, [id, isLoading]);
+
+  // Auto Scroll Engine
+  useEffect(() => {
+    if (!autoScrollEnabled || isLoading || error) return;
+
+    let lastTime = performance.now();
+    const scroll = (time: number) => {
+      if (!autoScrollEnabled) return;
+      const delta = time - lastTime;
+      lastTime = time;
+      
+      // Speed mapping: 1 = ~12px/sec, 10 = ~120px/sec
+      const pixelsPerMs = (scrollSpeed * 12) / 1000;
+      window.scrollBy(0, pixelsPerMs * delta);
+      
+      requestAnimationFrame(scroll);
+    };
+
+    const animationId = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(animationId);
+  }, [autoScrollEnabled, scrollSpeed, isLoading, error]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -162,7 +192,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
       const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
       
-      // Only restore if the current chapter matches the last read chapter
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
         setTimeout(() => {
           window.scrollTo({

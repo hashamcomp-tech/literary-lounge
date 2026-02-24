@@ -26,6 +26,8 @@ export default function LocalReader() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [highlightEnabled, setHighlightEnabled] = useState(true);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
@@ -36,11 +38,18 @@ export default function LocalReader() {
     setMounted(true);
     const saved = localStorage.getItem('lounge-voice-settings');
     if (saved) {
-      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+      try { 
+        const parsed = JSON.parse(saved);
+        setHighlightEnabled(parsed.highlightEnabled ?? true);
+        setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
+        setScrollSpeed(parsed.scrollSpeed ?? 1);
+      } catch (e) {}
     }
 
     const handleSettingsChange = (e: any) => {
       setHighlightEnabled(e.detail.highlightEnabled);
+      setAutoScrollEnabled(e.detail.autoScrollEnabled);
+      setScrollSpeed(e.detail.scrollSpeed);
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
@@ -64,6 +73,27 @@ export default function LocalReader() {
       window.removeEventListener('scroll', debouncedScroll);
     };
   }, [id, loading]);
+
+  // Auto Scroll Engine
+  useEffect(() => {
+    if (!autoScrollEnabled || loading) return;
+
+    let lastTime = performance.now();
+    const scroll = (time: number) => {
+      if (!autoScrollEnabled) return;
+      const delta = time - lastTime;
+      lastTime = time;
+      
+      // Speed mapping: 1 = ~12px/sec, 10 = ~120px/sec
+      const pixelsPerMs = (scrollSpeed * 12) / 1000;
+      window.scrollBy(0, pixelsPerMs * delta);
+      
+      requestAnimationFrame(scroll);
+    };
+
+    const animationId = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(animationId);
+  }, [autoScrollEnabled, scrollSpeed, loading]);
 
   useEffect(() => {
     const interval = setInterval(() => {
