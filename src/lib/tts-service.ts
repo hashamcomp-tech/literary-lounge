@@ -14,10 +14,12 @@ export interface TTSOptions {
   pitch?: number;
   contextId?: string; 
   charOffset?: number; // Jump to specific character position
+  onChunkStart?: (index: number) => void;
 }
 
 let isSpeakingGlobal = false;
 let currentSessionId = 0;
+let currentOnChunkStart: ((index: number) => void) | null = null;
 
 /**
  * Instantly stops all browser narration.
@@ -25,6 +27,7 @@ let currentSessionId = 0;
 export function stopTextToSpeech(resetProgress = false, contextId?: string): void {
   isSpeakingGlobal = false;
   currentSessionId++; 
+  currentOnChunkStart = null;
   
   if (typeof window !== 'undefined') {
     if (window.speechSynthesis) {
@@ -72,7 +75,7 @@ function applyPronunciations(text: string): string {
 /**
  * Granular chunking logic to divide text into small sentence segments.
  */
-function chunkText(text: string): string[] {
+export function chunkText(text: string): string[] {
   if (!text) return [];
   
   const clean = text
@@ -80,6 +83,7 @@ function chunkText(text: string): string[] {
     .replace(/<[^>]*>?/gm, '')
     .trim();
 
+  // Split by common sentence delimiters while keeping the delimiter
   const parts = clean.split(/([.!?]\s+)/);
   
   const chunks: string[] = [];
@@ -116,22 +120,22 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
   const sentences = chunkText(fullText);
   if (sentences.length === 0) return;
 
+  currentOnChunkStart = options.onChunkStart || null;
+
   const contextKey = options.contextId ? `lounge-audio-progress-${options.contextId}` : null;
   let startIndex = 0;
 
   // 1. Determine starting point
   if (options.charOffset !== undefined) {
-    // Jump to specific offset
     let cumulative = 0;
     for (let i = 0; i < sentences.length; i++) {
-      cumulative += sentences[i].length + 1; // Rough estimate of space
+      cumulative += sentences[i].length + 1;
       if (cumulative >= options.charOffset) {
         startIndex = i;
         break;
       }
     }
   } else if (contextKey) {
-    // Load from persistent storage
     const saved = localStorage.getItem(contextKey);
     if (saved) {
       try {
@@ -168,11 +172,14 @@ export async function playTextToSpeech(fullText: string, options: TTSOptions = {
       utterance.pitch = options.pitch || 1.0;
 
       utterance.onstart = () => {
-        if (sessionId === currentSessionId && contextKey) {
-          localStorage.setItem(contextKey, JSON.stringify({
-            index,
-            textHash: hash
-          }));
+        if (sessionId === currentSessionId) {
+          if (currentOnChunkStart) currentOnChunkStart(index);
+          if (contextKey) {
+            localStorage.setItem(contextKey, JSON.stringify({
+              index,
+              textHash: hash
+            }));
+          }
         }
       };
 

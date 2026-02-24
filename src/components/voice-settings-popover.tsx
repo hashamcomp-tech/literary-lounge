@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Volume2, Globe, Play, RefreshCw, Settings, Gauge, MessageSquare, Plus, Trash2, Edit3, Save, X } from 'lucide-react';
+import { Volume2, Globe, Play, RefreshCw, Settings, Gauge, MessageSquare, Plus, Trash2, Edit3, Save, X, HighlightingOhNo as Highlighter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -19,12 +19,14 @@ import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { playTextToSpeech, PronunciationMap } from '@/lib/tts-service';
 import { useToast } from '@/hooks/use-toast';
 
 export interface VoiceSettings {
   voice: string;
   rate: number;
+  highlightEnabled: boolean;
 }
 
 export function VoiceSettingsPopover() {
@@ -33,6 +35,7 @@ export function VoiceSettingsPopover() {
   const [settings, setSettings] = useState<VoiceSettings>({
     voice: '',
     rate: 1.0,
+    highlightEnabled: true,
   });
 
   // Pronunciation State
@@ -55,7 +58,7 @@ export function VoiceSettingsPopover() {
       if (!saved && sortedVoices.length > 0) {
         const daniel = sortedVoices.find(v => v.name.toLowerCase().includes('daniel'));
         if (daniel) {
-          const defaultSettings = { voice: daniel.voiceURI, rate: 1.0 };
+          const defaultSettings = { voice: daniel.voiceURI, rate: 1.0, highlightEnabled: true };
           setSettings(defaultSettings);
           localStorage.setItem('lounge-voice-settings', JSON.stringify(defaultSettings));
         }
@@ -75,7 +78,8 @@ export function VoiceSettingsPopover() {
         const parsed = JSON.parse(saved);
         setSettings({
           voice: parsed.voice || '',
-          rate: parsed.rate || 1.0
+          rate: parsed.rate || 1.0,
+          highlightEnabled: parsed.highlightEnabled !== undefined ? parsed.highlightEnabled : true
         });
       } catch (e) {}
     }
@@ -90,6 +94,9 @@ export function VoiceSettingsPopover() {
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
     localStorage.setItem('lounge-voice-settings', JSON.stringify(newSettings));
+    
+    // Dispatch custom event for real-time reactivity in reader components
+    window.dispatchEvent(new CustomEvent('lounge-voice-settings-changed', { detail: newSettings }));
   };
 
   const handleTestVoice = async () => {
@@ -151,6 +158,20 @@ export function VoiceSettingsPopover() {
 
         <ScrollArea className="max-h-[400px]">
           <div className="p-5 space-y-6">
+            {/* Visuals */}
+            <div className="flex items-center justify-between py-2 border-b border-muted">
+              <div className="flex flex-col gap-0.5">
+                <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                  Highlight Text
+                </Label>
+                <p className="text-[9px] text-muted-foreground opacity-60">Visually track narration</p>
+              </div>
+              <Switch 
+                checked={settings.highlightEnabled} 
+                onCheckedChange={(checked) => updateSettings({ highlightEnabled: checked })}
+              />
+            </div>
+
             {/* Voice & Speed */}
             <div className="space-y-5">
               <div className="space-y-2">

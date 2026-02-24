@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Square, Bookmark, Layers, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -13,8 +13,9 @@ import { useTheme } from 'next-themes';
 import { useUser, useFirestore } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Link from 'next/link';
-import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService, chunkText } from '@/lib/tts-service';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
+import { cn } from '@/lib/utils';
 
 interface NovelReaderProps {
   novel: Novel;
@@ -27,6 +28,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const db = useFirestore();
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
@@ -34,13 +37,28 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
   useEffect(() => {
     setMounted(true);
-    return () => stopTextToSpeech();
+    const saved = localStorage.getItem('lounge-voice-settings');
+    if (saved) {
+      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+    }
+
+    const handleSettingsChange = (e: any) => {
+      setHighlightEnabled(e.detail.highlightEnabled);
+    };
+    window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
+    return () => {
+      stopTextToSpeech();
+      window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
+    };
   }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const active = isSpeakingService();
-      if (active !== isSpeaking) setIsSpeaking(active);
+      if (active !== isSpeaking) {
+        setIsSpeaking(active);
+        if (!active) setActiveIndex(null);
+      }
     }, 300);
     return () => clearInterval(interval);
   }, [isSpeaking]);
@@ -86,19 +104,30 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     setIsMerging(false);
   };
 
+  const mergedSegments = useMemo(() => {
+    const segments: { text: string; chapterIdx: number; globalIndex: number }[] = [];
+    let globalCounter = 0;
+    mergedRange.forEach(idx => {
+      const ch = novel.chapters[idx];
+      if (ch) {
+        const titleText = `Chapter ${idx + 1}. ${ch.title || ''}. `;
+        segments.push({ text: titleText, chapterIdx: idx, globalIndex: globalCounter++ });
+        const contentChunks = chunkText(ch.content || '');
+        contentChunks.forEach(chunk => {
+          segments.push({ text: chunk, chapterIdx: idx, globalIndex: globalCounter++ });
+        });
+      }
+    });
+    return segments;
+  }, [mergedRange, novel.chapters]);
+
   const handleReadAloud = async (charOffset?: number) => {
     if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
 
-    const fullContent = mergedRange
-      .map(idx => {
-        const ch = novel.chapters[idx];
-        return ch ? `Chapter ${idx + 1}. ${ch.title || ''}. ${ch.content}` : '';
-      })
-      .join('\n\n');
-
+    const fullContent = mergedSegments.map(s => s.text).join(' ');
     if (!fullContent) return;
     
     const savedSettings = localStorage.getItem('lounge-voice-settings');
@@ -108,50 +137,17 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `mock-${novel.id}-${currentChapterIndex}-merged-${mergedRange.length}`,
-      charOffset
+      charOffset,
+      onChunkStart: (index) => setActiveIndex(index)
     });
   };
 
-  const handleJumpToWord = (idx: number, paraIdx: number, e: React.MouseEvent) => {
-    let absoluteOffset = 0;
-    
-    for (const n of mergedRange) {
-      if (n === idx) {
-        const chapter = novel.chapters[n];
-        if (!chapter) break;
-
-        const paragraphs = chapter.content
-          .split(/\n\n/)
-          .map(p => p.trim())
-          .filter(p => p.length > 0);
-
-        let localOffset = 0;
-        if ((document as any).caretRangeFromPoint) {
-          const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
-          if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-            localOffset = range.startOffset;
-          }
-        } else if ((document as any).caretPositionFromPoint) {
-          const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
-          if (pos) localOffset = pos.offset;
-        }
-
-        for (let i = 0; i < paraIdx; i++) {
-          localOffset += paragraphs[i].length + 2;
-        }
-        
-        const prefix = `Chapter ${n + 1}. ${chapter.title || ''}. `;
-        absoluteOffset += prefix.length + localOffset;
-        break;
-      } else {
-        const ch = novel.chapters[n];
-        if (ch) {
-          absoluteOffset += `Chapter ${n + 1}. ${ch.title || ''}. ${ch.content}`.length + 2;
-        }
-      }
+  const handleJumpToSegment = (globalIndex: number) => {
+    let offset = 0;
+    for (let i = 0; i < globalIndex; i++) {
+      offset += mergedSegments[i].text.length + 1;
     }
-
-    handleReadAloud(absoluteOffset);
+    handleReadAloud(offset);
   };
 
   if (!mounted) return null;
@@ -214,10 +210,9 @@ export default function NovelReader({ novel }: NovelReaderProps) {
             {mergedRange.map((idx) => {
               const ch = novel.chapters[idx];
               if (!ch) return null;
-              const paragraphs = ch.content
-                .split(/\n\n/)
-                .map(p => p.trim())
-                .filter(p => p.length > 0);
+              
+              const chTitleSegment = mergedSegments.find(s => s.chapterIdx === idx && s.text.startsWith(`Chapter ${idx + 1}`));
+              const chContentSegments = mergedSegments.filter(s => s.chapterIdx === idx && !s.text.startsWith(`Chapter ${idx + 1}`));
 
               return (
                 <article key={idx} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -225,20 +220,29 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                     <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
                       Chapter {idx + 1}
                     </div>
-                    <h2 className="text-4xl font-headline font-black text-primary leading-tight">
+                    <h2 
+                      className={cn(
+                        "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
+                        highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
+                      )}
+                      onClick={() => chTitleSegment && handleJumpToSegment(chTitleSegment.globalIndex)}
+                    >
                       {ch.title}
                     </h2>
                   </header>
 
                   <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
-                    {paragraphs.map((para, i) => (
-                      <p 
-                        key={i} 
-                        className="mb-8 cursor-pointer hover:text-foreground transition-colors"
-                        onClick={(e) => handleJumpToWord(idx, i, e)}
+                    {chContentSegments.map((seg) => (
+                      <span 
+                        key={seg.globalIndex}
+                        className={cn(
+                          "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
+                          highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
+                        )}
+                        onClick={() => handleJumpToSegment(seg.globalIndex)}
                       >
-                        {para}
-                      </p>
+                        {seg.text}
+                      </span>
                     ))}
                   </div>
                 </article>

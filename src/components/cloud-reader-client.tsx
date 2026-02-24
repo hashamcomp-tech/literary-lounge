@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers, Menu } from 'lucide-react';
@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
-import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService, chunkText } from '@/lib/tts-service';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { saveToLocalHistory } from '@/lib/local-history-utils';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface CloudReaderClientProps {
   id: string;
@@ -31,6 +32,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [chaptersCache, setChaptersCache] = useState<Record<number, any>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
@@ -44,13 +47,28 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   useEffect(() => {
     setMounted(true);
-    return () => stopTextToSpeech();
+    const saved = localStorage.getItem('lounge-voice-settings');
+    if (saved) {
+      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+    }
+
+    const handleSettingsChange = (e: any) => {
+      setHighlightEnabled(e.detail.highlightEnabled);
+    };
+    window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
+    return () => {
+      stopTextToSpeech();
+      window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
+    };
   }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const active = isSpeakingService();
-      if (active !== isSpeaking) setIsSpeaking(active);
+      if (active !== isSpeaking) {
+        setIsSpeaking(active);
+        if (!active) setActiveIndex(null);
+      }
     }, 300);
     return () => clearInterval(interval);
   }, [isSpeaking]);
@@ -192,19 +210,31 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
+  // Pre-calculate segments for highlighting
+  const mergedSegments = useMemo(() => {
+    const segments: { text: string; chapterNum: number; globalIndex: number }[] = [];
+    let globalCounter = 0;
+    mergedRange.forEach(num => {
+      const ch = chaptersCache[num];
+      if (ch) {
+        const titleText = `Chapter ${num}. ${ch.title || ''}. `;
+        segments.push({ text: titleText, chapterNum: num, globalIndex: globalCounter++ });
+        const contentChunks = chunkText(ch.content || '');
+        contentChunks.forEach(chunk => {
+          segments.push({ text: chunk, chapterNum: num, globalIndex: globalCounter++ });
+        });
+      }
+    });
+    return segments;
+  }, [mergedRange, chaptersCache]);
+
   const handleReadAloud = async (charOffset?: number) => {
     if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
 
-    const fullContent = mergedRange
-      .map(num => {
-        const ch = chaptersCache[num];
-        return ch ? `Chapter ${num}. ${ch.title || ''}. ${ch.content}` : '';
-      })
-      .join('\n\n');
-
+    const fullContent = mergedSegments.map(s => s.text).join(' ');
     if (!fullContent) return;
     
     const saved = localStorage.getItem('lounge-voice-settings');
@@ -214,51 +244,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `cloud-${id}-${currentChapterNum}-merged-${mergedRange.length}`,
-      charOffset
+      charOffset,
+      onChunkStart: (index) => setActiveIndex(index)
     });
   };
 
-  const handleJumpToWord = (num: number, paraIdx: number, e: React.MouseEvent) => {
-    let absoluteOffset = 0;
-    
-    for (const n of mergedRange) {
-      if (n === num) {
-        const chapter = chaptersCache[n];
-        if (!chapter) break;
-
-        const paragraphs = (chapter.content || '')
-          .replace(/<br\s*\/?>/gi, '\n')
-          .split(/\n\n/)
-          .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-          .filter((p: string) => p.length > 0);
-
-        let localOffset = 0;
-        if ((document as any).caretRangeFromPoint) {
-          const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
-          if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-            localOffset = range.startOffset;
-          }
-        } else if ((document as any).caretPositionFromPoint) {
-          const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
-          if (pos) localOffset = pos.offset;
-        }
-
-        for (let i = 0; i < paraIdx; i++) {
-          localOffset += paragraphs[i].length + 2;
-        }
-        
-        const prefix = `Chapter ${n}. ${chapter.title || ''}. `;
-        absoluteOffset += prefix.length + localOffset;
-        break;
-      } else {
-        const ch = chaptersCache[n];
-        if (ch) {
-          absoluteOffset += `Chapter ${n}. ${ch.title || ''}. ${ch.content}`.length + 2;
-        }
-      }
+  const handleJumpToSegment = (globalIndex: number) => {
+    let offset = 0;
+    for (let i = 0; i < globalIndex; i++) {
+      offset += mergedSegments[i].text.length + 1;
     }
-
-    handleReadAloud(absoluteOffset);
+    handleReadAloud(offset);
   };
 
   if (isOfflineMode) {
@@ -367,11 +363,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         {mergedRange.map((num) => {
           const ch = chaptersCache[num];
           if (!ch) return null;
-          const paragraphs = (ch.content || '')
-            .replace(/<br\s*\/?>/gi, '\n')
-            .split(/\n\n/)
-            .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-            .filter((p: string) => p.length > 0);
+          
+          const chTitleSegment = mergedSegments.find(s => s.chapterNum === num && s.text.startsWith(`Chapter ${num}`));
+          const chContentSegments = mergedSegments.filter(s => s.chapterNum === num && !s.text.startsWith(`Chapter ${num}`));
 
           return (
             <article key={num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -380,20 +374,29 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                   <Bookmark className="h-4 w-4" />
                   Chapter {num}
                 </div>
-                <h2 className="text-4xl font-headline font-black text-primary leading-tight">
+                <h2 
+                  className={cn(
+                    "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
+                    highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
+                  )}
+                  onClick={() => chTitleSegment && handleJumpToSegment(chTitleSegment.globalIndex)}
+                >
                   {ch.title || `Chapter ${num}`}
                 </h2>
               </header>
 
               <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
-                {paragraphs.map((para: string, idx: number) => (
-                  <p 
-                    key={idx} 
-                    className="mb-8 cursor-pointer hover:text-foreground transition-colors"
-                    onClick={(e) => handleJumpToWord(num, idx, e)}
+                {chContentSegments.map((seg) => (
+                  <span 
+                    key={seg.globalIndex}
+                    className={cn(
+                      "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
+                      highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
+                    )}
+                    onClick={() => handleJumpToSegment(seg.globalIndex)}
                   >
-                    {para}
-                  </p>
+                    {seg.text}
+                  </span>
                 ))}
               </div>
             </article>
