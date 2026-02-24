@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -163,10 +162,12 @@ export default function Navbar() {
                   </Link>
                   
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
-                    <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />
-                    <span>Help & Support</span>
-                  </DropdownMenuItem>
+                  <Link href="/support">
+                    <DropdownMenuItem className="rounded-lg cursor-pointer py-2.5">
+                      <HelpCircle className="mr-2 h-4 w-4 text-muted-foreground" />
+                      <span>Help & Support</span>
+                    </DropdownMenuItem>
+                  </Link>
                 </DropdownMenuContent>
               </DropdownMenu>
 
