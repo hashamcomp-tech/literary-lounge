@@ -63,6 +63,18 @@
         "status": { "type": "string", "enum": ["new", "resolved"] }
       },
       "required": ["email", "category", "description", "status"]
+    },
+    "HeroSettings": {
+      "title": "Hero Settings",
+      "description": "Configuration for the landing page hero section.",
+      "type": "object",
+      "properties": {
+        "headline": { "type": "string" },
+        "subheadline": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "backgroundImageURL": { "type": "string" },
+        "tagline": { "type": "string" }
+      }
     }
   },
   "auth": {
@@ -73,6 +85,7 @@
     "/publishRequests/{requestId}": { "schema": { "$ref": "#/entities/PublishRequest" }, "description": "Global queue for contributor vetting." },
     "/books/{bookId}": { "schema": { "$ref": "#/entities/Book" }, "description": "Main cloud library storage." },
     "/activityLogs/{logId}": { "schema": { "$ref": "#/entities/ActivityLog" }, "description": "Global trail of reader movements." },
-    "/supportReports/{reportId}": { "schema": { "$ref": "#/entities/SupportReport" }, "description": "User feedback channel." }
+    "/supportReports/{reportId}": { "schema": { "$ref": "#/entities/SupportReport" }, "description": "User feedback channel." },
+    "/settings/hero": { "schema": { "$ref": "#/entities/HeroSettings" }, "description": "Global landing page configuration." }
   }
 }
