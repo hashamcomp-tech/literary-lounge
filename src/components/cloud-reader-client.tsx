@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
-import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers, Menu } from 'lucide-react';
+import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers, Menu, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
@@ -42,6 +42,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isScrollRestored, setIsScrollRestored] = useState(false);
   
+  // Restoration States
+  const [showRestorePrompt, setShowRestorePrompt] = useState(false);
+  const [savedPos, setSavedPos] = useState(0);
+  const [savedPct, setSavedPct] = useState(0);
+  
   // Table of Contents State
   const [tocChapters, setTocChapters] = useState<any[]>([]);
   const [isLoadingToc, setIsLoadingToc] = useState(false);
@@ -68,9 +73,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Only save if restoration is finished to avoid overwriting with 0 on load
+    // Scroll Persistence
     const handleScroll = () => {
-      if (isLoading || !isScrollRestored) return;
+      if (isLoading) return;
+      
+      // Auto-dismiss prompt if user scrolls manually
+      if (showRestorePrompt && window.scrollY > 100) {
+        setShowRestorePrompt(false);
+        setIsScrollRestored(true);
+      }
+
+      if (!isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -87,9 +100,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, isLoading, isScrollRestored]);
+  }, [id, isLoading, isScrollRestored, showRestorePrompt]);
 
-  // Unified Scroll Engine: Constant Crawl OR Follow Highlight
+  // Unified Scroll Engine
   useEffect(() => {
     if (!autoScrollEnabled || isLoading || error || !isScrollRestored) return;
 
@@ -144,6 +157,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setIsLoading(true);
       setError(null);
       setIsScrollRestored(false);
+      setShowRestorePrompt(false);
       
       try {
         let meta = metadata;
@@ -203,18 +217,30 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
       
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
-        // Use a slightly longer delay to ensure DOM settle before jump
-        setTimeout(() => {
-          window.scrollTo(0, parseInt(savedScroll));
-          // Small verification timeout before enabling saving/auto-scroll
-          setTimeout(() => setIsScrollRestored(true), 100);
-        }, 150);
+        const pos = parseInt(savedScroll);
+        if (pos > 200) {
+          setSavedPos(pos);
+          // Wait for DOM to settle to calculate accurate percentage
+          setTimeout(() => {
+            const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+            const pct = Math.round((pos / totalHeight) * 100);
+            setSavedPct(Math.min(pct, 100));
+            setShowRestorePrompt(true);
+          }, 500);
+        } else {
+          setIsScrollRestored(true);
+        }
       } else {
-        window.scrollTo(0, 0);
         setIsScrollRestored(true);
       }
     }
   }, [isLoading, id, currentChapterNum, mounted]);
+
+  const handleRestoreScroll = () => {
+    window.scrollTo({ top: savedPos, behavior: 'smooth' });
+    setIsScrollRestored(true);
+    setShowRestorePrompt(false);
+  };
 
   const loadToc = async () => {
     if (!firestore || !id || tocChapters.length > 0) return;
@@ -376,6 +402,28 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   return (
     <div className="max-w-[700px] mx-auto px-5 py-5 transition-all selection:bg-primary/20">
+      {showRestorePrompt && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 duration-500 w-full max-w-[300px] px-4">
+          <Button 
+            variant="secondary" 
+            className="w-full rounded-full shadow-2xl bg-primary text-primary-foreground hover:bg-primary/90 px-6 h-12 gap-2 border-2 border-background"
+            onClick={handleRestoreScroll}
+          >
+            <History className="h-4 w-4" />
+            <span className="flex-1 text-xs font-bold">Restore to {savedPct}%</span>
+            <div className="w-px h-4 bg-primary-foreground/20 mx-1" />
+            <X 
+              className="h-4 w-4 hover:scale-110 transition-transform cursor-pointer" 
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setShowRestorePrompt(false); 
+                setIsScrollRestored(true); 
+              }} 
+            />
+          </Button>
+        </div>
+      )}
+
       <header className="mb-12">
         <div className="flex items-center justify-between mb-8">
           <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground hover:text-primary transition-colors group">

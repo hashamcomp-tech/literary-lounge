@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Square, Bookmark, Layers, Loader2 } from 'lucide-react';
+import { Menu, Sun, Moon, ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Volume2, Square, Bookmark, Layers, Loader2, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -37,6 +37,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const [isMerging, setIsMerging] = useState(false);
   const [isScrollRestored, setIsScrollRestored] = useState(false);
   
+  // Restoration States
+  const [showRestorePrompt, setShowRestorePrompt] = useState(false);
+  const [savedPos, setSavedPos] = useState(0);
+  const [savedPct, setSavedPct] = useState(0);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
@@ -64,7 +69,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     };
   }, []);
 
-  // Unified Scroll Engine: Constant Crawl OR Follow Highlight
+  // Unified Scroll Engine
   useEffect(() => {
     if (!autoScrollEnabled || !scrollRef.current || !isScrollRestored) return;
 
@@ -118,6 +123,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
     setMergedRange([currentChapterIndex]);
     setIsScrollRestored(false);
+    setShowRestorePrompt(false);
 
     if (user && !user.isAnonymous && db) {
       const historyRef = doc(db, 'users', user.uid, 'history', novel.id);
@@ -141,7 +147,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (!container) return;
 
     const handleScroll = () => {
-      // Guard: Only save if restoration is finished
+      // Auto-dismiss prompt if user scrolls significantly
+      if (showRestorePrompt && container.scrollTop > 100) {
+        setShowRestorePrompt(false);
+        setIsScrollRestored(true);
+      }
+
       if (!isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${novel.id}`, container.scrollTop.toString());
     };
@@ -154,7 +165,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
     container.addEventListener('scroll', debounced);
     return () => container.removeEventListener('scroll', debounced);
-  }, [novel.id, isScrollRestored]);
+  }, [novel.id, isScrollRestored, showRestorePrompt]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
@@ -168,15 +179,32 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterIndex) {
         const container = scrollRef.current;
-        setTimeout(() => {
-          container.scrollTo(0, parseInt(savedScroll));
-          setTimeout(() => setIsScrollRestored(true), 100);
-        }, 150);
+        const pos = parseInt(savedScroll);
+        
+        if (pos > 200) {
+          setSavedPos(pos);
+          setTimeout(() => {
+            const totalHeight = container.scrollHeight - container.clientHeight;
+            const pct = Math.round((pos / totalHeight) * 100);
+            setSavedPct(Math.min(pct, 100));
+            setShowRestorePrompt(true);
+          }, 500);
+        } else {
+          setIsScrollRestored(true);
+        }
       } else {
         setIsScrollRestored(true);
       }
     }
   }, [mounted, currentChapterIndex, novel.id]);
+
+  const handleRestoreScroll = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: savedPos, behavior: 'smooth' });
+    }
+    setIsScrollRestored(true);
+    setShowRestorePrompt(false);
+  };
 
   const handleMergeNext = () => {
     setIsMerging(true);
@@ -240,6 +268,28 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background transition-colors duration-300">
       <div className="flex-1 overflow-y-auto relative" ref={scrollRef}>
+        {showRestorePrompt && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 duration-500 w-full max-w-[300px] px-4">
+            <Button 
+              variant="secondary" 
+              className="w-full rounded-full shadow-2xl bg-primary text-primary-foreground hover:bg-primary/90 px-6 h-12 gap-2 border-2 border-background"
+              onClick={handleRestoreScroll}
+            >
+              <History className="h-4 w-4" />
+              <span className="flex-1 text-xs font-bold">Restore to {savedPct}%</span>
+              <div className="w-px h-4 bg-primary-foreground/20 mx-1" />
+              <X 
+                className="h-4 w-4 hover:scale-110 transition-transform cursor-pointer" 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setShowRestorePrompt(false); 
+                  setIsScrollRestored(true); 
+                }} 
+              />
+            </Button>
+          </div>
+        )}
+
         <main className="max-w-[700px] mx-auto px-5 py-10 font-body text-[18px] leading-[1.6]">
           <header className="mb-10">
             <div className="flex items-center justify-between mb-8">

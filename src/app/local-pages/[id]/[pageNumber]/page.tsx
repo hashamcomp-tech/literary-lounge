@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
-import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark, Menu } from 'lucide-react';
+import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark, Menu, History, X } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +32,11 @@ export default function LocalReader() {
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
   const [isScrollRestored, setIsScrollRestored] = useState(false);
+  
+  // Restoration States
+  const [showRestorePrompt, setShowRestorePrompt] = useState(false);
+  const [savedPos, setSavedPos] = useState(0);
+  const [savedPct, setSavedPct] = useState(0);
 
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
 
@@ -54,9 +59,16 @@ export default function LocalReader() {
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Only save if restoration is finished
+    // Scroll Persistence
     const handleScroll = () => {
-      if (loading || !isScrollRestored) return;
+      if (loading) return;
+      
+      if (showRestorePrompt && window.scrollY > 100) {
+        setShowRestorePrompt(false);
+        setIsScrollRestored(true);
+      }
+
+      if (!isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -73,9 +85,9 @@ export default function LocalReader() {
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, loading, isScrollRestored]);
+  }, [id, loading, isScrollRestored, showRestorePrompt]);
 
-  // Unified Scroll Engine: Constant Crawl OR Follow Highlight
+  // Unified Scroll Engine
   useEffect(() => {
     if (!autoScrollEnabled || loading || !isScrollRestored) return;
 
@@ -121,6 +133,7 @@ export default function LocalReader() {
     const loadLocalData = async () => {
       setLoading(true);
       setIsScrollRestored(false);
+      setShowRestorePrompt(false);
       try {
         const book = await getLocalBook(id);
         if (book) {
@@ -153,16 +166,29 @@ export default function LocalReader() {
       const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
       
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
-        setTimeout(() => {
-          window.scrollTo(0, parseInt(savedScroll));
-          setTimeout(() => setIsScrollRestored(true), 100);
-        }, 150);
+        const pos = parseInt(savedScroll);
+        if (pos > 200) {
+          setSavedPos(pos);
+          setTimeout(() => {
+            const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+            const pct = Math.round((pos / totalHeight) * 100);
+            setSavedPct(Math.min(pct, 100));
+            setShowRestorePrompt(true);
+          }, 500);
+        } else {
+          setIsScrollRestored(true);
+        }
       } else {
-        window.scrollTo(0, 0);
         setIsScrollRestored(true);
       }
     }
   }, [loading, id, currentChapterNum, mounted]);
+
+  const handleRestoreScroll = () => {
+    window.scrollTo({ top: savedPos, behavior: 'smooth' });
+    setIsScrollRestored(true);
+    setShowRestorePrompt(false);
+  };
 
   useEffect(() => {
     if (currentChapterNum && id) {
@@ -263,6 +289,28 @@ export default function LocalReader() {
     <div className="min-h-screen flex flex-col bg-background transition-colors duration-300">
       <Navbar />
       
+      {showRestorePrompt && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 duration-500 w-full max-w-[300px] px-4">
+          <Button 
+            variant="secondary" 
+            className="w-full rounded-full shadow-2xl bg-primary text-primary-foreground hover:bg-primary/90 px-6 h-12 gap-2 border-2 border-background"
+            onClick={handleRestoreScroll}
+          >
+            <History className="h-4 w-4" />
+            <span className="flex-1 text-xs font-bold">Restore to {savedPct}%</span>
+            <div className="w-px h-4 bg-primary-foreground/20 mx-1" />
+            <X 
+              className="h-4 w-4 hover:scale-110 transition-transform cursor-pointer" 
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                setShowRestorePrompt(false); 
+                setIsScrollRestored(true); 
+              }} 
+            />
+          </Button>
+        </div>
+      )}
+
       <main className="flex-1 max-w-[700px] mx-auto px-5 py-10 selection:bg-primary/20">
         <header className="mb-10">
           <div className="flex items-center justify-between mb-8">
