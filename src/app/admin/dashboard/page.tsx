@@ -2,12 +2,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot, doc, getDocs, query, orderBy, limit, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, query, orderBy, limit, setDoc, serverTimestamp, where } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight, RefreshCcw, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Layers, HardDrive, ArrowLeft, Users, MessageSquare, Clock, ArrowRight, RefreshCcw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,7 @@ export default function AdminDashboard() {
   const [totalUsers, setTotalUsers] = useState(0);
   const [storageUsed, setStorageUsed] = useState(0);
   const [remainingStorage, setRemainingStorage] = useState(MAX_STORAGE_BYTES);
+  const [newReportsCount, setNewReportsCount] = useState(0);
   const [recentRequests, setRecentRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -44,7 +45,6 @@ export default function AdminDashboard() {
           setStorageUsed(used);
           setRemainingStorage(MAX_STORAGE_BYTES - used);
         } else {
-          // Explicitly set to 0 if doc doesn't exist
           setStorageUsed(0);
           setRemainingStorage(MAX_STORAGE_BYTES);
         }
@@ -57,7 +57,14 @@ export default function AdminDashboard() {
       }
     );
 
-    // 2. Real-time listener for the users collection
+    // 2. Support Reports Counter
+    const reportsRef = collection(db, 'supportReports');
+    const qReports = query(reportsRef, where('status', '==', 'new'));
+    const unsubscribeReports = onSnapshot(qReports, (snap) => {
+      setNewReportsCount(snap.size);
+    });
+
+    // 3. Real-time listener for the users collection
     const usersRef = collection(db, 'users');
     const unsubscribeUsers = onSnapshot(
       usersRef, 
@@ -72,14 +79,12 @@ export default function AdminDashboard() {
       }
     );
 
-    // 3. Real-time listener for the books collection
+    // 4. Real-time listener for the books collection
     const booksRef = collection(db, 'books');
     const unsubscribeBooks = onSnapshot(
       booksRef, 
       async (snapshot) => {
         setBookCount(snapshot.size);
-
-        // Recalculate total chapters across all books in real-time
         try {
           const chapterPromises = snapshot.docs.map(bookDoc => 
             getDocs(collection(db, 'books', bookDoc.id, 'chapters'))
@@ -87,9 +92,7 @@ export default function AdminDashboard() {
           const chapterSnaps = await Promise.all(chapterPromises);
           const total = chapterSnaps.reduce((sum, snap) => sum + snap.size, 0);
           setChapterCount(total);
-        } catch (err) {
-          // Inner errors handled contextually if needed
-        }
+        } catch (err) {}
       },
       async (err) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
@@ -99,7 +102,7 @@ export default function AdminDashboard() {
       }
     );
 
-    // 4. Real-time listener for cloud upload requests (recent only)
+    // 5. Real-time listener for cloud upload requests (recent only)
     const requestsRef = collection(db, 'cloudUploadRequests');
     const requestsQuery = query(requestsRef, orderBy('requestedAt', 'desc'), limit(5));
     const unsubscribeRequests = onSnapshot(
@@ -118,44 +121,28 @@ export default function AdminDashboard() {
 
     return () => {
       unsubscribeStats();
+      unsubscribeReports();
       unsubscribeUsers();
       unsubscribeBooks();
       unsubscribeRequests();
     };
   }, [db]);
 
-  /**
-   * Deep sync tool to repair storage statistics.
-   * Scans all books and sums up coverSize.
-   */
   const handleRecalculateStorage = async () => {
     if (!db) return;
     setIsSyncing(true);
     try {
       const booksSnap = await getDocs(collection(db, 'books'));
       let totalSize = 0;
-      
       booksSnap.forEach(doc => {
         const data = doc.data();
         totalSize += (data.coverSize || data.metadata?.info?.coverSize || 0);
       });
-
       const statsRef = doc(db, 'stats', 'storageUsage');
-      await setDoc(statsRef, { 
-        storageBytesUsed: totalSize,
-        lastSyncedAt: serverTimestamp() 
-      }, { merge: true });
-
-      toast({
-        title: "Stats Repaired",
-        description: `Library scanned. Total storage: ${(totalSize / (1024 * 1024)).toFixed(2)} MB.`
-      });
+      await setDoc(statsRef, { storageBytesUsed: totalSize, lastSyncedAt: serverTimestamp() }, { merge: true });
+      toast({ title: "Stats Repaired", description: `Library scanned. Total storage: ${(totalSize / (1024 * 1024)).toFixed(2)} MB.` });
     } catch (err) {
-      toast({
-        variant: "destructive",
-        title: "Sync Failed",
-        description: "Could not access library metadata."
-      });
+      toast({ variant: "destructive", title: "Sync Failed", description: "Could not access library metadata." });
     } finally {
       setIsSyncing(false);
     }
@@ -201,18 +188,14 @@ export default function AdminDashboard() {
           ) : (
             <div className="grid gap-8">
               {/* Primary Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card className="border-none shadow-lg bg-card/50 backdrop-blur relative overflow-hidden group">
-                  <div className="absolute right-0 top-0 p-4 opacity-5 transition-transform group-hover:scale-110">
-                    <Users className="h-24 w-24 text-primary" />
-                  </div>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Total Registered Users</CardTitle>
+                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Registered Users</CardTitle>
                     <Users className="h-4 w-4 text-primary" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-4xl font-headline font-black text-primary">{totalUsers.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground mt-1">Active readers in the community</p>
                   </CardContent>
                 </Card>
 
@@ -223,7 +206,6 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-4xl font-headline font-black text-accent">{bookCount.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground mt-1">Unique titles in the global shelf</p>
                   </CardContent>
                 </Card>
 
@@ -234,7 +216,18 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-4xl font-headline font-black text-green-600">{chapterCount.toLocaleString()}</div>
-                    <p className="text-xs text-muted-foreground mt-1">Total indexed reading units</p>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-none shadow-lg bg-card/50 backdrop-blur relative overflow-hidden">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">New Reports</CardTitle>
+                    <AlertTriangle className={`h-4 w-4 ${newReportsCount > 0 ? 'text-red-500 animate-pulse' : 'text-muted-foreground'}`} />
+                  </CardHeader>
+                  <CardContent>
+                    <div className={`text-4xl font-headline font-black ${newReportsCount > 0 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                      {newReportsCount}
+                    </div>
                   </CardContent>
                 </Card>
               </div>

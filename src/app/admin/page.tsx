@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase, useStorage } from '@/firebase';
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX, MousePointer2 } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX, MousePointer2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -47,11 +47,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatDistanceToNow } from 'date-fns';
 
 /**
  * @fileOverview Lounge Control Panel.
  * Primary command center for administrators.
- * Features real-time status monitoring, contributor vetting, and granular manuscript management.
+ * Features real-time status monitoring, contributor vetting, granular manuscript management, and support reporting.
  */
 export default function AdminPage() {
   const db = useFirestore();
@@ -146,6 +147,13 @@ export default function AdminPage() {
 
   const { data: requests, isLoading: isRequestsLoading } = useCollection(requestsQuery);
 
+  const reportsQuery = useMemoFirebase(() => {
+    if (!isAdmin || isOfflineMode || !db) return null;
+    return query(collection(db, 'supportReports'), orderBy('timestamp', 'desc'), limit(50));
+  }, [db, isAdmin, isOfflineMode]);
+
+  const { data: reports, isLoading: isReportsLoading } = useCollection(reportsQuery);
+
   const cloudRequestsQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
     return collection(db, 'cloudUploadRequests');
@@ -171,6 +179,19 @@ export default function AdminPage() {
       .then(() => deleteDoc(deleteReqRef))
       .then(() => toast({ title: "User Approved", description: `${email} is now a contributor.` }))
       .finally(() => setProcessingId(null));
+  };
+
+  const handleResolveReport = async (reportId: string) => {
+    if (!db) return;
+    const docRef = doc(db, 'supportReports', reportId);
+    updateDoc(docRef, { status: 'resolved' })
+      .then(() => toast({ title: "Report Resolved", description: "Feedback archived successfully." }));
+  };
+
+  const handleDeleteReport = async (reportId: string) => {
+    if (!db) return;
+    const docRef = doc(db, 'supportReports', reportId);
+    deleteDoc(docRef).then(() => toast({ title: "Report Purged" }));
   };
 
   const handleRemoveContributor = async (email: string) => {
@@ -215,11 +236,8 @@ export default function AdminPage() {
       const optimizedBlob = await optimizeCoverImage(file);
       const optimizedFile = new File([optimizedBlob], `cover_${selectedBook.id}.jpg`, { type: 'image/jpeg' });
       const url = await uploadCoverImage(storage, optimizedFile, selectedBook.id);
-      
       if (!url) throw new Error("Cloud upload rejected.");
-      
       await updateCloudBookCover(db, selectedBook.id, url, optimizedFile.size);
-      
       toast({ title: "Cover Updated", description: "The volume's visual identity has been synchronized." });
       setIsSettingsOpen(false);
     } catch (err: any) {
@@ -298,13 +316,80 @@ export default function AdminPage() {
               <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">Total Chapters</p>
             </Card>
             <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
-              <Activity className="h-6 w-6 text-green-600 mb-4" />
-              <h3 className="text-4xl font-headline font-black text-green-600">Stable</h3>
-              <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">System Status</p>
+              <AlertTriangle className={`h-6 w-6 mb-4 ${(reports?.filter(r => r.status === 'new').length || 0) > 0 ? 'text-red-500 animate-pulse' : 'text-muted-foreground'}`} />
+              <h3 className="text-4xl font-headline font-black">{reports?.filter(r => r.status === 'new').length || 0}</h3>
+              <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">New Reports</p>
             </Card>
           </div>
 
           <AdminStorageBar />
+
+          <Accordion type="single" collapsible className="mb-6">
+            <AccordionItem value="support" className="border-none">
+              <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-card/80">
+                <AccordionTrigger className="p-6 hover:no-underline">
+                  <div className="text-left flex items-center gap-3">
+                    <div className="bg-red-500/10 p-2 rounded-xl">
+                      <AlertTriangle className="h-5 w-5 text-red-500" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl font-headline font-black">Support & Problem Reports</CardTitle>
+                      <CardDescription>User feedback and bug reports from the field.</CardDescription>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="p-0 border-t">
+                  {isReportsLoading ? <div className="p-12 flex justify-center"><Loader2 className="animate-spin" /></div> : (
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Reporter & Time</TableHead><TableHead>Issue</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {reports?.map(report => (
+                          <TableRow key={report.id} className={report.status === 'resolved' ? 'opacity-50' : ''}>
+                            <TableCell className="font-bold">
+                              {report.email}
+                              <br/>
+                              <span className="text-[9px] text-muted-foreground uppercase font-black">
+                                {report.timestamp?.toDate ? formatDistanceToNow(report.timestamp.toDate(), { addSuffix: true }) : 'Just now'}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="mb-1 text-[10px]">{report.category}</Badge>
+                              <p className="text-xs text-muted-foreground line-clamp-2 max-w-md">{report.description}</p>
+                            </TableCell>
+                            <TableCell className="text-right space-x-2">
+                              {report.status === 'new' ? (
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => handleResolveReport(report.id)}
+                                  className="text-green-600 font-bold text-[10px]"
+                                >
+                                  <CheckCircle2 className="h-3 w-3 mr-1" /> Resolve
+                                </Button>
+                              ) : (
+                                <Badge variant="secondary" className="bg-green-100 text-green-700 uppercase text-[9px] font-black">Archived</Badge>
+                              )}
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => handleDeleteReport(report.id)}
+                                className="text-destructive h-8 w-8"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {(!reports || reports.length === 0) && (
+                          <TableRow><TableCell colSpan={3} className="text-center py-10 text-muted-foreground">No reports filed yet.</TableCell></TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  )}
+                </AccordionContent>
+              </Card>
+            </AccordionItem>
+          </Accordion>
 
           <Accordion type="single" collapsible className="mb-6">
             <AccordionItem value="manuscripts" className="border-none">

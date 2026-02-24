@@ -49,6 +49,20 @@
         "userAgent": { "type": "string" }
       },
       "required": ["path", "timestamp"]
+    },
+    "SupportReport": {
+      "title": "Support Report",
+      "description": "User submitted bug report or feature request.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "category": { "type": "string", "enum": ["Bug", "Feature Request", "Content Issue", "Other"] },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["new", "resolved"] }
+      },
+      "required": ["email", "category", "description", "status"]
     }
   },
   "auth": {
@@ -58,6 +72,7 @@
     "/usernames/{username}": { "schema": { "$ref": "#/entities/UsernameMap" }, "description": "Lookup index for username-based login." },
     "/publishRequests/{requestId}": { "schema": { "$ref": "#/entities/PublishRequest" }, "description": "Global queue for contributor vetting." },
     "/books/{bookId}": { "schema": { "$ref": "#/entities/Book" }, "description": "Main cloud library storage." },
-    "/activityLogs/{logId}": { "schema": { "$ref": "#/entities/ActivityLog" }, "description": "Global trail of reader movements." }
+    "/activityLogs/{logId}": { "schema": { "$ref": "#/entities/ActivityLog" }, "description": "Global trail of reader movements." },
+    "/supportReports/{reportId}": { "schema": { "$ref": "#/entities/SupportReport" }, "description": "User feedback channel." }
   }
 }

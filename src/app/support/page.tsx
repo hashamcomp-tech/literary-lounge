@@ -1,5 +1,7 @@
+
 'use client';
 
+import { useState } from 'react';
 import Navbar from '@/components/navbar';
 import { 
   Accordion, 
@@ -20,17 +22,78 @@ import {
   MessageSquare, 
   ChevronRight,
   ShieldCheck,
-  Zap
+  Zap,
+  AlertTriangle,
+  Loader2,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useFirestore, useUser } from '@/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 /**
  * @fileOverview Help & Support Center.
  * Provides a structured repository of knowledge for Lounge readers and contributors.
+ * Includes a direct reporting feature for bug and feature tracking.
  */
 export default function SupportPage() {
   const router = useRouter();
+  const db = useFirestore();
+  const { user } = useUser();
+  const { toast } = useToast();
+
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState("Bug");
+  const [reportDescription, setReportDescription] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSendReport = async () => {
+    if (!db || !reportDescription.trim()) return;
+    
+    setIsSubmitting(true);
+    try {
+      const reportsRef = collection(db, 'supportReports');
+      await addDoc(reportsRef, {
+        uid: user?.uid || 'anonymous',
+        email: user?.email || 'Guest Reader',
+        category: reportCategory,
+        description: reportDescription.trim(),
+        timestamp: serverTimestamp(),
+        status: 'new'
+      });
+
+      toast({
+        title: "Report Synchronized",
+        description: "Your feedback has been sent to the Lounge stewards."
+      });
+      
+      setIsReportOpen(false);
+      setReportDescription("");
+    } catch (err) {
+      // Permission errors handled by listener
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -162,25 +225,26 @@ export default function SupportPage() {
               </section>
             </div>
 
-            {/* Side Sidebar - Contact & Stats */}
+            {/* Side Sidebar - Contact & Reports */}
             <div className="space-y-6">
               <Card className="rounded-[2rem] border-none shadow-xl bg-primary text-primary-foreground overflow-hidden relative">
                 <div className="absolute top-0 right-0 p-4 opacity-10">
-                  <MessageSquare className="h-24 w-24" />
+                  <AlertTriangle className="h-24 w-24" />
                 </div>
                 <CardHeader>
-                  <CardTitle className="text-xl font-headline font-black">Direct Inquiry</CardTitle>
-                  <CardDescription className="text-primary-foreground/70">Need specialized assistance?</CardDescription>
+                  <CardTitle className="text-xl font-headline font-black">Report a Problem</CardTitle>
+                  <CardDescription className="text-primary-foreground/70">Encountered a bug or content issue?</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm leading-relaxed">
-                    Our technical stewards are available for manuscript recovery, 
-                    account resolution, or bug reports.
+                    Help us refine the Lounge. Submit a report directly to our technical stewards.
                   </p>
-                  <Button variant="secondary" className="w-full rounded-xl font-bold gap-2" asChild>
-                    <a href="mailto:support@literarylounge.com">
-                      <Mail className="h-4 w-4" /> Email Support
-                    </a>
+                  <Button 
+                    variant="secondary" 
+                    className="w-full rounded-xl font-bold gap-2"
+                    onClick={() => setIsReportOpen(true)}
+                  >
+                    <MessageSquare className="h-4 w-4" /> Submit Report
                   </Button>
                 </CardContent>
               </Card>
@@ -222,6 +286,60 @@ export default function SupportPage() {
           </div>
         </div>
       </main>
+
+      {/* Report Form Dialog */}
+      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden max-w-lg">
+          <DialogHeader className="pb-4">
+            <DialogTitle className="text-3xl font-headline font-black">Support Report</DialogTitle>
+            <DialogDescription>Your feedback helps us maintain the Lounge's corridors.</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Category</Label>
+              <Select value={reportCategory} onValueChange={setReportCategory}>
+                <SelectTrigger className="h-12 rounded-xl border-muted bg-muted/20">
+                  <SelectValue placeholder="Select issue type" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="Bug">Bug Report</SelectItem>
+                  <SelectItem value="Feature Request">Feature Request</SelectItem>
+                  <SelectItem value="Content Issue">Content Issue</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Description</Label>
+              <Textarea 
+                placeholder="Describe the issue in detail..."
+                className="min-h-[150px] rounded-2xl p-4 bg-muted/20 border-none resize-none"
+                value={reportDescription}
+                onChange={e => setReportDescription(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4 border-t flex flex-col sm:flex-row gap-3">
+            <Button 
+              variant="ghost" 
+              onClick={() => setIsReportOpen(false)}
+              className="rounded-xl font-bold text-muted-foreground"
+            >
+              Cancel
+            </Button>
+            <Button 
+              className="rounded-xl font-bold flex-1 h-12 shadow-lg"
+              disabled={isSubmitting || !reportDescription.trim()}
+              onClick={handleSendReport}
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send to Stewards"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
