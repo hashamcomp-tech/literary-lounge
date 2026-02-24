@@ -103,21 +103,24 @@ export function chunkText(text: string): string[] {
   return chunks.filter(c => c.length > 1);
 }
 
-function getTextHash(text: string): string {
-  return text.substring(0, 50) + text.length;
+function getTextHash(text: string | string[]): string {
+  const source = Array.isArray(text) ? text.join('') : text;
+  return source.substring(0, 50) + source.length;
 }
 
 /**
  * Initiates the sequential narration process.
+ * Accepts either a raw string or a pre-chunked array of strings to ensure perfect sync with UI highlights.
  */
-export async function playTextToSpeech(fullText: string, options: TTSOptions = {}): Promise<void> {
+export async function playTextToSpeech(fullText: string | string[], options: TTSOptions = {}): Promise<void> {
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
   stopTextToSpeech(false);
   
   const sessionId = currentSessionId;
   const hash = getTextHash(fullText);
-  const sentences = chunkText(fullText);
+  const sentences = Array.isArray(fullText) ? fullText : chunkText(fullText);
+  
   if (sentences.length === 0) return;
 
   currentOnChunkStart = options.onChunkStart || null;

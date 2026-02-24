@@ -127,13 +127,13 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       return;
     }
 
-    const fullContent = mergedSegments.map(s => s.text).join(' ');
-    if (!fullContent) return;
+    const sentences = mergedSegments.map(s => s.text);
+    if (sentences.length === 0) return;
     
     const savedSettings = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
     
-    playTextToSpeech(fullContent, { 
+    playTextToSpeech(sentences, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `mock-${novel.id}-${currentChapterIndex}-merged-${mergedRange.length}`,

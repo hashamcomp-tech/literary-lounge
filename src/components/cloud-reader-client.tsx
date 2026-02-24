@@ -234,13 +234,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       return;
     }
 
-    const fullContent = mergedSegments.map(s => s.text).join(' ');
-    if (!fullContent) return;
+    const sentences = mergedSegments.map(s => s.text);
+    if (sentences.length === 0) return;
     
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    playTextToSpeech(fullContent, { 
+    playTextToSpeech(sentences, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `cloud-${id}-${currentChapterNum}-merged-${mergedRange.length}`,
