@@ -44,6 +44,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isLoadingToc, setIsLoadingToc] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
+  const scrollRestoredRef = useRef<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
@@ -56,11 +57,27 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setHighlightEnabled(e.detail.highlightEnabled);
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
+
+    // Scroll Persistence: Save
+    const handleScroll = () => {
+      if (isLoading) return;
+      localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
+    };
+
+    let scrollTimeout: NodeJS.Timeout;
+    const debouncedScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(handleScroll, 500);
+    };
+
+    window.addEventListener('scroll', debouncedScroll);
+
     return () => {
       stopTextToSpeech();
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
+      window.removeEventListener('scroll', debouncedScroll);
     };
-  }, []);
+  }, [id, isLoading]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -136,7 +153,30 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     loadChapter();
     stopTextToSpeech();
     setMergedRange([currentChapterNum]);
+    scrollRestoredRef.current = false;
   }, [firestore, id, currentChapterNum, isOfflineMode]);
+
+  // Scroll Restoration Logic
+  useEffect(() => {
+    if (!isLoading && !scrollRestoredRef.current && mounted) {
+      const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
+      const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
+      
+      // Only restore if the current chapter matches the last read chapter
+      if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
+        setTimeout(() => {
+          window.scrollTo({
+            top: parseInt(savedScroll),
+            behavior: 'smooth'
+          });
+          scrollRestoredRef.current = true;
+        }, 100);
+      } else {
+        window.scrollTo(0, 0);
+        scrollRestoredRef.current = true;
+      }
+    }
+  }, [isLoading, id, currentChapterNum, mounted]);
 
   const loadToc = async () => {
     if (!firestore || !id || tocChapters.length > 0) return;

@@ -34,6 +34,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRestoredRef = useRef<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
@@ -70,6 +71,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     stopTextToSpeech();
     localStorage.setItem(`progress-${novel.id}`, currentChapterIndex.toString());
     setMergedRange([currentChapterIndex]);
+    scrollRestoredRef.current = false;
 
     if (user && !user.isAnonymous && db) {
       const historyRef = doc(db, 'users', user.uid, 'history', novel.id);
@@ -88,10 +90,45 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     }
   }, [currentChapterIndex, novel.id, user, db]);
 
+  // Scroll Persistence Logic for internal scrollRef
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      localStorage.setItem(`lounge-scroll-${novel.id}`, container.scrollTop.toString());
+    };
+
+    let timeout: NodeJS.Timeout;
+    const debounced = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(handleScroll, 500);
+    };
+
+    container.addEventListener('scroll', debounced);
+    return () => container.removeEventListener('scroll', debounced);
+  }, [novel.id]);
+
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
     if (saved) setCurrentChapterIndex(parseInt(saved));
   }, [novel.id]);
+
+  // Restore Scroll Position
+  useEffect(() => {
+    if (mounted && !scrollRestoredRef.current && scrollRef.current) {
+      const savedScroll = localStorage.getItem(`lounge-scroll-${novel.id}`);
+      const savedProgress = localStorage.getItem(`progress-${novel.id}`);
+      
+      if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterIndex) {
+        scrollRef.current.scrollTo({
+          top: parseInt(savedScroll),
+          behavior: 'smooth'
+        });
+        scrollRestoredRef.current = true;
+      }
+    }
+  }, [mounted, currentChapterIndex, novel.id]);
 
   const handleMergeNext = () => {
     setIsMerging(true);

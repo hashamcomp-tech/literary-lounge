@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark, Menu } from 'lucide-react';
@@ -8,10 +8,11 @@ import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-l
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
-import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService } from '@/lib/tts-service';
+import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService, chunkText } from '@/lib/tts-service';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
@@ -23,19 +24,54 @@ export default function LocalReader() {
   const [allChapters, setAllChapters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
 
+  const scrollRestoredRef = useRef<boolean>(false);
+
   useEffect(() => {
     setMounted(true);
-    return () => stopTextToSpeech();
-  }, []);
+    const saved = localStorage.getItem('lounge-voice-settings');
+    if (saved) {
+      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+    }
+
+    const handleSettingsChange = (e: any) => {
+      setHighlightEnabled(e.detail.highlightEnabled);
+    };
+    window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
+
+    // Scroll Persistence: Save
+    const handleScroll = () => {
+      if (loading) return;
+      localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
+    };
+
+    let scrollTimeout: NodeJS.Timeout;
+    const debouncedScroll = () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(handleScroll, 500);
+    };
+
+    window.addEventListener('scroll', debouncedScroll);
+
+    return () => {
+      stopTextToSpeech();
+      window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
+      window.removeEventListener('scroll', debouncedScroll);
+    };
+  }, [id, loading]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const active = isSpeakingService();
-      if (active !== isSpeaking) setIsSpeaking(active);
+      if (active !== isSpeaking) {
+        setIsSpeaking(active);
+        if (!active) setActiveIndex(null);
+      }
     }, 300);
     return () => clearInterval(interval);
   }, [isSpeaking]);
@@ -67,7 +103,29 @@ export default function LocalReader() {
     loadLocalData();
     stopTextToSpeech();
     setMergedRange([currentChapterNum]);
+    scrollRestoredRef.current = false;
   }, [id, currentChapterNum]);
+
+  // Scroll Restoration Logic
+  useEffect(() => {
+    if (!loading && !scrollRestoredRef.current && mounted) {
+      const savedScroll = localStorage.getItem(`lounge-scroll-${id}`);
+      const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
+      
+      if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
+        setTimeout(() => {
+          window.scrollTo({
+            top: parseInt(savedScroll),
+            behavior: 'smooth'
+          });
+          scrollRestoredRef.current = true;
+        }, 100);
+      } else {
+        window.scrollTo(0, 0);
+        scrollRestoredRef.current = true;
+      }
+    }
+  }, [loading, id, currentChapterNum, mounted]);
 
   useEffect(() => {
     if (currentChapterNum && id) {
@@ -86,73 +144,50 @@ export default function LocalReader() {
     setIsMerging(false);
   };
 
+  const mergedSegments = useMemo(() => {
+    const segments: { text: string; chapterNum: number; globalIndex: number }[] = [];
+    let globalCounter = 0;
+    mergedRange.forEach(num => {
+      const ch = allChapters.find(c => Number(c.chapterNumber) === num);
+      if (ch) {
+        const titleText = `Chapter ${num}. ${ch.title || ''}. `;
+        segments.push({ text: titleText, chapterNum: num, globalIndex: globalCounter++ });
+        const contentChunks = chunkText(ch.content || '');
+        contentChunks.forEach(chunk => {
+          segments.push({ text: chunk, chapterNum: num, globalIndex: globalCounter++ });
+        });
+      }
+    });
+    return segments;
+  }, [mergedRange, allChapters]);
+
   const handleReadAloud = async (charOffset?: number) => {
     if (isSpeaking && charOffset === undefined) {
       stopTextToSpeech();
       return;
     }
 
-    const fullContent = mergedRange
-      .map(num => {
-        const ch = allChapters.find(c => Number(c.chapterNumber) === num);
-        return ch ? `Chapter ${num}. ${ch.title || ''}. ${ch.content}` : '';
-      })
-      .join('\n\n');
-
-    if (!fullContent) return;
+    const sentences = mergedSegments.map(s => s.text);
+    if (sentences.length === 0) return;
     
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    playTextToSpeech(fullContent, { 
+    playTextToSpeech(sentences, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `local-${id}-${currentChapterNum}-merged-${mergedRange.length}`,
-      charOffset
+      charOffset,
+      onChunkStart: (index) => setActiveIndex(index)
     });
   };
 
-  const handleJumpToWord = (num: number, paraIdx: number, e: React.MouseEvent) => {
-    let absoluteOffset = 0;
-    
-    for (const n of mergedRange) {
-      if (n === num) {
-        const chapter = allChapters.find(ch => Number(ch.chapterNumber) === n);
-        if (!chapter) break;
-
-        const paragraphs = (chapter.content || '')
-          .replace(/<br\s*\/?>/gi, '\n')
-          .split(/\n\n/)
-          .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-          .filter((p: string) => p.length > 0);
-
-        let localOffset = 0;
-        if ((document as any).caretRangeFromPoint) {
-          const range = (document as any).caretRangeFromPoint(e.clientX, e.clientY);
-          if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
-            localOffset = range.startOffset;
-          }
-        } else if ((document as any).caretPositionFromPoint) {
-          const pos = (document as any).caretPositionFromPoint(e.clientX, e.clientY);
-          if (pos) localOffset = pos.offset;
-        }
-
-        for (let i = 0; i < paraIdx; i++) {
-          localOffset += paragraphs[i].length + 2;
-        }
-        
-        const prefix = `Chapter ${n}. ${chapter.title || ''}. `;
-        absoluteOffset += prefix.length + localOffset;
-        break;
-      } else {
-        const ch = allChapters.find(c => Number(c.chapterNumber) === n);
-        if (ch) {
-          absoluteOffset += `Chapter ${n}. ${ch.title || ''}. ${ch.content}`.length + 2;
-        }
-      }
+  const handleJumpToSegment = (globalIndex: number) => {
+    let offset = 0;
+    for (let i = 0; i < globalIndex; i++) {
+      offset += mergedSegments[i].text.length + 1;
     }
-
-    handleReadAloud(absoluteOffset);
+    handleReadAloud(offset);
   };
 
   if (loading) {
@@ -265,11 +300,9 @@ export default function LocalReader() {
           {mergedRange.map((num) => {
             const ch = allChapters.find(c => Number(c.chapterNumber) === num);
             if (!ch) return null;
-            const paragraphs = (ch.content || '')
-              .replace(/<br\s*\/?>/gi, '\n')
-              .split(/\n\n/)
-              .map((p: string) => p.replace(/<[^>]*>?/gm, '').trim())
-              .filter((p: string) => p.length > 0);
+            
+            const chTitleSegment = mergedSegments.find(s => s.chapterNum === num && s.text.startsWith(`Chapter ${num}`));
+            const chContentSegments = mergedSegments.filter(s => s.chapterNum === num && !s.text.startsWith(`Chapter ${num}`));
 
             return (
               <article key={num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -277,20 +310,29 @@ export default function LocalReader() {
                   <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
                     Chapter {num}
                   </div>
-                  <h2 className="text-4xl font-headline font-black text-primary leading-tight">
+                  <h2 
+                    className={cn(
+                      "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
+                      highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
+                    )}
+                    onClick={() => chTitleSegment && handleJumpToSegment(chTitleSegment.globalIndex)}
+                  >
                     {ch.title || `Chapter ${num}`}
                   </h2>
                 </header>
 
                 <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.6] text-foreground/90 font-body">
-                  {paragraphs.map((para: string, idx: number) => (
-                    <p 
-                      key={idx} 
-                      className="mb-8 cursor-pointer hover:text-foreground transition-colors"
-                      onClick={(e) => handleJumpToWord(num, idx, e)}
+                  {chContentSegments.map((seg) => (
+                    <span 
+                      key={seg.globalIndex}
+                      className={cn(
+                        "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
+                        highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
+                      )}
+                      onClick={() => handleJumpToSegment(seg.globalIndex)}
                     >
-                      {para}
-                    </p>
+                      {seg.text}
+                    </span>
                   ))}
                 </div>
               </article>
