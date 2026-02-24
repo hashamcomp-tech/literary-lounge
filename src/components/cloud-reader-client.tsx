@@ -68,9 +68,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Always save position, even when auto-scrolling
+    // Scroll Persistence: Only save if restoration is finished to avoid overwriting with 0 on load
     const handleScroll = () => {
-      if (isLoading) return;
+      if (isLoading || !isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -87,7 +87,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, isLoading]);
+  }, [id, isLoading, isScrollRestored]);
 
   // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
@@ -203,13 +203,12 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       const savedProgress = localStorage.getItem(`lounge-progress-${id}`);
       
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
+        // Use a slightly longer delay to ensure DOM settle before jump
         setTimeout(() => {
-          window.scrollTo({
-            top: parseInt(savedScroll),
-            behavior: 'smooth'
-          });
-          setIsScrollRestored(true);
-        }, 100);
+          window.scrollTo(0, parseInt(savedScroll));
+          // Small verification timeout before enabling saving/auto-scroll
+          setTimeout(() => setIsScrollRestored(true), 100);
+        }, 150);
       } else {
         window.scrollTo(0, 0);
         setIsScrollRestored(true);

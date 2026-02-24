@@ -141,6 +141,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (!container) return;
 
     const handleScroll = () => {
+      // Guard: Only save if restoration is finished
+      if (!isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${novel.id}`, container.scrollTop.toString());
     };
 
@@ -152,7 +154,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
 
     container.addEventListener('scroll', debounced);
     return () => container.removeEventListener('scroll', debounced);
-  }, [novel.id]);
+  }, [novel.id, isScrollRestored]);
 
   useEffect(() => {
     const saved = localStorage.getItem(`progress-${novel.id}`);
@@ -165,11 +167,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       const savedProgress = localStorage.getItem(`progress-${novel.id}`);
       
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterIndex) {
-        scrollRef.current.scrollTo({
-          top: parseInt(savedScroll),
-          behavior: 'smooth'
-        });
-        setIsScrollRestored(true);
+        const container = scrollRef.current;
+        setTimeout(() => {
+          container.scrollTo(0, parseInt(savedScroll));
+          setTimeout(() => setIsScrollRestored(true), 100);
+        }, 150);
       } else {
         setIsScrollRestored(true);
       }

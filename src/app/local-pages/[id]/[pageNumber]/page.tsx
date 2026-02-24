@@ -54,9 +54,9 @@ export default function LocalReader() {
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence: Always save position, even when auto-scrolling
+    // Scroll Persistence: Only save if restoration is finished
     const handleScroll = () => {
-      if (loading) return;
+      if (loading || !isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
@@ -73,7 +73,7 @@ export default function LocalReader() {
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
       window.removeEventListener('scroll', debouncedScroll);
     };
-  }, [id, loading]);
+  }, [id, loading, isScrollRestored]);
 
   // Unified Scroll Engine: Constant Crawl OR Follow Highlight
   useEffect(() => {
@@ -154,12 +154,9 @@ export default function LocalReader() {
       
       if (savedScroll && savedProgress && parseInt(savedProgress) === currentChapterNum) {
         setTimeout(() => {
-          window.scrollTo({
-            top: parseInt(savedScroll),
-            behavior: 'smooth'
-          });
-          setIsScrollRestored(true);
-        }, 100);
+          window.scrollTo(0, parseInt(savedScroll));
+          setTimeout(() => setIsScrollRestored(true), 100);
+        }, 150);
       } else {
         window.scrollTo(0, 0);
         setIsScrollRestored(true);
