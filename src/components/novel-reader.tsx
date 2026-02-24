@@ -72,7 +72,8 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       const delta = time - lastTime;
       lastTime = time;
       
-      const pixelsPerMs = (scrollSpeed * 12) / 1000;
+      // Speed mapping slowed down from 12 multiplier to 8
+      const pixelsPerMs = (scrollSpeed * 8) / 1000;
       scrollRef.current.scrollTop += (pixelsPerMs * delta);
       
       requestAnimationFrame(scrollLoop);

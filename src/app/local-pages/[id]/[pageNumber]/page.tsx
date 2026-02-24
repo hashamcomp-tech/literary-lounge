@@ -84,8 +84,8 @@ export default function LocalReader() {
       const delta = time - lastTime;
       lastTime = time;
       
-      // Speed mapping: 1 = ~12px/sec, 10 = ~120px/sec
-      const pixelsPerMs = (scrollSpeed * 12) / 1000;
+      // Speed mapping: 1 = ~8px/sec, 10 = ~80px/sec (Slowed down from 12 multiplier)
+      const pixelsPerMs = (scrollSpeed * 8) / 1000;
       window.scrollBy(0, pixelsPerMs * delta);
       
       requestAnimationFrame(scroll);
