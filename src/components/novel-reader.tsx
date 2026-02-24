@@ -67,19 +67,21 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (!autoScrollEnabled || !scrollRef.current) return;
 
     let lastTime = performance.now();
+    let animationId: number;
+
     const scrollLoop = (time: number) => {
-      if (!autoScrollEnabled || !scrollRef.current) return;
       const delta = time - lastTime;
       lastTime = time;
       
-      // Speed mapping slowed down from 8 to 5 for maximum comfort
       const pixelsPerMs = (scrollSpeed * 5) / 1000;
-      scrollRef.current.scrollTop += (pixelsPerMs * delta);
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop += (pixelsPerMs * delta);
+      }
       
-      requestAnimationFrame(scrollLoop);
+      animationId = requestAnimationFrame(scrollLoop);
     };
 
-    const animationId = requestAnimationFrame(scrollLoop);
+    animationId = requestAnimationFrame(scrollLoop);
     return () => cancelAnimationFrame(animationId);
   }, [autoScrollEnabled, scrollSpeed]);
 

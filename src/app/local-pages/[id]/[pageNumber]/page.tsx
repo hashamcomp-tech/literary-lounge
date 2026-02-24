@@ -79,19 +79,19 @@ export default function LocalReader() {
     if (!autoScrollEnabled || loading) return;
 
     let lastTime = performance.now();
+    let animationId: number;
+
     const scroll = (time: number) => {
-      if (!autoScrollEnabled) return;
       const delta = time - lastTime;
       lastTime = time;
       
-      // Speed mapping: 1 = ~5px/sec, 10 = ~50px/sec (Further slowed for maximum comfort)
       const pixelsPerMs = (scrollSpeed * 5) / 1000;
       window.scrollBy(0, pixelsPerMs * delta);
       
-      requestAnimationFrame(scroll);
+      animationId = requestAnimationFrame(scroll);
     };
 
-    const animationId = requestAnimationFrame(scroll);
+    animationId = requestAnimationFrame(scroll);
     return () => cancelAnimationFrame(animationId);
   }, [autoScrollEnabled, scrollSpeed, loading]);
 
@@ -328,7 +328,7 @@ export default function LocalReader() {
 
         <div className="space-y-20">
           {mergedRange.map((num) => {
-            const ch = allChapters.find(c => Number(ch.chapterNumber) === num);
+            const ch = allChapters.find(c => Number(c.chapterNumber) === num);
             if (!ch) return null;
             
             const chTitleSegment = mergedSegments.find(s => s.chapterNum === num && s.text.startsWith(`Chapter ${num}`));

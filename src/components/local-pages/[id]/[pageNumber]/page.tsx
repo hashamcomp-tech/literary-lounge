@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark, Menu } from 'lucide-react';
@@ -29,16 +29,25 @@ export default function LocalReader() {
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isMerging, setIsMerging] = useState(false);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
 
   useEffect(() => {
     setMounted(true);
     const saved = localStorage.getItem('lounge-voice-settings');
     if (saved) {
-      try { setHighlightEnabled(JSON.parse(saved).highlightEnabled ?? true); } catch (e) {}
+      try { 
+        const parsed = JSON.parse(saved);
+        setHighlightEnabled(parsed.highlightEnabled ?? true);
+        setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
+        setScrollSpeed(parsed.scrollSpeed ?? 1);
+      } catch (e) {}
     }
 
     const handleSettingsChange = (e: any) => {
       setHighlightEnabled(e.detail.highlightEnabled);
+      setAutoScrollEnabled(e.detail.autoScrollEnabled);
+      setScrollSpeed(e.detail.scrollSpeed);
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
     return () => {
@@ -46,6 +55,27 @@ export default function LocalReader() {
       window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
     };
   }, []);
+
+  // Auto Scroll Engine
+  useEffect(() => {
+    if (!autoScrollEnabled || loading) return;
+
+    let lastTime = performance.now();
+    let animationId: number;
+
+    const scroll = (time: number) => {
+      const delta = time - lastTime;
+      lastTime = time;
+      
+      const pixelsPerMs = (scrollSpeed * 5) / 1000;
+      window.scrollBy(0, pixelsPerMs * delta);
+      
+      animationId = requestAnimationFrame(scroll);
+    };
+
+    animationId = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(animationId);
+  }, [autoScrollEnabled, scrollSpeed, loading]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -258,7 +288,7 @@ export default function LocalReader() {
 
         <div className="space-y-20">
           {mergedRange.map((num) => {
-            const ch = allChapters.find(c => Number(ch.chapterNumber) === num);
+            const ch = allChapters.find(c => Number(c.chapterNumber) === num);
             if (!ch) return null;
             
             const chTitleSegment = mergedSegments.find(s => s.chapterNum === num && s.text.startsWith(`Chapter ${num}`));

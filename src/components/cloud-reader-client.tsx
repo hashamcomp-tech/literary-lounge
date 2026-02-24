@@ -93,19 +93,19 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (!autoScrollEnabled || isLoading || error) return;
 
     let lastTime = performance.now();
+    let animationId: number;
+
     const scroll = (time: number) => {
-      if (!autoScrollEnabled) return;
       const delta = time - lastTime;
       lastTime = time;
       
-      // Speed mapping: 1 = ~5px/sec, 10 = ~50px/sec (Further slowed for maximum comfort)
       const pixelsPerMs = (scrollSpeed * 5) / 1000;
       window.scrollBy(0, pixelsPerMs * delta);
       
-      requestAnimationFrame(scroll);
+      animationId = requestAnimationFrame(scroll);
     };
 
-    const animationId = requestAnimationFrame(scroll);
+    animationId = requestAnimationFrame(scroll);
     return () => cancelAnimationFrame(animationId);
   }, [autoScrollEnabled, scrollSpeed, isLoading, error]);
 
