@@ -81,7 +81,7 @@ export function UploadNovelForm() {
 
   /**
    * Structure-First Positional Parser
-   * Triggers metadata match and header discard protocol only on specific pattern.
+   * Triggers metadata match but no longer discards headers from content.
    */
   const handleAnalyzePastedText = (text: string) => {
     if (!text || text.length < 10) return;
@@ -117,7 +117,7 @@ export function UploadNovelForm() {
       setChapterNumber(num);
       setChapterTitle(titlePart || `Chapter ${num}`);
       setWasAutoFilled(true);
-      toast({ title: "Series Synchronized", description: `Matched "${existing.title}". Redundant headers will be removed.` });
+      toast({ title: "Series Synchronized", description: `Matched "${existing.title}". Fields autofilled.` });
     } else {
       setWasAutoFilled(false);
     }
@@ -279,20 +279,8 @@ export function UploadNovelForm() {
           manualContent = await selectedFile.text();
         }
       } else {
-        let processedContent = pastedText;
-        if (wasAutoFilled) {
-          const lines = pastedText.split('\n');
-          let skip = 0;
-          let count = 0;
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].trim()) {
-              count++;
-              if (count === 2) { skip = i + 1; break; }
-            }
-          }
-          processedContent = lines.slice(skip).join('\n').trim();
-        }
-        manualContent = processedContent;
+        // UPDATED: Upload exactly what was pasted, no slicing or removal of headers
+        manualContent = pastedText;
       }
 
       setLoadingMessage('Securing to Cloud...');

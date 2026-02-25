@@ -4,16 +4,12 @@ import { uploadCoverImage } from "./upload-cover";
 
 /**
  * Clean manuscript artifacts and normalize whitespace.
- * Purges word-count metadata patterns like [1,473 words].
+ * UPDATED: Now returns the raw text to preserve user formatting as requested.
  */
 export function cleanContent(text: string): string {
   if (!text) return "";
-  return text
-    .replace(/ISBN\s*(?:-13|-10)?[:\s]+[0-9-]{10,17}/gi, "")
-    .replace(/Page\s+\d+\s+of\s+\d+/gi, "")
-    .replace(/\[\s*[\d,.\s]+\s*words\s*\]/gi, "") // Purge formatted word counts
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // Return the text exactly as provided to maintain absolute format fidelity
+  return text;
 }
 
 /**
