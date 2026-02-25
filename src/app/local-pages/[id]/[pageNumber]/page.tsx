@@ -59,7 +59,6 @@ export default function LocalReader() {
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence
     const handleScroll = () => {
       if (loading) return;
       
@@ -87,7 +86,6 @@ export default function LocalReader() {
     };
   }, [id, loading, isScrollRestored, showRestorePrompt]);
 
-  // Unified Scroll Engine
   useEffect(() => {
     if (!autoScrollEnabled || loading || !isScrollRestored) return;
 
@@ -207,21 +205,32 @@ export default function LocalReader() {
     setIsMerging(false);
   };
 
-  const mergedSegments = useMemo(() => {
-    const segments: { text: string; chapterNum: number; globalIndex: number }[] = [];
+  const { structuredChapters, flatSentences } = useMemo(() => {
+    const chapters: any[] = [];
     let globalCounter = 0;
+    const flatSentences: string[] = [];
+
     mergedRange.forEach(num => {
       const ch = allChapters.find(c => Number(c.chapterNumber) === num);
-      if (ch) {
-        const titleText = `Chapter ${num}. ${ch.title || ''}. `;
-        segments.push({ text: titleText, chapterNum: num, globalIndex: globalCounter++ });
-        const contentChunks = chunkText(ch.content || '');
-        contentChunks.forEach(chunk => {
-          segments.push({ text: chunk, chapterNum: num, globalIndex: globalCounter++ });
+      if (!ch) return;
+
+      const titleText = `Chapter ${num}. ${ch.title || ''}. `;
+      const titleSegment = { text: titleText, globalIndex: globalCounter++ };
+      flatSentences.push(titleText);
+
+      const paragraphs = (ch.content || '').split(/\n\s*\n/).map(pText => {
+        const sentences = chunkText(pText).map(s => {
+          const seg = { text: s, globalIndex: globalCounter++ };
+          flatSentences.push(s);
+          return seg;
         });
-      }
+        return { sentences };
+      }).filter(p => p.sentences.length > 0);
+
+      chapters.push({ num, title: ch.title, titleSegment, paragraphs });
     });
-    return segments;
+
+    return { structuredChapters: chapters, flatSentences };
   }, [mergedRange, allChapters]);
 
   const handleReadAloud = async (charOffset?: number) => {
@@ -230,13 +239,12 @@ export default function LocalReader() {
       return;
     }
 
-    const sentences = mergedSegments.map(s => s.text);
-    if (sentences.length === 0) return;
+    if (flatSentences.length === 0) return;
     
     const saved = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = saved ? JSON.parse(saved) : {};
     
-    playTextToSpeech(sentences, { 
+    playTextToSpeech(flatSentences, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `local-${id}-${currentChapterNum}-merged-${mergedRange.length}`,
@@ -248,7 +256,7 @@ export default function LocalReader() {
   const handleJumpToSegment = (globalIndex: number) => {
     let offset = 0;
     for (let i = 0; i < globalIndex; i++) {
-      offset += mergedSegments[i].text.length + 1;
+      offset += flatSentences[i].length + 1;
     }
     handleReadAloud(offset);
   };
@@ -260,24 +268,6 @@ export default function LocalReader() {
         <div className="flex-1 flex flex-col items-center justify-center space-y-4">
           <Loader2 className="h-10 w-10 animate-spin text-primary opacity-20" />
           <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground animate-pulse">Reading Archive...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const firstChapter = allChapters.find(ch => Number(ch.chapterNumber) === currentChapterNum);
-
-  if (!firstChapter) {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Navbar />
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <BookX className="h-16 w-16 text-muted-foreground mb-4 opacity-20" />
-          <h1 className="text-4xl font-headline font-black mb-4">Volume Not Found</h1>
-          <p className="text-muted-foreground max-w-md mb-8">This manuscript or chapter isn't available in your local archive.</p>
-          <Button variant="outline" className="rounded-2xl h-12 px-8 font-bold" onClick={() => router.push('/')}>
-             Return to Library
-          </Button>
         </div>
       </div>
     );
@@ -382,49 +372,45 @@ export default function LocalReader() {
         </header>
 
         <div className="space-y-20">
-          {mergedRange.map((num) => {
-            const ch = allChapters.find(c => Number(c.chapterNumber) === num);
-            if (!ch) return null;
-            
-            const chTitleSegment = mergedSegments.find(s => s.chapterNum === num && s.text.startsWith(`Chapter ${num}`));
-            const chContentSegments = mergedSegments.filter(s => s.chapterNum === num && !s.text.startsWith(`Chapter ${num}`));
-
-            return (
-              <article key={num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <header className="mb-10 border-b border-border/50 pb-10">
-                  <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
-                    Chapter {num}
-                  </div>
-                  <h2 
-                    ref={highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? activeSegmentRef : null}
-                    className={cn(
-                      "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
-                      highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
-                    )}
-                    onClick={() => chTitleSegment && handleJumpToSegment(chTitleSegment.globalIndex)}
-                  >
-                    {ch.title || `Chapter ${num}`}
-                  </h2>
-                </header>
-
-                <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
-                  {chContentSegments.map((seg) => (
-                    <span 
-                      key={seg.globalIndex}
-                      ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
-                      className={cn(
-                        "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
-                        highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
-                      )}
-                      onClick={() => handleJumpToSegment(seg.globalIndex)}
-                    >
-                      {seg.text}
-                    </span>
-                  ))}
+          {structuredChapters.map((chData) => (
+            <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <header className="mb-10 border-b border-border/50 pb-10">
+                <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
+                  Chapter {chData.num}
                 </div>
-              </article>
-            );
-          })}
+                <h2 
+                  ref={highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? activeSegmentRef : null}
+                  className={cn(
+                    "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
+                    highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
+                  )}
+                  onClick={() => handleJumpToSegment(chData.titleSegment.globalIndex)}
+                >
+                  {chData.title || `Chapter ${chData.num}`}
+                </h2>
+              </header>
+
+              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
+                {chData.paragraphs.map((para: any, pIdx: number) => (
+                  <p key={pIdx} className="mb-8">
+                    {para.sentences.map((seg: any) => (
+                      <span 
+                        key={seg.globalIndex}
+                        ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
+                        className={cn(
+                          "inline cursor-pointer transition-all duration-300 rounded px-0.5",
+                          highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
+                        )}
+                        onClick={() => handleJumpToSegment(seg.globalIndex)}
+                      >
+                        {seg.text}{" "}
+                      </span>
+                    ))}
+                  </p>
+                ))}
+              </div>
+            </article>
+          ))}
         </div>
 
         <section className="mt-20 pt-12 border-t border-border/50 space-y-8">

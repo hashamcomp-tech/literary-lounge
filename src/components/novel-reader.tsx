@@ -147,7 +147,6 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     if (!container) return;
 
     const handleScroll = () => {
-      // Auto-dismiss prompt if user scrolls significantly
       if (showRestorePrompt && container.scrollTop > 100) {
         setShowRestorePrompt(false);
         setIsScrollRestored(true);
@@ -217,21 +216,32 @@ export default function NovelReader({ novel }: NovelReaderProps) {
     setIsMerging(false);
   };
 
-  const mergedSegments = useMemo(() => {
-    const segments: { text: string; chapterIdx: number; globalIndex: number }[] = [];
+  const { structuredChapters, flatSentences } = useMemo(() => {
+    const chapters: any[] = [];
     let globalCounter = 0;
+    const flatSentences: string[] = [];
+
     mergedRange.forEach(idx => {
       const ch = novel.chapters[idx];
-      if (ch) {
-        const titleText = `Chapter ${idx + 1}. ${ch.title || ''}. `;
-        segments.push({ text: titleText, chapterIdx: idx, globalIndex: globalCounter++ });
-        const contentChunks = chunkText(ch.content || '');
-        contentChunks.forEach(chunk => {
-          segments.push({ text: chunk, chapterIdx: idx, globalIndex: globalCounter++ });
+      if (!ch) return;
+
+      const titleText = `Chapter ${idx + 1}. ${ch.title || ''}. `;
+      const titleSegment = { text: titleText, globalIndex: globalCounter++ };
+      flatSentences.push(titleText);
+
+      const paragraphs = (ch.content || '').split(/\n\s*\n/).map(pText => {
+        const sentences = chunkText(pText).map(s => {
+          const seg = { text: s, globalIndex: globalCounter++ };
+          flatSentences.push(s);
+          return seg;
         });
-      }
+        return { sentences };
+      }).filter(p => p.sentences.length > 0);
+
+      chapters.push({ idx, title: ch.title, titleSegment, paragraphs });
     });
-    return segments;
+
+    return { structuredChapters: chapters, flatSentences };
   }, [mergedRange, novel.chapters]);
 
   const handleReadAloud = async (charOffset?: number) => {
@@ -240,13 +250,12 @@ export default function NovelReader({ novel }: NovelReaderProps) {
       return;
     }
 
-    const sentences = mergedSegments.map(s => s.text);
-    if (sentences.length === 0) return;
+    if (flatSentences.length === 0) return;
     
     const savedSettings = localStorage.getItem('lounge-voice-settings');
     const voiceOptions = savedSettings ? JSON.parse(savedSettings) : {};
     
-    playTextToSpeech(sentences, { 
+    playTextToSpeech(flatSentences, { 
       voice: voiceOptions.voice,
       rate: voiceOptions.rate || 1.0,
       contextId: `mock-${novel.id}-${currentChapterIndex}-merged-${mergedRange.length}`,
@@ -258,7 +267,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const handleJumpToSegment = (globalIndex: number) => {
     let offset = 0;
     for (let i = 0; i < globalIndex; i++) {
-      offset += mergedSegments[i].text.length + 1;
+      offset += flatSentences[i].length + 1;
     }
     handleReadAloud(offset);
   };
@@ -342,49 +351,45 @@ export default function NovelReader({ novel }: NovelReaderProps) {
           </header>
 
           <div className="space-y-20">
-            {mergedRange.map((idx) => {
-              const ch = novel.chapters[idx];
-              if (!ch) return null;
-              
-              const chTitleSegment = mergedSegments.find(s => s.chapterIdx === idx && s.text.startsWith(`Chapter ${idx + 1}`));
-              const chContentSegments = mergedSegments.filter(s => s.chapterIdx === idx && !s.text.startsWith(`Chapter ${idx + 1}`));
-
-              return (
-                <article key={idx} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <header className="mb-10 border-b border-border/50 pb-10">
-                    <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
-                      Chapter {idx + 1}
-                    </div>
-                    <h2 
-                      ref={highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? activeSegmentRef : null}
-                      className={cn(
-                        "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
-                        highlightEnabled && activeIndex === chTitleSegment?.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
-                      )}
-                      onClick={() => chTitleSegment && handleJumpToSegment(chTitleSegment.globalIndex)}
-                    >
-                      {ch.title}
-                    </h2>
-                  </header>
-
-                  <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
-                    {chContentSegments.map((seg) => (
-                      <span 
-                        key={seg.globalIndex}
-                        ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
-                        className={cn(
-                          "block mb-8 cursor-pointer transition-all duration-300 rounded px-1",
-                          highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
-                        )}
-                        onClick={() => handleJumpToSegment(seg.globalIndex)}
-                      >
-                        {seg.text}
-                      </span>
-                    ))}
+            {structuredChapters.map((chData) => (
+              <article key={chData.idx} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <header className="mb-10 border-b border-border/50 pb-10">
+                  <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
+                    Chapter {chData.idx + 1}
                   </div>
-                </article>
-              );
-            })}
+                  <h2 
+                    ref={highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? activeSegmentRef : null}
+                    className={cn(
+                      "text-4xl font-headline font-black text-primary leading-tight cursor-pointer transition-all duration-300 rounded px-1",
+                      highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80"
+                    )}
+                    onClick={() => handleJumpToSegment(chData.titleSegment.globalIndex)}
+                  >
+                    {chData.title}
+                  </h2>
+                </header>
+
+                <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
+                  {chData.paragraphs.map((para: any, pIdx: number) => (
+                    <p key={pIdx} className="mb-8">
+                      {para.sentences.map((seg: any) => (
+                        <span 
+                          key={seg.globalIndex}
+                          ref={highlightEnabled && activeIndex === seg.globalIndex ? activeSegmentRef : null}
+                          className={cn(
+                            "inline cursor-pointer transition-all duration-300 rounded px-0.5",
+                            highlightEnabled && activeIndex === seg.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)] scale-[1.01]" : "hover:text-foreground"
+                          )}
+                          onClick={() => handleJumpToSegment(seg.globalIndex)}
+                        >
+                          {seg.text}{" "}
+                        </span>
+                      ))}
+                    </p>
+                  ))}
+                </div>
+              </article>
+            ))}
           </div>
 
           <section className="mt-20 pt-12 border-t border-border/50 space-y-8">
