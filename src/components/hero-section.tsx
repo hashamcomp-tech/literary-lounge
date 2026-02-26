@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, ChevronLeft, ChevronRight, Book } from 'lucide-react';
+import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, Book, Info } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -30,6 +30,12 @@ import {
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface HeroSlide {
   id: string;
@@ -133,7 +139,7 @@ export default function HeroSection() {
       
       toast({ 
         title: isVideo ? "Video Ready" : "Image Ready", 
-        description: "Visual assets staged. Click Save to publish globally." 
+        description: "Visual assets staged. Click Publish to save globally." 
       });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Upload Failed", description: err.message });
@@ -184,10 +190,11 @@ export default function HeroSection() {
         <Button 
           variant="outline" 
           size="icon" 
-          className="absolute top-4 right-4 z-20 rounded-full bg-background/80 backdrop-blur opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute top-4 right-4 z-20 rounded-full bg-background/80 backdrop-blur md:opacity-0 md:group-hover:opacity-100 transition-opacity shadow-lg border-primary/20"
           onClick={() => setIsEditing(true)}
+          title="Edit Display Panels"
         >
-          <Edit3 className="h-4 w-4" />
+          <Edit3 className="h-4 w-4 text-primary" />
         </Button>
       )}
 
@@ -277,7 +284,9 @@ export default function HeroSection() {
                 <div className="flex items-center justify-between">
                   <div>
                     <DialogTitle className="text-3xl font-headline font-black">Multi-Display Control</DialogTitle>
-                    <DialogDescription className="text-primary-foreground/70">Manage the carousel rotation for all readers.</DialogDescription>
+                    <DialogDescription className="text-primary-foreground/70">
+                      Curate featured novels and atmospheric backgrounds for all readers.
+                    </DialogDescription>
                   </div>
                   <Button onClick={addSlide} className="bg-white text-primary hover:bg-white/90 rounded-xl font-bold gap-2">
                     <Plus className="h-4 w-4" /> Add Panel
@@ -373,14 +382,27 @@ export default function HeroSection() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Atmosphere Media</Label>
-                      <div className="flex items-center gap-4 p-4 bg-muted/20 rounded-2xl border-2 border-dashed border-muted">
+                      <div className="flex items-center justify-between ml-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Atmosphere Media</Label>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Info className="h-3 w-3 text-muted-foreground opacity-40 cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent className="text-[10px] max-w-[200px] p-2 rounded-xl">
+                              Select a high-resolution image (JPG/PNG) or a short cinematic video (MP4) to play behind the text.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      
+                      <div className="flex items-center gap-4 p-4 bg-muted/20 rounded-2xl border-2 border-dashed border-muted group/upload">
                         {slides[activeSlideIndex]?.backgroundImageURL ? (
                           <div className="relative h-24 w-40 rounded-xl overflow-hidden shadow-inner group/img bg-muted/20 flex items-center justify-center">
                             {slides[activeSlideIndex]?.mediaType === 'video' ? (
                               <div className="flex flex-col items-center justify-center">
                                 <Video className="h-6 w-6 text-primary" />
-                                <span className="text-[8px] font-black uppercase">Video</span>
+                                <span className="text-[8px] font-black uppercase">Video Active</span>
                               </div>
                             ) : (
                               <img src={slides[activeSlideIndex].backgroundImageURL} className="object-cover h-full w-full" alt="Preview" />
@@ -397,14 +419,22 @@ export default function HeroSection() {
                             className="h-24 w-40 rounded-xl border-2 border-dashed border-primary/20 flex flex-col items-center justify-center bg-background cursor-pointer hover:bg-primary/5 transition-colors"
                             onClick={() => fileInputRef.current?.click()}
                           >
-                            {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5 opacity-30" />}
-                            <span className="text-[8px] font-black uppercase mt-1 opacity-40">Upload Media</span>
+                            {isUploading ? (
+                              <div className="flex flex-col items-center">
+                                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                                <span className="text-[8px] font-black uppercase mt-1 text-primary">Uploading...</span>
+                              </div>
+                            ) : (
+                              <>
+                                <ImagePlus className="h-5 w-5 opacity-30 text-primary" />
+                                <span className="text-[8px] font-black uppercase mt-1 opacity-40">Upload Media</span>
+                              </>
+                            )}
                           </div>
                         )}
                         <div className="flex-1">
                           <p className="text-[10px] text-muted-foreground leading-relaxed italic">
-                            Select a high-resolution image or short video. 
-                            Media will be subtle behind text.
+                            Click the box to upload. Media will be displayed with a subtle overlay behind the text content.
                           </p>
                         </div>
                       </div>
