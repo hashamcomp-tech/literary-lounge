@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage } from '@/firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage, useCollection } from '@/firebase';
+import { doc, setDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, Book, Info } from 'lucide-react';
+import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, Book, Info, Search } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +36,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Badge } from '@/components/ui/badge';
 
 interface HeroSlide {
   id: string;
@@ -46,12 +47,13 @@ interface HeroSlide {
   backgroundImageURL: string;
   mediaType: 'image' | 'video';
   bookId?: string;
+  bookTitle?: string; // Cache for display during editing
 }
 
 /**
  * @fileOverview Dynamic Landing Page Hero Carousel.
  * Allows administrators to curate multiple display panels in real-time.
- * Each slide can feature a specific novel with a "Read Now" targeting system.
+ * Features Slide Deletion and Name-Based Novel Linking.
  */
 export default function HeroSection() {
   const db = useFirestore();
@@ -70,11 +72,15 @@ export default function HeroSection() {
   const [slides, setSlides] = useState<HeroSlide[]>([]);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
 
+  // Novel Search State
+  const [bookSearch, setBookSearch] = useState('');
+  const [bookSuggestions, setBookSuggestions] = useState<any[]>([]);
+  const [isSearchingBooks, setIsSearchingBooks] = useState(false);
+
   useEffect(() => {
     if (heroConfig?.slides && heroConfig.slides.length > 0) {
       setSlides(heroConfig.slides);
     } else {
-      // Default initial slide if none exists
       setSlides([{
         id: 'default',
         headline: "Escape into a <span class='text-primary italic'>new world</span> today.",
@@ -172,11 +178,39 @@ export default function HeroSection() {
     setActiveSlideIndex(Math.max(0, index - 1));
   };
 
-  const updateActiveSlide = (key: keyof HeroSlide, value: string) => {
+  const updateActiveSlide = (key: keyof HeroSlide, value: any) => {
     const updated = [...slides];
     updated[activeSlideIndex] = { ...updated[activeSlideIndex], [key]: value };
     setSlides(updated);
   };
+
+  // Novel Search Logic
+  useEffect(() => {
+    if (bookSearch.length < 2 || !db) {
+      setBookSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingBooks(true);
+      try {
+        const q = query(
+          collection(db, 'books'),
+          where('titleLower', '>=', bookSearch.toLowerCase()),
+          where('titleLower', '<=', bookSearch.toLowerCase() + '\uf8ff'),
+          limit(5)
+        );
+        const snap = await getDocs(q);
+        setBookSuggestions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) {
+        console.error("Book search failed", e);
+      } finally {
+        setIsSearchingBooks(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [bookSearch, db]);
 
   if (isLoading) {
     return <div className="h-[400px] w-full bg-muted/20 animate-pulse rounded-[2.5rem] mb-12" />;
@@ -301,22 +335,23 @@ export default function HeroSection() {
                 <ScrollArea className="flex-1">
                   <div className="p-4 space-y-2">
                     {slides.map((s, i) => (
-                      <button
-                        key={s.id}
-                        onClick={() => setActiveSlideIndex(i)}
-                        className={`w-full text-left p-4 rounded-2xl border transition-all flex flex-col gap-1 group relative ${activeSlideIndex === i ? 'bg-primary border-primary text-white shadow-lg' : 'bg-card border-transparent hover:border-primary/20'}`}
-                      >
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${activeSlideIndex === i ? 'text-white/60' : 'text-muted-foreground'}`}>Panel {i + 1}</span>
-                        <span className="font-bold text-xs truncate" dangerouslySetInnerHTML={{ __html: s.headline.replace(/<[^>]*>?/gm, '') }} />
-                        {slides.length > 1 && (
-                          <div 
-                            className={`absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-red-500/20 text-red-500`}
-                            onClick={(e) => { e.stopPropagation(); removeSlide(i); }}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </div>
-                        )}
-                      </button>
+                      <div key={s.id} className="relative group/sidebar-item">
+                        <button
+                          onClick={() => setActiveSlideIndex(i)}
+                          className={`w-full text-left p-4 pr-10 rounded-2xl border transition-all flex flex-col gap-1 ${activeSlideIndex === i ? 'bg-primary border-primary text-white shadow-lg' : 'bg-card border-transparent hover:border-primary/20'}`}
+                        >
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${activeSlideIndex === i ? 'text-white/60' : 'text-muted-foreground'}`}>Panel {i + 1}</span>
+                          <span className="font-bold text-xs truncate" dangerouslySetInnerHTML={{ __html: s.headline.replace(/<[^>]*>?/gm, '') }} />
+                        </button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className={`absolute top-1/2 -translate-y-1/2 right-2 h-7 w-7 text-red-500 hover:bg-red-500/20 rounded-lg opacity-0 group-hover/sidebar-item:opacity-100 transition-opacity ${activeSlideIndex === i ? 'text-white hover:bg-white/20' : ''}`}
+                          onClick={(e) => { e.stopPropagation(); removeSlide(i); }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     ))}
                   </div>
                 </ScrollArea>
@@ -368,17 +403,63 @@ export default function HeroSection() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Novel Link (Optional Book ID)</Label>
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Featured Novel (Link by Title)</Label>
                       <div className="relative">
-                        <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary opacity-40" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-40" />
                         <Input 
-                          value={slides[activeSlideIndex]?.bookId || ''} 
-                          onChange={e => updateActiveSlide('bookId', e.target.value)}
-                          placeholder="Enter Book ID to link 'Read Now' button"
+                          value={bookSearch} 
+                          onChange={e => setBookSearch(e.target.value)}
+                          placeholder={slides[activeSlideIndex]?.bookTitle || "Search titles to link..."}
                           className="h-12 rounded-xl pl-10"
                         />
+                        {isSearchingBooks && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-primary" />}
                       </div>
-                      <p className="text-[9px] text-muted-foreground italic ml-1">If provided, the button will target the specific cloud manuscript.</p>
+                      
+                      {bookSuggestions.length > 0 && (
+                        <div className="bg-card border rounded-xl shadow-xl overflow-hidden mt-1 animate-in fade-in zoom-in-95">
+                          {bookSuggestions.map(book => (
+                            <button
+                              key={book.id}
+                              onClick={() => {
+                                updateActiveSlide('bookId', book.id);
+                                updateActiveSlide('bookTitle', book.title || book.metadata?.info?.bookTitle);
+                                setBookSearch('');
+                                setBookSuggestions([]);
+                                toast({ title: "Novel Linked", description: `Linked to "${book.title || book.metadata?.info?.bookTitle}"` });
+                              }}
+                              className="w-full text-left p-3 hover:bg-primary/5 flex items-center gap-3 transition-colors border-b last:border-none"
+                            >
+                              <Book className="h-4 w-4 text-primary opacity-40" />
+                              <div className="flex-1">
+                                <p className="text-sm font-bold">{book.title || book.metadata?.info?.bookTitle}</p>
+                                <p className="text-[10px] text-muted-foreground">By {book.author || book.metadata?.info?.author}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {slides[activeSlideIndex]?.bookId && (
+                        <div className="flex items-center justify-between p-3 bg-primary/5 rounded-xl border border-primary/10">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-3 w-3 text-primary" />
+                            <span className="text-[11px] font-bold text-primary truncate max-w-[200px]">
+                              Linked: {slides[activeSlideIndex].bookTitle || "Volume Active"}
+                            </span>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6 text-muted-foreground hover:text-red-500"
+                            onClick={() => {
+                              updateActiveSlide('bookId', '');
+                              updateActiveSlide('bookTitle', '');
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
