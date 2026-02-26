@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -6,7 +5,7 @@ import Link from 'next/link';
 import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, ChevronLeft, ChevronRight, Book } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -30,6 +29,7 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface HeroSlide {
   id: string;
