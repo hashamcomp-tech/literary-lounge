@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video } from 'lucide-react';
+import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -22,11 +22,30 @@ import { useToast } from '@/hooks/use-toast';
 import { optimizeCoverImage } from '@/lib/image-utils';
 import { uploadCoverImage } from '@/lib/upload-cover';
 import Image from 'next/image';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
+import Autoplay from "embla-carousel-autoplay";
+
+interface HeroSlide {
+  id: string;
+  headline: string;
+  subheadline: string;
+  tagline: string;
+  buttonText: string;
+  backgroundImageURL: string;
+  mediaType: 'image' | 'video';
+  bookId?: string;
+}
 
 /**
- * @fileOverview Dynamic Landing Page Hero.
- * Allows administrators to customize the welcome experience in real-time.
- * Supports both Image and Short Video backgrounds.
+ * @fileOverview Dynamic Landing Page Hero Carousel.
+ * Allows administrators to curate multiple display panels in real-time.
+ * Each slide can feature a specific novel with a "Read Now" targeting system.
  */
 export default function HeroSection() {
   const db = useFirestore();
@@ -40,29 +59,27 @@ export default function HeroSection() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const heroRef = useMemoFirebase(() => db ? doc(db, 'settings', 'hero') : null, [db]);
-  const { data: heroData, isLoading } = useDoc(heroRef);
+  const { data: heroConfig, isLoading } = useDoc(heroRef);
 
-  const [form, setForm] = useState({
-    headline: '',
-    subheadline: '',
-    tagline: '',
-    buttonText: '',
-    backgroundImageURL: '',
-    mediaType: 'image' as 'image' | 'video'
-  });
+  const [slides, setSlides] = useState<HeroSlide[]>([]);
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0);
 
   useEffect(() => {
-    if (heroData) {
-      setForm({
-        headline: heroData.headline || '',
-        subheadline: heroData.subheadline || '',
-        tagline: heroData.tagline || '',
-        buttonText: heroData.buttonText || '',
-        backgroundImageURL: heroData.backgroundImageURL || '',
-        mediaType: heroData.mediaType || 'image'
-      });
+    if (heroConfig?.slides && heroConfig.slides.length > 0) {
+      setSlides(heroConfig.slides);
+    } else {
+      // Default initial slide if none exists
+      setSlides([{
+        id: 'default',
+        headline: "Escape into a <span class='text-primary italic'>new world</span> today.",
+        subheadline: "Explore a sanctuary of hand-picked literature. Your next great chapter is waiting in the Lounge.",
+        tagline: "Curation • Connection • Comfort",
+        buttonText: "Explore Library",
+        backgroundImageURL: "",
+        mediaType: 'image'
+      }]);
     }
-  }, [heroData]);
+  }, [heroConfig]);
 
   // Admin Check
   const profileRef = useMemoFirebase(() => (db && user && !user.isAnonymous) ? doc(db, 'users', user.uid) : null, [db, user]);
@@ -74,11 +91,11 @@ export default function HeroSection() {
     setIsSaving(true);
     try {
       await setDoc(doc(db, 'settings', 'hero'), {
-        ...form,
+        slides: slides,
         updatedAt: serverTimestamp()
       }, { merge: true });
       
-      toast({ title: "Display Updated", description: "The Lounge's welcome identity has been synchronized." });
+      toast({ title: "Lounge Identity Updated", description: "The multi-display rotation has been synchronized." });
       setIsEditing(false);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Update Failed", description: "Permissions restricted." });
@@ -97,25 +114,26 @@ export default function HeroSection() {
       let fileToUpload: File;
 
       if (isVideo) {
-        // Skip optimization for videos to preserve codec and quality
         fileToUpload = file;
       } else {
-        const optimizedBlob = await optimizeCoverImage(file, 1920); // Higher res for hero
+        const optimizedBlob = await optimizeCoverImage(file, 1920);
         fileToUpload = new File([optimizedBlob], `hero_bg_${Date.now()}.jpg`, { type: 'image/jpeg' });
       }
       
-      // Reusing cover upload logic for hero assets
-      const url = await uploadCoverImage(storage, fileToUpload, 'global_hero');
+      const url = await uploadCoverImage(storage, fileToUpload, `hero_slide_${Date.now()}`);
       if (!url) throw new Error("Cloud rejection.");
 
-      setForm(prev => ({ 
-        ...prev, 
+      const updatedSlides = [...slides];
+      updatedSlides[activeSlideIndex] = {
+        ...updatedSlides[activeSlideIndex],
         backgroundImageURL: url,
         mediaType: isVideo ? 'video' : 'image'
-      }));
+      };
+      setSlides(updatedSlides);
+      
       toast({ 
-        title: isVideo ? "Video Prepared" : "Image Prepared", 
-        description: "Preview loaded. Click Save to publish globally." 
+        title: isVideo ? "Video Ready" : "Image Ready", 
+        description: "Visual assets staged. Click Save to publish globally." 
       });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Upload Failed", description: err.message });
@@ -124,18 +142,41 @@ export default function HeroSection() {
     }
   };
 
-  const display = {
-    headline: heroData?.headline || "Escape into a <span class='text-primary italic'>new world</span> today.",
-    subheadline: heroData?.subheadline || "Explore a sanctuary of hand-picked literature. Your next great chapter is waiting in the Lounge.",
-    tagline: heroData?.tagline || "Curation • Connection • Comfort",
-    buttonText: heroData?.buttonText || "Explore Library",
-    backgroundImageURL: heroData?.backgroundImageURL || "",
-    mediaType: heroData?.mediaType || 'image'
+  const addSlide = () => {
+    const newSlide: HeroSlide = {
+      id: `slide_${Date.now()}`,
+      headline: "New Featured <span class='text-primary italic'>Story</span>",
+      subheadline: "Describe why this novel deserves the reader's attention.",
+      tagline: "New Arrival",
+      buttonText: "Read Now",
+      backgroundImageURL: "",
+      mediaType: 'image'
+    };
+    setSlides([...slides, newSlide]);
+    setActiveSlideIndex(slides.length);
+  };
+
+  const removeSlide = (index: number) => {
+    if (slides.length <= 1) {
+      toast({ variant: "destructive", title: "Action Blocked", description: "The Lounge requires at least one display panel." });
+      return;
+    }
+    const updated = slides.filter((_, i) => i !== index);
+    setSlides(updated);
+    setActiveSlideIndex(Math.max(0, index - 1));
+  };
+
+  const updateActiveSlide = (key: keyof HeroSlide, value: string) => {
+    const updated = [...slides];
+    updated[activeSlideIndex] = { ...updated[activeSlideIndex], [key]: value };
+    setSlides(updated);
   };
 
   if (isLoading) {
     return <div className="h-[400px] w-full bg-muted/20 animate-pulse rounded-[2.5rem] mb-12" />;
   }
+
+  const autoplayPlugin = Autoplay({ delay: 6000, stopOnInteraction: true });
 
   return (
     <section className="mb-12 group relative">
@@ -150,167 +191,242 @@ export default function HeroSection() {
         </Button>
       )}
 
-      <div className="bg-primary/5 rounded-[2.5rem] p-8 sm:p-16 mb-8 relative overflow-hidden border border-primary/10 min-h-[400px] flex items-center">
-        {display.backgroundImageURL && (
-          <div className="absolute inset-0 z-0">
-            {display.mediaType === 'video' ? (
-              <video 
-                src={display.backgroundImageURL} 
-                autoPlay 
-                loop 
-                muted 
-                playsInline 
-                className="object-cover w-full h-full opacity-20 transition-opacity duration-1000"
-              />
-            ) : (
-              <Image 
-                src={display.backgroundImageURL} 
-                alt="Lounge Background" 
-                fill 
-                className="object-cover opacity-20 transition-opacity duration-1000"
-                priority
-              />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent" />
-          </div>
-        )}
-
-        <div className="max-w-2xl relative z-10">
-          <div className="flex items-center gap-2 mb-6">
-            <span className="h-px w-8 bg-primary/40" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">
-              {display.tagline}
-            </span>
-          </div>
-          <h1 
-            className="text-5xl sm:text-7xl font-headline font-black mb-6 leading-[1.1]"
-            dangerouslySetInnerHTML={{ __html: display.headline }}
-          />
-          <p className="text-xl text-muted-foreground/80 mb-10 leading-relaxed font-medium">
-            {display.subheadline}
-          </p>
-          <div className="flex gap-4">
-            <Link href="/explore">
-              <button className="bg-primary text-primary-foreground px-8 py-4 rounded-2xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">
-                {display.buttonText}
-              </button>
-            </Link>
-          </div>
-        </div>
-
-        {/* Dynamic Decor Icons */}
-        {!display.backgroundImageURL && (
-          <>
-            <div className="absolute -right-20 -bottom-20 w-[40rem] h-[40rem] bg-accent/5 rounded-full blur-[100px] pointer-events-none" />
-            <div className="absolute right-12 top-12 opacity-[0.03] pointer-events-none">
-              <svg width="240" height="240" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-              </svg>
-            </div>
-          </>
-        )}
-      </div>
-
-      <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="max-w-2xl rounded-[2.5rem] border-none shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-3xl font-headline font-black">Lounge Identity</DialogTitle>
-            <DialogDescription>Modify the landing page display for all readers.</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-6 py-4">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Headline (HTML Allowed)</Label>
-              <Input 
-                value={form.headline} 
-                onChange={e => setForm(p => ({ ...p, headline: e.target.value }))}
-                placeholder="Escape into a new world..."
-                className="h-12 rounded-xl"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Subheadline</Label>
-              <Textarea 
-                value={form.subheadline} 
-                onChange={e => setForm(p => ({ ...p, subheadline: e.target.value }))}
-                placeholder="Describe the experience..."
-                className="min-h-[80px] rounded-xl"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Tagline</Label>
-                <Input 
-                  value={form.tagline} 
-                  onChange={e => setForm(p => ({ ...p, tagline: e.target.value }))}
-                  placeholder="Curation • Connection..."
-                  className="h-12 rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Button Label</Label>
-                <Input 
-                  value={form.buttonText} 
-                  onChange={e => setForm(p => ({ ...p, buttonText: e.target.value }))}
-                  placeholder="Explore Library"
-                  className="h-12 rounded-xl"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Atmosphere Media (Image/Video)</Label>
-              <div className="flex items-center gap-4">
-                {form.backgroundImageURL ? (
-                  <div className="relative h-20 w-32 rounded-xl overflow-hidden shadow-inner group/img bg-muted/20 flex items-center justify-center">
-                    {form.mediaType === 'video' ? (
-                      <div className="flex flex-col items-center justify-center">
-                        <Video className="h-6 w-6 text-primary" />
-                        <span className="text-[8px] font-black uppercase">Video</span>
-                      </div>
+      <Carousel 
+        plugins={[autoplayPlugin]}
+        className="w-full"
+        opts={{
+          loop: true,
+        }}
+      >
+        <CarouselContent>
+          {slides.map((slide) => (
+            <CarouselItem key={slide.id}>
+              <div className="bg-primary/5 rounded-[2.5rem] p-8 sm:p-16 relative overflow-hidden border border-primary/10 min-h-[450px] flex items-center">
+                {slide.backgroundImageURL && (
+                  <div className="absolute inset-0 z-0">
+                    {slide.mediaType === 'video' ? (
+                      <video 
+                        src={slide.backgroundImageURL} 
+                        autoPlay 
+                        loop 
+                        muted 
+                        playsInline 
+                        className="object-cover w-full h-full opacity-20"
+                      />
                     ) : (
-                      <img src={form.backgroundImageURL} className="object-cover h-full w-full" alt="Hero Background" />
+                      <Image 
+                        src={slide.backgroundImageURL} 
+                        alt="Background" 
+                        fill 
+                        className="object-cover opacity-20"
+                        priority
+                      />
                     )}
-                    <button 
-                      className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
-                      onClick={() => setForm(p => ({ ...p, backgroundImageURL: '', mediaType: 'image' }))}
-                    >
-                      <X className="h-5 w-5 text-white" />
-                    </button>
-                  </div>
-                ) : (
-                  <div 
-                    className="h-20 w-32 rounded-xl border-2 border-dashed flex flex-col items-center justify-center bg-muted/20 cursor-pointer hover:bg-muted/40 transition-colors"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5 opacity-30" />}
-                    <span className="text-[8px] font-black uppercase mt-1 opacity-40">Upload</span>
+                    <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent" />
                   </div>
                 )}
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={onFileChange} />
-                <div className="flex-1">
-                  <p className="text-[10px] text-muted-foreground leading-relaxed italic">
-                    Choose a high-definition image or short video to set the mood. 
-                    The background will be subtly faded to ensure readability.
+
+                <div className="max-w-2xl relative z-10">
+                  <div className="flex items-center gap-2 mb-6">
+                    <span className="h-px w-8 bg-primary/40" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">
+                      {slide.tagline}
+                    </span>
+                  </div>
+                  <h1 
+                    className="text-5xl sm:text-7xl font-headline font-black mb-6 leading-[1.1]"
+                    dangerouslySetInnerHTML={{ __html: slide.headline }}
+                  />
+                  <p className="text-xl text-muted-foreground/80 mb-10 leading-relaxed font-medium">
+                    {slide.subheadline}
                   </p>
+                  <div className="flex gap-4">
+                    <Link href={slide.bookId ? `/pages/${slide.bookId}/1` : '/explore'}>
+                      <button className="bg-primary text-primary-foreground px-8 py-4 rounded-2xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all">
+                        {slide.buttonText}
+                      </button>
+                    </Link>
+                  </div>
+                </div>
+
+                {!slide.backgroundImageURL && (
+                  <>
+                    <div className="absolute -right-20 -bottom-20 w-[40rem] h-[40rem] bg-accent/5 rounded-full blur-[100px] pointer-events-none" />
+                    <div className="absolute right-12 top-12 opacity-[0.03] pointer-events-none">
+                      <Book className="h-60 w-60" />
+                    </div>
+                  </>
+                )}
+              </div>
+            </CarouselItem>
+          ))}
+        </CarouselContent>
+        {slides.length > 1 && (
+          <div className="hidden sm:block">
+            <CarouselPrevious className="left-4 bg-background/50 backdrop-blur-sm border-none h-12 w-12" />
+            <CarouselNext className="right-4 bg-background/50 backdrop-blur-sm border-none h-12 w-12" />
+          </div>
+        )}
+      </Carousel>
+
+      <Dialog open={isEditing} onOpenChange={setIsEditing}>
+        <DialogContent className="max-w-3xl rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
+          <div className="flex flex-col h-[85vh]">
+            <div className="bg-primary p-8 text-primary-foreground">
+              <DialogHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <DialogTitle className="text-3xl font-headline font-black">Multi-Display Control</DialogTitle>
+                    <DialogDescription className="text-primary-foreground/70">Manage the carousel rotation for all readers.</DialogDescription>
+                  </div>
+                  <Button onClick={addSlide} className="bg-white text-primary hover:bg-white/90 rounded-xl font-bold gap-2">
+                    <Plus className="h-4 w-4" /> Add Panel
+                  </Button>
+                </div>
+              </DialogHeader>
+            </div>
+
+            <div className="flex flex-1 overflow-hidden">
+              {/* Sidebar: Slide List */}
+              <div className="w-64 border-r bg-muted/20 flex flex-col">
+                <ScrollArea className="flex-1">
+                  <div className="p-4 space-y-2">
+                    {slides.map((s, i) => (
+                      <button
+                        key={s.id}
+                        onClick={() => setActiveSlideIndex(i)}
+                        className={`w-full text-left p-4 rounded-2xl border transition-all flex flex-col gap-1 group relative ${activeSlideIndex === i ? 'bg-primary border-primary text-white shadow-lg' : 'bg-card border-transparent hover:border-primary/20'}`}
+                      >
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${activeSlideIndex === i ? 'text-white/60' : 'text-muted-foreground'}`}>Panel {i + 1}</span>
+                        <span className="font-bold text-xs truncate" dangerouslySetInnerHTML={{ __html: s.headline.replace(/<[^>]*>?/gm, '') }} />
+                        {slides.length > 1 && (
+                          <div 
+                            className={`absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-red-500/20 text-red-500`}
+                            onClick={(e) => { e.stopPropagation(); removeSlide(i); }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              {/* Main Content: Slide Editor */}
+              <div className="flex-1 overflow-y-auto p-8">
+                <div className="space-y-6">
+                  <div className="grid gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Headline (HTML Allowed)</Label>
+                      <Input 
+                        value={slides[activeSlideIndex]?.headline || ''} 
+                        onChange={e => updateActiveSlide('headline', e.target.value)}
+                        placeholder="Featured Novel..."
+                        className="h-12 rounded-xl"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Subheadline</Label>
+                      <Textarea 
+                        value={slides[activeSlideIndex]?.subheadline || ''} 
+                        onChange={e => updateActiveSlide('subheadline', e.target.value)}
+                        placeholder="Tell the readers why this story matters..."
+                        className="min-h-[80px] rounded-xl resize-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Atmosphere Tag</Label>
+                        <Input 
+                          value={slides[activeSlideIndex]?.tagline || ''} 
+                          onChange={e => updateActiveSlide('tagline', e.target.value)}
+                          placeholder="Trending Now"
+                          className="h-12 rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Button Label</Label>
+                        <Input 
+                          value={slides[activeSlideIndex]?.buttonText || ''} 
+                          onChange={e => updateActiveSlide('buttonText', e.target.value)}
+                          placeholder="Read Now"
+                          className="h-12 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Novel Link (Optional Book ID)</Label>
+                      <div className="relative">
+                        <Sparkles className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary opacity-40" />
+                        <Input 
+                          value={slides[activeSlideIndex]?.bookId || ''} 
+                          onChange={e => updateActiveSlide('bookId', e.target.value)}
+                          placeholder="Enter Book ID to link 'Read Now' button"
+                          className="h-12 rounded-xl pl-10"
+                        />
+                      </div>
+                      <p className="text-[9px] text-muted-foreground italic ml-1">If provided, the button will target the specific cloud manuscript.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Atmosphere Media</Label>
+                      <div className="flex items-center gap-4 p-4 bg-muted/20 rounded-2xl border-2 border-dashed border-muted">
+                        {slides[activeSlideIndex]?.backgroundImageURL ? (
+                          <div className="relative h-24 w-40 rounded-xl overflow-hidden shadow-inner group/img bg-muted/20 flex items-center justify-center">
+                            {slides[activeSlideIndex]?.mediaType === 'video' ? (
+                              <div className="flex flex-col items-center justify-center">
+                                <Video className="h-6 w-6 text-primary" />
+                                <span className="text-[8px] font-black uppercase">Video</span>
+                              </div>
+                            ) : (
+                              <img src={slides[activeSlideIndex].backgroundImageURL} className="object-cover h-full w-full" alt="Preview" />
+                            )}
+                            <button 
+                              className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
+                              onClick={() => updateActiveSlide('backgroundImageURL', '')}
+                            >
+                              <X className="h-5 w-5 text-white" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div 
+                            className="h-24 w-40 rounded-xl border-2 border-dashed border-primary/20 flex flex-col items-center justify-center bg-background cursor-pointer hover:bg-primary/5 transition-colors"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            {isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5 opacity-30" />}
+                            <span className="text-[8px] font-black uppercase mt-1 opacity-40">Upload Media</span>
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-[10px] text-muted-foreground leading-relaxed italic">
+                            Select a high-resolution image or short video. 
+                            Media will be subtle behind text.
+                          </p>
+                        </div>
+                      </div>
+                      <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={onFileChange} />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <DialogFooter className="pt-4 border-t flex gap-3">
-            <Button variant="ghost" onClick={() => setIsEditing(false)} className="rounded-xl font-bold text-muted-foreground">Cancel</Button>
-            <Button 
-              className="rounded-xl font-black uppercase text-[10px] tracking-widest px-8 shadow-lg"
-              disabled={isSaving || isUploading}
-              onClick={handleSave}
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Publish Display
-            </Button>
-          </DialogFooter>
+            <div className="p-6 border-t bg-card flex justify-end gap-3">
+              <Button variant="ghost" onClick={() => setIsEditing(false)} className="rounded-xl font-bold text-muted-foreground">Cancel</Button>
+              <Button 
+                className="rounded-xl font-black uppercase text-[10px] tracking-widest px-10 h-12 shadow-lg"
+                disabled={isSaving || isUploading}
+                onClick={handleSave}
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                Publish Displays
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </section>

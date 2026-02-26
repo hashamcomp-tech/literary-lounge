@@ -64,9 +64,9 @@
       },
       "required": ["email", "category", "description", "status"]
     },
-    "HeroSettings": {
-      "title": "Hero Settings",
-      "description": "Configuration for the landing page hero section.",
+    "HeroSlide": {
+      "title": "Hero Slide",
+      "description": "Configuration for a single display panel in the hero section.",
       "type": "object",
       "properties": {
         "headline": { "type": "string" },
@@ -74,7 +74,16 @@
         "buttonText": { "type": "string" },
         "backgroundImageURL": { "type": "string" },
         "tagline": { "type": "string" },
-        "mediaType": { "type": "string", "enum": ["image", "video"] }
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "bookId": { "type": "string", "description": "Optional ID of a novel to link to." }
+      }
+    },
+    "HeroConfig": {
+      "title": "Hero Configuration",
+      "description": "Global settings for the multi-slide landing page hero.",
+      "type": "object",
+      "properties": {
+        "slides": { "type": "array", "items": { "$ref": "#/entities/HeroSlide" } }
       }
     }
   },
@@ -87,6 +96,6 @@
     "/books/{bookId}": { "schema": { "$ref": "#/entities/Book" }, "description": "Main cloud library storage." },
     "/activityLogs/{logId}": { "schema": { "$ref": "#/entities/ActivityLog" }, "description": "Global trail of reader movements." },
     "/supportReports/{reportId}": { "schema": { "$ref": "#/entities/SupportReport" }, "description": "User feedback channel." },
-    "/settings/hero": { "schema": { "$ref": "#/entities/HeroSettings" }, "description": "Global landing page configuration." }
+    "/settings/hero": { "schema": { "$ref": "#/entities/HeroConfig" }, "description": "Global landing page configuration." }
   }
 }
