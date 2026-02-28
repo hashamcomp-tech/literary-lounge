@@ -70,6 +70,7 @@
       "type": "object",
       "properties": {
         "headline": { "type": "string" },
+        "headlineSize": { "type": "string", "description": "Tailwind text size class for responsive heading." },
         "subheadline": { "type": "string" },
         "buttonText": { "type": "string" },
         "backgroundImageURL": { "type": "string" },

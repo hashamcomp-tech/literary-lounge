@@ -1,11 +1,12 @@
+
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage, useCollection } from '@/firebase';
+import { useFirestore, useUser, useDoc, useMemoFirebase, useStorage } from '@/firebase';
 import { doc, setDoc, serverTimestamp, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, Book, Info, Search } from 'lucide-react';
+import { Edit3, Loader2, ImagePlus, Save, X, Sparkles, Video, Plus, Trash2, Book, Info, Search, Type } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,13 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import Autoplay from "embla-carousel-autoplay";
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -37,23 +45,33 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface HeroSlide {
   id: string;
   headline: string;
+  headlineSize?: string;
   subheadline: string;
   tagline: string;
   buttonText: string;
   backgroundImageURL: string;
   mediaType: 'image' | 'video';
   bookId?: string;
-  bookTitle?: string; // Cache for display during editing
+  bookTitle?: string; 
 }
+
+const HEADING_SIZES = [
+  { label: 'Small', value: 'text-4xl sm:text-5xl' },
+  { label: 'Medium', value: 'text-5xl sm:text-6xl' },
+  { label: 'Standard', value: 'text-5xl sm:text-7xl' },
+  { label: 'Large', value: 'text-6xl sm:text-8xl' },
+  { label: 'Extra Large', value: 'text-7xl sm:text-9xl' },
+];
 
 /**
  * @fileOverview Dynamic Landing Page Hero Carousel.
  * Allows administrators to curate multiple display panels in real-time.
- * Features Slide Deletion and Name-Based Novel Linking.
+ * Features Slide Deletion, Name-Based Novel Linking, and Custom Heading Sizes.
  */
 export default function HeroSection() {
   const db = useFirestore();
@@ -84,6 +102,7 @@ export default function HeroSection() {
       setSlides([{
         id: 'default',
         headline: "Escape into a <span class='text-primary italic'>new world</span> today.",
+        headlineSize: 'text-5xl sm:text-7xl',
         subheadline: "Explore a sanctuary of hand-picked literature. Your next great chapter is waiting in the Lounge.",
         tagline: "Curation • Connection • Comfort",
         buttonText: "Explore Library",
@@ -158,6 +177,7 @@ export default function HeroSection() {
     const newSlide: HeroSlide = {
       id: `slide_${Date.now()}`,
       headline: "New Featured <span class='text-primary italic'>Story</span>",
+      headlineSize: 'text-5xl sm:text-7xl',
       subheadline: "Describe why this novel deserves the reader's attention.",
       tagline: "New Arrival",
       buttonText: "Read Now",
@@ -275,7 +295,10 @@ export default function HeroSection() {
                     </span>
                   </div>
                   <h1 
-                    className="text-5xl sm:text-7xl font-headline font-black mb-6 leading-[1.1]"
+                    className={cn(
+                      "font-headline font-black mb-6 leading-[1.1]",
+                      slide.headlineSize || "text-5xl sm:text-7xl"
+                    )}
                     dangerouslySetInnerHTML={{ __html: slide.headline }}
                   />
                   <p className="text-xl text-muted-foreground/80 mb-10 leading-relaxed font-medium">
@@ -341,7 +364,7 @@ export default function HeroSection() {
                           className={`w-full text-left p-4 pr-10 rounded-2xl border transition-all flex flex-col gap-1 ${activeSlideIndex === i ? 'bg-primary border-primary text-white shadow-lg' : 'bg-card border-transparent hover:border-primary/20'}`}
                         >
                           <span className={`text-[10px] font-black uppercase tracking-widest ${activeSlideIndex === i ? 'text-white/60' : 'text-muted-foreground'}`}>Panel {i + 1}</span>
-                          <span className="font-bold text-xs truncate" dangerouslySetInnerHTML={{ __html: s.headline.replace(/<[^>]*>?/gm, '') }} />
+                          <span className="font-bold text-xs truncate" dangerouslySetInnerHTML={{ __html: (s.headline || '').replace(/<[^>]*>?/gm, '') }} />
                         </button>
                         <Button 
                           variant="ghost" 
@@ -369,6 +392,25 @@ export default function HeroSection() {
                         placeholder="Featured Novel..."
                         className="h-12 rounded-xl"
                       />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center gap-2">
+                        <Type className="h-3 w-3" /> Heading Scale
+                      </Label>
+                      <Select 
+                        value={slides[activeSlideIndex]?.headlineSize || 'text-5xl sm:text-7xl'} 
+                        onValueChange={val => updateActiveSlide('headlineSize', val)}
+                      >
+                        <SelectTrigger className="h-12 rounded-xl border-muted bg-background">
+                          <SelectValue placeholder="Select Scale" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {HEADING_SIZES.map(s => (
+                            <SelectItem key={s.value} value={s.value} className="font-bold">{s.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
