@@ -72,6 +72,7 @@ const HEADING_SIZES = [
  * @fileOverview Dynamic Landing Page Hero Carousel.
  * Allows administrators to curate multiple display panels in real-time.
  * Features Slide Deletion, Name-Based Novel Linking, and Custom Heading Sizes.
+ * Optimized for high-visibility visual assets with a subtle text scrim.
  */
 export default function HeroSection() {
   const db = useFirestore();
@@ -272,36 +273,37 @@ export default function HeroSection() {
                         loop 
                         muted 
                         playsInline 
-                        className="object-cover w-full h-full opacity-20"
+                        className="object-cover w-full h-full opacity-100"
                       />
                     ) : (
                       <Image 
                         src={slide.backgroundImageURL} 
                         alt="Background" 
                         fill 
-                        className="object-cover opacity-20"
+                        className="object-cover opacity-100"
                         priority
                       />
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-transparent" />
+                    {/* Atmospheric Scrim: Darker on left for text readability, clear on the right */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent z-[1]" />
                   </div>
                 )}
 
-                <div className="max-w-2xl relative z-10">
+                <div className="max-w-2xl relative z-10 drop-shadow-xl">
                   <div className="flex items-center gap-2 mb-6">
-                    <span className="h-px w-8 bg-primary/40" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary/70">
+                    <span className="h-px w-8 bg-primary/60" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">
                       {slide.tagline}
                     </span>
                   </div>
                   <h1 
                     className={cn(
-                      "font-headline font-black mb-6 leading-[1.1]",
+                      "font-headline font-black mb-6 leading-[1.1] text-foreground",
                       slide.headlineSize || "text-5xl sm:text-7xl"
                     )}
                     dangerouslySetInnerHTML={{ __html: slide.headline }}
                   />
-                  <p className="text-xl text-muted-foreground/80 mb-10 leading-relaxed font-medium">
+                  <p className="text-xl text-foreground/90 mb-10 leading-relaxed font-medium">
                     {slide.subheadline}
                   </p>
                   <div className="flex gap-4">
