@@ -42,6 +42,11 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
     }
+    
+    // Explicitly allow listing the books collection for discovery
+    match /books {
+      allow list: if true;
+    }
 
     // Username mapping for multi-identifier login: Publicly readable for auth resolution
     match /usernames/{username} {

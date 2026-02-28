@@ -1,10 +1,12 @@
+
 import Link from 'next/link';
 import Navbar from '@/components/navbar';
 import RecommendationsSection from '@/components/recommendations-section';
 import LocalLibrarySection from '@/components/local-library-section';
 import ContinueReadingSection from '@/components/continue-reading-section';
 import HeroSection from '@/components/hero-section';
-import ExploreBar from '@/components/explore-bar';
+import { Button } from '@/components/ui/button';
+import { Compass } from 'lucide-react';
 
 /**
  * @fileOverview Landing Page for Literary Lounge.
@@ -19,8 +21,18 @@ export default function Home() {
         {/* Dynamic Display Panel - Curated by Admins */}
         <HeroSection />
 
-        {/* Slim Discovery Bar */}
-        <ExploreBar />
+        {/* Simplified Discovery Trigger */}
+        <div className="flex justify-center mb-12 animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200">
+          <Link href="/explore">
+            <Button 
+              size="lg" 
+              className="rounded-full h-16 px-10 text-lg font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 transition-all group"
+            >
+              <Compass className="mr-2 h-6 w-6 group-hover:rotate-45 transition-transform duration-500" />
+              Explore Library
+            </Button>
+          </Link>
+        </div>
 
         {/* User's personalized progress across Cloud and Archive */}
         <ContinueReadingSection />
