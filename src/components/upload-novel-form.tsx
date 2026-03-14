@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -11,7 +10,7 @@ import { Globe, HardDrive, FileText, X, Sparkles, Book, Search, CloudUpload, Loa
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
-import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
+import { saveLocalBook, saveLocalChapter, getAllLocalBooks, saveUserPreference, getUserPreference } from '@/lib/local-library';
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +39,7 @@ interface Suggestion {
  * Line 2: Chapter [Number] [Name]
  * Line 3: [ xxx words ]
  * 
- * Includes persistence for user preferences (Cloud/Local, File/Text).
+ * Includes persistence for user preferences using IndexedDB (Archive Storage).
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -69,28 +68,29 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  // Persistence Logic: Load settings on mount
+  // Persistence Logic: Load settings from IndexedDB on mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedUploadMode = localStorage.getItem('lounge-upload-pref') as 'cloud' | 'local';
-      const savedSourceMode = localStorage.getItem('lounge-source-pref') as 'file' | 'text';
-      
-      if (savedUploadMode) setUploadMode(savedUploadMode);
-      if (savedSourceMode) setSourceMode(savedSourceMode);
-    }
+    const loadPrefs = async () => {
+      try {
+        const savedUploadMode = await getUserPreference<'cloud' | 'local'>('upload-mode');
+        const savedSourceMode = await getUserPreference<'file' | 'text'>('source-mode');
+        
+        if (savedUploadMode) setUploadMode(savedUploadMode);
+        if (savedSourceMode) setSourceMode(savedSourceMode);
+      } catch (e) {
+        console.warn("Failed to recover IndexedDB preferences", e);
+      }
+    };
+    loadPrefs();
   }, []);
 
-  // Persistence Logic: Save settings on change
+  // Persistence Logic: Save settings to IndexedDB on change
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lounge-upload-pref', uploadMode);
-    }
+    saveUserPreference('upload-mode', uploadMode);
   }, [uploadMode]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lounge-source-pref', sourceMode);
-    }
+    saveUserPreference('source-mode', sourceMode);
   }, [sourceMode]);
 
   /**

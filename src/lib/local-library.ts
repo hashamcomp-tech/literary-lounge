@@ -1,4 +1,3 @@
-
 /**
  * @fileOverview Local novel storage engine using idb-keyval.
  * Provides a simple, high-performance interface for browser-based archiving.
@@ -85,4 +84,18 @@ export async function deleteLocalBook(bookId: string): Promise<void> {
   
   await del(`lounge-chapters-${bookId}`);
   await del(`lounge-progress-${bookId}`);
+}
+
+/**
+ * Saves a generic user preference to IndexedDB.
+ */
+export async function saveUserPreference(key: string, value: any): Promise<void> {
+  await set(`lounge-pref-${key}`, value);
+}
+
+/**
+ * Retrieves a generic user preference from IndexedDB.
+ */
+export async function getUserPreference<T>(key: string): Promise<T | undefined> {
+  return await get(`lounge-pref-${key}`);
 }
