@@ -89,77 +89,81 @@ export function UploadNovelForm() {
     if (!rawText || rawText.length < 10) return;
     
     const lines = rawText.split('\n');
-    let titleFound = '';
-    let chNum = '';
-    let chTitle = '';
-    let metadataIndices: number[] = [];
+    let foundTitle = '';
+    let foundChNum = '';
+    let foundChTitle = '';
+    let headerLineIndices: number[] = [];
     
-    // Patterns
-    const chapterPattern = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)\s*(.*)$/i;
-    const wordCountPattern = /[\[\(]?\s*\d+\s*words\s*[\]\)]?/i;
+    // 1. Identify the Chapter Line (Supports: "Chapter 123", "Ch 123 Title", "123 Title", etc.)
+    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)(?:[:\s-]*)(.*)$/i;
+    let chapterLineIdx = -1;
 
-    // Scan the first 10 lines for metadata markers
-    let searchLimit = Math.min(lines.length, 10);
-    
-    for (let i = 0; i < searchLimit; i++) {
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
       const line = lines[i].trim();
       if (!line) continue;
-
-      // 1. Check for Word Count (e.g. [ 965 words ])
-      if (wordCountPattern.test(line)) {
-        metadataIndices.push(i);
-        continue;
-      }
-
-      // 2. Check for Chapter header (e.g. Chapter 2841 Divine Chariot)
-      // Only treat as chapter if it starts with Chapter or is clearly a Chapter line
-      const looksLikeChapter = /^(?:Chapter|Ch|CHAPTER|CH)\s+\d+/i.test(line);
-      const chMatch = line.match(chapterPattern);
       
-      if (looksLikeChapter && chMatch) {
-        chNum = chMatch[1];
-        chTitle = chMatch[2].trim();
-        metadataIndices.push(i);
-        continue;
-      }
-
-      // 3. If no Title is set yet, the first non-empty non-chapter line is the Title
-      if (!titleFound) {
-        titleFound = line;
-        metadataIndices.push(i);
-        continue;
+      const match = line.match(chapterRegex);
+      const startsWithChapter = /^(?:Chapter|Ch|CHAPTER|CH)\s+/i.test(line);
+      
+      // If it starts with "Chapter" or clearly looks like a chapter header
+      if (match && (startsWithChapter || /^\d+\s+.+/.test(line))) {
+        chapterLineIdx = i;
+        foundChNum = match[1];
+        foundChTitle = match[2].trim();
+        headerLineIndices.push(i);
+        break;
       }
     }
 
-    // Apply identified metadata to form fields
-    if (titleFound || chNum) {
-      if (titleFound) setTitle(titleFound);
-      if (chNum) setChapterNumber(chNum);
-      if (chTitle) setChapterTitle(chTitle);
+    // 2. Identify Novel Title (First non-empty line before the chapter line)
+    if (chapterLineIdx > 0) {
+      for (let i = 0; i < chapterLineIdx; i++) {
+        const line = lines[i].trim();
+        if (line && !headerLineIndices.includes(i)) {
+          foundTitle = line;
+          headerLineIndices.push(i);
+          break;
+        }
+      }
+    }
 
-      // Link to existing series if title found
-      if (titleFound) {
-        const existing = allBooks.find(b => b.title.toLowerCase() === titleFound.toLowerCase());
+    // 3. Identify Word Count / Metadata markers
+    const wordCountRegex = /[\[\(]?\s*\d+\s*words\s*[\]\)]?/i;
+    for (let i = 0; i < Math.min(lines.length, 15); i++) {
+      if (headerLineIndices.includes(i)) continue;
+      const line = lines[i].trim();
+      if (wordCountRegex.test(line)) {
+        headerLineIndices.push(i);
+      }
+    }
+
+    // 4. Update states and clean the narrative body
+    if (foundTitle || foundChNum) {
+      if (foundTitle) setTitle(foundTitle);
+      if (foundChNum) setChapterNumber(foundChNum);
+      if (foundChTitle) setChapterTitle(foundChTitle);
+
+      // Match existing series
+      if (foundTitle) {
+        const existing = allBooks.find(b => b.title.toLowerCase() === foundTitle.toLowerCase());
         if (existing) {
           setAuthor(existing.author);
           setSelectedGenres(existing.genre);
-          toast({ title: "Series Matched", description: `Linked to "${existing.title}".` });
         }
       }
 
-      // Clean the narrative body by removing all identified metadata lines
-      const cleanedLines = lines.filter((_, idx) => !metadataIndices.includes(idx));
+      // Strip headers and metadata from the story text
+      const cleanedLines = lines.filter((_, idx) => !headerLineIndices.includes(idx));
       
-      // Also strip any leading empty lines that remain
+      // Strip leading empty lines
       let firstContentIdx = 0;
       while (firstContentIdx < cleanedLines.length && !cleanedLines[firstContentIdx].trim()) {
         firstContentIdx++;
       }
       
-      const finalContent = cleanedLines.slice(firstContentIdx).join('\n').trim();
-      setPastedText(finalContent);
+      setPastedText(cleanedLines.slice(firstContentIdx).join('\n').trim());
       setWasAutoFilled(true);
-      toast({ title: "Context Deciphered", description: "Headers and word count removed from story." });
+      toast({ title: "Pattern Deciphered", description: "Headers and word count purged from story." });
     } else {
       setWasAutoFilled(false);
     }
