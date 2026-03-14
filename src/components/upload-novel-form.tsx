@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -80,60 +81,85 @@ export function UploadNovelForm() {
   };
 
   /**
-   * Pattern-Based Pattern Deciphering.
-   * Recognizes: Title, Chapter [X] [Name], [ X words ]
-   * Automatically strips these lines from the narrative body.
+   * Greedy Pattern Deciphering.
+   * Scans the first 10 lines for Title, Chapter headers, and Word Count metadata.
+   * Automatically identifies and strips these lines from the narrative body.
    */
-  const handleAnalyzePastedText = (text: string) => {
-    if (!text || text.length < 10) return;
+  const handleAnalyzePastedText = (rawText: string) => {
+    if (!rawText || rawText.length < 10) return;
     
-    const lines = text.split('\n').map(l => l.trim());
-    if (lines.length < 2) return;
+    const lines = rawText.split('\n');
+    let titleFound = '';
+    let chNum = '';
+    let chTitle = '';
+    let metadataIndices: number[] = [];
+    
+    // Patterns
+    const chapterPattern = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)\s*(.*)$/i;
+    const wordCountPattern = /[\[\(]?\s*\d+\s*words\s*[\]\)]?/i;
 
-    // Pattern Detection Logic
-    const potentialTitleLine = lines[0];
-    const chapterLinePattern = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)\s*(.*)$/i;
-    const chapterMatch = lines[1]?.match(chapterLinePattern);
-    const wordCountPattern = /^\[?\s*\d+\s*words\s*\]?$/i;
-    const wordCountMatch = lines[2]?.match(wordCountPattern);
+    // Scan the first 10 lines for metadata markers
+    let searchLimit = Math.min(lines.length, 10);
+    
+    for (let i = 0; i < searchLimit; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
 
-    if (potentialTitleLine && chapterMatch) {
-      const detectedNum = chapterMatch[1];
-      const detectedChapterTitle = chapterMatch[2].trim();
-
-      // Check for existing book link
-      const existing = allBooks.find(b => b.title.toLowerCase() === potentialTitleLine.toLowerCase());
-      
-      setTitle(potentialTitleLine);
-      setChapterNumber(detectedNum);
-      setChapterTitle(detectedChapterTitle || `Chapter ${detectedNum}`);
-
-      if (existing) {
-        setAuthor(existing.author);
-        setSelectedGenres(existing.genre);
-        toast({ 
-          title: "Series Matched", 
-          description: `Linked to "${existing.title}". Headers deciphered and removed.` 
-        });
-      } else {
-        toast({ 
-          title: "Context Deciphered", 
-          description: "New series detected from headers. Metadata extracted and removed." 
-        });
+      // 1. Check for Word Count (e.g. [ 965 words ])
+      if (wordCountPattern.test(line)) {
+        metadataIndices.push(i);
+        continue;
       }
 
-      // Stripping Logic: Determine how many lines to remove
-      let linesToSkip = 2; // Title + Chapter info
-      if (wordCountMatch) linesToSkip = 3; // + Word count line
+      // 2. Check for Chapter header (e.g. Chapter 2841 Divine Chariot)
+      // Only treat as chapter if it starts with Chapter or is clearly a Chapter line
+      const looksLikeChapter = /^(?:Chapter|Ch|CHAPTER|CH)\s+\d+/i.test(line);
+      const chMatch = line.match(chapterPattern);
       
-      // Also skip any empty lines immediately following the metadata
-      while (linesToSkip < lines.length && lines[linesToSkip] === '') {
-        linesToSkip++;
+      if (looksLikeChapter && chMatch) {
+        chNum = chMatch[1];
+        chTitle = chMatch[2].trim();
+        metadataIndices.push(i);
+        continue;
       }
 
-      const cleanNarrative = lines.slice(linesToSkip).join('\n');
-      setPastedText(cleanNarrative);
+      // 3. If no Title is set yet, the first non-empty non-chapter line is the Title
+      if (!titleFound) {
+        titleFound = line;
+        metadataIndices.push(i);
+        continue;
+      }
+    }
+
+    // Apply identified metadata to form fields
+    if (titleFound || chNum) {
+      if (titleFound) setTitle(titleFound);
+      if (chNum) setChapterNumber(chNum);
+      if (chTitle) setChapterTitle(chTitle);
+
+      // Link to existing series if title found
+      if (titleFound) {
+        const existing = allBooks.find(b => b.title.toLowerCase() === titleFound.toLowerCase());
+        if (existing) {
+          setAuthor(existing.author);
+          setSelectedGenres(existing.genre);
+          toast({ title: "Series Matched", description: `Linked to "${existing.title}".` });
+        }
+      }
+
+      // Clean the narrative body by removing all identified metadata lines
+      const cleanedLines = lines.filter((_, idx) => !metadataIndices.includes(idx));
+      
+      // Also strip any leading empty lines that remain
+      let firstContentIdx = 0;
+      while (firstContentIdx < cleanedLines.length && !cleanedLines[firstContentIdx].trim()) {
+        firstContentIdx++;
+      }
+      
+      const finalContent = cleanedLines.slice(firstContentIdx).join('\n').trim();
+      setPastedText(finalContent);
       setWasAutoFilled(true);
+      toast({ title: "Context Deciphered", description: "Headers and word count removed from story." });
     } else {
       setWasAutoFilled(false);
     }
