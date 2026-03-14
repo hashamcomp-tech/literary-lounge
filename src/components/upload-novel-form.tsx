@@ -6,14 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Globe, HardDrive, FileText, ChevronDown, Check, CloudUpload, Loader2, Book, User, Search, X, Sparkles } from 'lucide-react';
+import { Globe, HardDrive, FileText, X, Sparkles, Book, Search, CloudUpload, Loader2 } from 'lucide-react';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
 import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
-import { urlToFile } from '@/lib/image-utils';
 import { Badge } from '@/components/ui/badge';
 import {
   Popover,
@@ -35,9 +34,8 @@ interface Suggestion {
 
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
- * Features a completely rewritten Structure-First Paste Detection system.
- * Automatically identifies and fills Novel Name, Chapter Number, and Chapter Name.
- * Strips these lines and Word Count metadata from the narrative body.
+ * Features a refined 3-line paste detection system.
+ * Extracts Novel Title (line 1), Chapter Info (line 2), and Word Count (line 3).
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -66,77 +64,66 @@ export function UploadNovelForm() {
   const suggestionRef = useRef<HTMLDivElement>(null);
 
   /**
-   * Manuscript Ingestion Engine (V3).
-   * Rewritten to accurately decipher Novel Title, Chapter Details, and remove Word Counts.
+   * Precise 3-Line Ingestion Engine.
+   * Line 1: Novel Name (Match check)
+   * Line 2: Chapter [Number] [Name]
+   * Line 3: [ xxx words ]
    */
   const processManuscriptPaste = (rawText: string) => {
-    if (!rawText || rawText.length < 10) return;
-
     const lines = rawText.split('\n');
-    let novelNameFound = "";
-    let chNumFound = "";
-    let chNameFound = "";
+    // Get non-empty indices
+    const contentLines: { text: string; index: number }[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].trim()) {
+        contentLines.push({ text: lines[i].trim(), index: i });
+        if (contentLines.length === 3) break;
+      }
+    }
+
+    if (contentLines.length < 2) return;
+
     let linesToRemove: number[] = [];
+    let autoFilled = false;
 
-    // 1. Identify Chapter Line (The Anchor)
-    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)(?:[:\s-]*)(.*)$/i;
-    let chapterIdx = -1;
+    // 1. Line 1: Novel Name check
+    const possibleTitle = contentLines[0].text;
+    const existing = allBooks.find(b => b.title.toLowerCase() === possibleTitle.toLowerCase());
+    
+    if (existing) {
+      setTitle(existing.title);
+      setAuthor(existing.author);
+      setSelectedGenres(existing.genre);
+      linesToRemove.push(contentLines[0].index);
+      autoFilled = true;
+    } else {
+      // Still treat as title if it looks like one
+      setTitle(possibleTitle);
+      linesToRemove.push(contentLines[0].index);
+      autoFilled = true;
+    }
 
-    for (let i = 0; i < Math.min(lines.length, 10); i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      const match = line.match(chapterRegex);
-      // Heuristic: Must start with Chapter word OR look like a numeric header at the start of line
-      const looksLikeHeader = /^(?:Chapter|Ch|CHAPTER|CH)\s+/i.test(line) || /^\d+\s+.+/.test(line);
-      
-      if (match && looksLikeHeader) {
-        chapterIdx = i;
-        chNumFound = match[1];
-        chNameFound = match[2].trim();
-        linesToRemove.push(i);
-        break;
+    // 2. Line 2: Chapter extraction
+    if (contentLines.length >= 2) {
+      const chRegex = /chapter\s+(\d+)\s*(.*)/i;
+      const match = contentLines[1].text.match(chRegex);
+      if (match) {
+        setChapterNumber(match[1]);
+        setChapterTitle(match[2].trim());
+        linesToRemove.push(contentLines[1].index);
+        autoFilled = true;
       }
     }
 
-    // 2. Identify Novel Title (First non-empty line BEFORE the chapter line)
-    if (chapterIdx > 0) {
-      for (let i = 0; i < chapterIdx; i++) {
-        const line = lines[i].trim();
-        if (line && !linesToRemove.includes(i)) {
-          novelNameFound = line;
-          linesToRemove.push(i);
-          break;
-        }
+    // 3. Line 3: Word Count check
+    if (contentLines.length >= 3) {
+      const l3 = contentLines[2].text;
+      if (l3.startsWith('[') && l3.toLowerCase().includes('words')) {
+        linesToRemove.push(contentLines[2].index);
+        autoFilled = true;
       }
     }
 
-    // 3. Identify Word Count Metadata (Anywhere in first 15 lines)
-    const wordCountRegex = /^[\[\(]?\s*[\d,]+\s*words\s*[\]\)]?$/i;
-    for (let i = 0; i < Math.min(lines.length, 15); i++) {
-      if (linesToRemove.includes(i)) continue;
-      const line = lines[i].trim();
-      if (wordCountRegex.test(line)) {
-        linesToRemove.push(i);
-      }
-    }
-
-    // 4. State Update and Body Cleaning
-    if (novelNameFound || chNumFound) {
-      if (novelNameFound) setTitle(novelNameFound);
-      if (chNumFound) setChapterNumber(chNumFound);
-      if (chNameFound) setChapterTitle(chNameFound);
-
-      // Attempt to link metadata from existing library series
-      if (novelNameFound) {
-        const existing = allBooks.find(b => b.title.toLowerCase() === novelNameFound.toLowerCase());
-        if (existing) {
-          setAuthor(existing.author);
-          setSelectedGenres(existing.genre);
-        }
-      }
-
-      // Generate the cleaned narrative body
+    if (autoFilled) {
       const cleanedBody = lines
         .filter((_, idx) => !linesToRemove.includes(idx))
         .join('\n')
@@ -144,10 +131,9 @@ export function UploadNovelForm() {
 
       setPastedText(cleanedBody);
       setWasAutoFilled(true);
-      
       toast({ 
-        title: "Manuscript Parsed", 
-        description: `Linked to: ${novelNameFound || 'Series detected'}` 
+        title: "Metadata Deciphered", 
+        description: "Bibliographic lines extracted and purged from body." 
       });
     }
   };
@@ -203,7 +189,7 @@ export function UploadNovelForm() {
     if (!title.trim() || !author.trim()) return;
     
     setLoading(true);
-    setLoadingMessage('Integrating volume...');
+    setLoadingMessage('Processing volume...');
     
     try {
       const searchTitle = title.trim();
@@ -407,8 +393,7 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => { 
                       const text = e.clipboardData.getData('text'); 
-                      // Small delay to allow react-hook-form or state to stabilize if used
-                      setTimeout(() => processManuscriptPaste(text), 50); 
+                      setTimeout(() => processManuscriptPaste(text), 100); 
                     }}
                     placeholder="Paste novel content here... (Header metadata will be auto-parsed)" 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none font-body text-base" 
