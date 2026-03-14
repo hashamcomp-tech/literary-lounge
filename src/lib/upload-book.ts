@@ -4,12 +4,11 @@ import { uploadCoverImage } from "./upload-cover";
 
 /**
  * Clean manuscript artifacts and normalize whitespace.
- * UPDATED: Now returns the raw text to preserve user formatting as requested.
+ * Preserves user formatting while ensuring consistent line endings.
  */
 export function cleanContent(text: string): string {
   if (!text) return "";
-  // Return the text exactly as provided to maintain absolute format fidelity
-  return text;
+  return text.trim().replace(/\r\n/g, "\n");
 }
 
 /**
@@ -17,7 +16,7 @@ export function cleanContent(text: string): string {
  * Chapters saved to Firestore, Cover saved to Vercel Blob.
  */
 export async function uploadBookToCloud({
-  db, storage, bookId, title, author, genres, rawContent, coverFile, ownerId, manualChapterInfo, preParsedChapters
+  db, storage, bookId, title, author, genres, rawContent, coverFile, ownerId, manualChapterInfo, preParsedChapters, summary
 }: {
   db: Firestore;
   storage: FirebaseStorage;
@@ -30,6 +29,7 @@ export async function uploadBookToCloud({
   ownerId: string;
   manualChapterInfo?: { number: number; title: string };
   preParsedChapters?: { title: string; content: string }[];
+  summary?: string;
 }) {
   let chapters: { chapterNumber: number; title: string; content: string }[] = [];
 
@@ -66,25 +66,37 @@ export async function uploadBookToCloud({
   }
 
   const metadataInfo = {
-    author, bookTitle: title, totalChapters: finalTotal, genre: genres,
-    coverURL, coverSize, lastUpdated: serverTimestamp()
+    author, 
+    bookTitle: title, 
+    totalChapters: finalTotal, 
+    genre: genres,
+    summary: summary || existingData?.summary || existingData?.metadata?.info?.summary || "",
+    coverURL, 
+    coverSize, 
+    lastUpdated: serverTimestamp()
   };
 
   const rootPayload = {
-    title, titleLower: title.toLowerCase(),
-    author, authorLower: author.toLowerCase(),
-    genre: genres, views: existingData?.views || 0,
-    isCloud: true, ownerId,
+    title, 
+    titleLower: title.toLowerCase(),
+    author, 
+    authorLower: author.toLowerCase(),
+    genre: genres, 
+    views: existingData?.views || 0,
+    isCloud: true, 
+    ownerId,
+    summary: metadataInfo.summary,
     createdAt: existingData?.createdAt || serverTimestamp(),
     lastUpdated: serverTimestamp(),
-    coverURL, coverSize,
+    coverURL, 
+    coverSize,
     metadata: { info: metadataInfo }
   };
 
   // Root metadata document in Firestore
   await setDoc(bookRef, rootPayload, { merge: true });
 
-  // Structured chapter sub-collection in Firestore for fast lookup and buffering
+  // Structured chapter sub-collection in Firestore
   const batch = writeBatch(db);
   chapters.forEach((ch) => {
     const chRef = doc(db, "books", bookId, "chapters", ch.chapterNumber.toString());

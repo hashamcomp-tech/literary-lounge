@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,11 +15,9 @@ import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activit
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { errorEmitter } from '@/firebase/error-emitter';
-import { FirestorePermissionError } from '@/firebase/errors';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { deleteCloudBook, updateCloudBookCover, updateCloudBookMetadata } from '@/lib/cloud-library-utils';
 import { uploadCoverImage } from '@/lib/upload-cover';
 import { optimizeCoverImage } from '@/lib/image-utils';
@@ -52,7 +51,7 @@ import { formatDistanceToNow } from 'date-fns';
 /**
  * @fileOverview Lounge Control Panel.
  * Primary command center for administrators.
- * Features real-time status monitoring, contributor vetting, granular manuscript management, and support reporting.
+ * Includes Narrative Summary management for the Novel Details page.
  */
 export default function AdminPage() {
   const db = useFirestore();
@@ -71,6 +70,7 @@ export default function AdminPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editAuthor, setEditAuthor] = useState('');
+  const [editSummary, setEditSummary] = useState('');
   const [isSavingMetadata, setIsSavingMetadata] = useState(false);
 
   const [bookCount, setBookCount] = useState<number>(0);
@@ -154,14 +154,6 @@ export default function AdminPage() {
 
   const { data: reports, isLoading: isReportsLoading } = useCollection(reportsQuery);
 
-  const cloudRequestsQuery = useMemoFirebase(() => {
-    if (!isAdmin || isOfflineMode || !db) return null;
-    return collection(db, 'cloudUploadRequests');
-  }, [db, isAdmin, isOfflineMode]);
-
-  const { data: cloudRequests } = useCollection(cloudRequestsQuery);
-  const hasCloudRequests = cloudRequests && cloudRequests.length > 0;
-
   const booksQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
     return query(collection(db, 'books'), orderBy('createdAt', 'desc'), limit(100));
@@ -206,6 +198,7 @@ export default function AdminPage() {
     setSelectedBook(book);
     setEditTitle(book.title || book.metadata?.info?.bookTitle || '');
     setEditAuthor(book.author || book.metadata?.info?.author || '');
+    setEditSummary(book.summary || book.metadata?.info?.summary || '');
     setIsSettingsOpen(true);
   };
 
@@ -213,7 +206,11 @@ export default function AdminPage() {
     if (!db || !selectedBook) return;
     setIsSavingMetadata(true);
     try {
-      await updateCloudBookMetadata(db, selectedBook.id, { title: editTitle, author: editAuthor });
+      await updateCloudBookMetadata(db, selectedBook.id, { 
+        title: editTitle, 
+        author: editAuthor,
+        summary: editSummary 
+      });
       toast({ title: "Volume Updated", description: "Bibliographic data synchronized successfully." });
       setIsSettingsOpen(false);
     } catch (err: any) {
@@ -270,6 +267,8 @@ export default function AdminPage() {
       
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-5xl mx-auto">
+          <Breadcrumbs items={[{ label: 'Control Panel' }]} />
+          
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -282,17 +281,6 @@ export default function AdminPage() {
               <Link href="/admin/activity">
                 <Button variant="outline" className="rounded-2xl gap-2 border-primary/20">
                   <MousePointer2 className="h-4 w-4" /> Activity Feed
-                </Button>
-              </Link>
-              <Link href="/admin/requests">
-                <Button variant="outline" className="rounded-2xl relative">
-                  Submissions
-                  {hasCloudRequests && (
-                    <span className="absolute -top-1 -right-1 flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                    </span>
-                  )}
                 </Button>
               </Link>
               <Link href="/admin/dashboard"><Button className="rounded-2xl">Live Analytics</Button></Link>
@@ -498,10 +486,10 @@ export default function AdminPage() {
 
       {/* Manuscript Settings Dialog */}
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <DialogContent className="max-w-2xl rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
+        <DialogContent className="max-w-3xl rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-3xl font-headline font-black">Manuscript Settings</DialogTitle>
-            <DialogDescription>Modify volume metadata or review the indexed chapters.</DialogDescription>
+            <DialogDescription>Modify volume metadata, summary, or review indexed chapters.</DialogDescription>
           </DialogHeader>
           
           <div className="space-y-8 py-4">
@@ -515,10 +503,6 @@ export default function AdminPage() {
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Author</Label>
                   <Input value={editAuthor} onChange={e => setEditAuthor(e.target.value)} className="rounded-xl h-12" />
                 </div>
-                <Button onClick={handleSaveMetadata} className="w-full h-12 rounded-xl font-bold" disabled={isSavingMetadata}>
-                  {isSavingMetadata ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                  Save Metadata
-                </Button>
               </div>
 
               <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-3xl bg-muted/20 gap-4">
@@ -533,6 +517,16 @@ export default function AdminPage() {
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Narrative Summary (Displays on Details Page)</Label>
+              <Textarea 
+                value={editSummary} 
+                onChange={e => setEditSummary(e.target.value)} 
+                placeholder="Write a captivating summary for readers..."
+                className="min-h-[120px] rounded-2xl p-4 bg-muted/20 border-none resize-none"
+              />
+            </div>
+
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Indexed Chapters</Label>
@@ -541,24 +535,28 @@ export default function AdminPage() {
                 </Badge>
               </div>
               <div className="border rounded-2xl overflow-hidden bg-background/50">
-                <ScrollArea className="h-[200px]">
+                <ScrollArea className="h-[150px]">
                   <ChapterList bookId={selectedBook?.id} />
                 </ScrollArea>
               </div>
             </div>
 
             <div className="pt-4 border-t flex flex-col sm:flex-row gap-4">
+              <Button onClick={handleSaveMetadata} className="flex-1 h-14 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg" disabled={isSavingMetadata}>
+                {isSavingMetadata ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                Save Changes
+              </Button>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="flex-1 h-14 rounded-2xl font-black uppercase text-[10px] tracking-widest">
-                    <Trash2 className="h-4 w-4 mr-2" /> Purge Global Volume
+                  <Button variant="destructive" className="h-14 rounded-2xl font-black uppercase text-[10px] tracking-widest px-8">
+                    <Trash2 className="h-4 w-4 mr-2" /> Purge Volume
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
                   <AlertDialogHeader>
                     <AlertDialogTitle className="text-2xl font-headline font-black">Global Purge Protocol</AlertDialogTitle>
                     <AlertDialogDescription>
-                      You are about to permanently delete <span className="font-bold text-foreground">"{selectedBook?.title}"</span> and ALL its chapters from the Lounge. This action is irreversible.
+                      You are about to permanently delete <span className="font-bold text-foreground">"{selectedBook?.title}"</span> and ALL its chapters.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -569,7 +567,6 @@ export default function AdminPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-              <Button variant="ghost" onClick={() => setIsSettingsOpen(false)} className="rounded-2xl h-14 font-bold text-muted-foreground px-8">Close</Button>
             </div>
           </div>
         </DialogContent>

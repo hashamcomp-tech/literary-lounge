@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
@@ -6,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import NovelCard from '@/components/novel-card';
 import { Loader2, BookOpen, Filter, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,6 @@ function ExploreContent() {
     const booksCol = collection(db, 'books');
     
     if (selectedGenre !== 'All') {
-      // Updated to use array-contains for multi-genre support
       return query(
         booksCol,
         where('genre', 'array-contains', selectedGenre),
@@ -61,6 +60,8 @@ function ExploreContent() {
 
   return (
     <div className="container mx-auto px-4 py-12">
+      <Breadcrumbs items={[{ label: 'Library Explorer' }]} />
+      
       <header className="mb-12">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-4">

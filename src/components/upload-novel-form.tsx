@@ -35,8 +35,8 @@ interface Suggestion {
 
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
- * Features Structure-First Paste Detection and High-Reliability Client-Side Parsing via JSZip.
- * Implements Sticky Settings persistence via localStorage.
+ * Features Structure-First Paste Detection and Pattern Deciphering.
+ * Automatically strips detected headers (Title, Chapter Info, Word Counts) from content.
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -80,52 +80,65 @@ export function UploadNovelForm() {
   };
 
   /**
-   * Structure-First Positional Parser
-   * Triggers metadata match but no longer discards headers from content.
+   * Pattern-Based Pattern Deciphering.
+   * Recognizes: Title, Chapter [X] [Name], [ X words ]
+   * Automatically strips these lines from the narrative body.
    */
   const handleAnalyzePastedText = (text: string) => {
     if (!text || text.length < 10) return;
     
-    const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const lines = text.split('\n').map(l => l.trim());
     if (lines.length < 2) return;
 
-    const potentialNovelName = lines[0].toLowerCase();
-    const potentialChapterLine = lines[1];
+    // Pattern Detection Logic
+    const potentialTitleLine = lines[0];
+    const chapterLinePattern = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)\s*(.*)$/i;
+    const chapterMatch = lines[1]?.match(chapterLinePattern);
+    const wordCountPattern = /^\[?\s*\d+\s*words\s*\]?$/i;
+    const wordCountMatch = lines[2]?.match(wordCountPattern);
 
-    const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)/i;
-    if (!chapterRegex.test(potentialChapterLine)) {
-      setWasAutoFilled(false);
-      return; 
-    }
+    if (potentialTitleLine && chapterMatch) {
+      const detectedNum = chapterMatch[1];
+      const detectedChapterTitle = chapterMatch[2].trim();
 
-    let existing = allBooks.find(b => b.title.toLowerCase() === potentialNovelName);
-    if (!existing) {
-      existing = allBooks.find(b => 
-        b.title.toLowerCase().includes(potentialNovelName) || 
-        potentialNovelName.includes(b.title.toLowerCase())
-      );
-    }
+      // Check for existing book link
+      const existing = allBooks.find(b => b.title.toLowerCase() === potentialTitleLine.toLowerCase());
+      
+      setTitle(potentialTitleLine);
+      setChapterNumber(detectedNum);
+      setChapterTitle(detectedChapterTitle || `Chapter ${detectedNum}`);
 
-    if (existing) {
-      const match = potentialChapterLine.match(chapterRegex);
-      const num = match![1];
-      let titlePart = potentialChapterLine.substring(match![0].length).replace(/^[\s:\-\.]+\d*[\s:\-\.]*/, '').trim();
+      if (existing) {
+        setAuthor(existing.author);
+        setSelectedGenres(existing.genre);
+        toast({ 
+          title: "Series Matched", 
+          description: `Linked to "${existing.title}". Headers deciphered and removed.` 
+        });
+      } else {
+        toast({ 
+          title: "Context Deciphered", 
+          description: "New series detected from headers. Metadata extracted and removed." 
+        });
+      }
 
-      setTitle(existing.title);
-      setAuthor(existing.author);
-      setSelectedGenres(existing.genre);
-      setChapterNumber(num);
-      setChapterTitle(titlePart || `Chapter ${num}`);
+      // Stripping Logic: Determine how many lines to remove
+      let linesToSkip = 2; // Title + Chapter info
+      if (wordCountMatch) linesToSkip = 3; // + Word count line
+      
+      // Also skip any empty lines immediately following the metadata
+      while (linesToSkip < lines.length && lines[linesToSkip] === '') {
+        linesToSkip++;
+      }
+
+      const cleanNarrative = lines.slice(linesToSkip).join('\n');
+      setPastedText(cleanNarrative);
       setWasAutoFilled(true);
-      toast({ title: "Series Synchronized", description: `Matched "${existing.title}". Fields autofilled.` });
     } else {
       setWasAutoFilled(false);
     }
   };
 
-  /**
-   * Robust Client-Side EPUB Extraction using JSZip directly.
-   */
   useEffect(() => {
     if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.epub')) {
       setCoverPreview(null);
@@ -279,7 +292,6 @@ export function UploadNovelForm() {
           manualContent = await selectedFile.text();
         }
       } else {
-        // UPDATED: Upload exactly what was pasted, no slicing or removal of headers
         manualContent = pastedText;
       }
 
@@ -312,7 +324,6 @@ export function UploadNovelForm() {
       setProgress(100);
       toast({ title: 'Volume Secured', description: 'Manuscript integrated into the library.' });
       
-      // Persist preferences before routing
       persistSettings("lounge-upload-mode", uploadMode);
       persistSettings("lounge-source-mode", sourceMode);
       
@@ -388,7 +399,7 @@ export function UploadNovelForm() {
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center justify-between">
                   Categories
-                  {wasAutoFilled && <span className="text-primary flex items-center gap-1 animate-pulse"><Sparkles className="h-2.5 w-2.5" /> Series Mode</span>}
+                  {wasAutoFilled && <span className="text-primary flex items-center gap-1 animate-pulse"><Sparkles className="h-2.5 w-2.5" /> Context Deciphered</span>}
                 </Label>
                 <Popover>
                   <PopoverTrigger asChild>
@@ -442,13 +453,25 @@ export function UploadNovelForm() {
                   <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} placeholder="Chapter #" className="rounded-xl h-12" />
                   <Input placeholder="Chapter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
                 </div>
-                <Textarea 
-                  value={pastedText} 
-                  onChange={e => setPastedText(e.target.value)} 
-                  onPaste={(e) => { const text = e.clipboardData.getData('text'); setTimeout(() => handleAnalyzePastedText(text), 50); }}
-                  placeholder="Paste content here..." 
-                  className="min-h-[250px] rounded-2xl p-4 bg-muted/20" 
-                />
+                <div className="relative">
+                  <Textarea 
+                    value={pastedText} 
+                    onChange={e => setPastedText(e.target.value)} 
+                    onPaste={(e) => { 
+                      const text = e.clipboardData.getData('text'); 
+                      setTimeout(() => handleAnalyzePastedText(text), 50); 
+                    }}
+                    placeholder="Paste content here (pattern detection active)..." 
+                    className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none" 
+                  />
+                  {wasAutoFilled && (
+                    <div className="absolute top-2 right-2 animate-in fade-in zoom-in">
+                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[9px] font-black uppercase">
+                        Headers Cleaned
+                      </Badge>
+                    </div>
+                  )}
+                </div>
               </TabsContent>
             </Tabs>
 

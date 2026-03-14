@@ -4,19 +4,16 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { useFirestore, useUser, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, limit } from 'firebase/firestore';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, ArrowLeft, Eye, Clock, User, Globe, MousePointer2 } from 'lucide-react';
+import { Loader2, Clock, User, Globe, MousePointer2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
-/**
- * @fileOverview Administrative Activity Feed.
- * Exclusive view for Super Admins to monitor site-wide traffic and reader engagement.
- */
 export default function AdminActivityPage() {
   const router = useRouter();
   const db = useFirestore();
@@ -56,16 +53,14 @@ export default function AdminActivityPage() {
       <Navbar />
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-6xl mx-auto">
+          <Breadcrumbs 
+            items={[
+              { label: 'Control Panel', href: '/admin' },
+              { label: 'Activity Feed' }
+            ]} 
+          />
+
           <header className="mb-10">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => router.push('/admin')}
-              className="mb-4 -ml-2 text-muted-foreground"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Lounge Control
-            </Button>
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -74,17 +69,6 @@ export default function AdminActivityPage() {
                   </Badge>
                 </div>
                 <h1 className="text-5xl font-headline font-black leading-tight">Global Activity</h1>
-                <p className="text-muted-foreground text-lg mt-2">Monitoring site movements and reader engagement in real-time.</p>
-              </div>
-              <div className="flex items-center gap-4 bg-muted/30 p-4 rounded-2xl border">
-                <div className="flex flex-col items-center px-4 border-r">
-                  <span className="text-[10px] font-black uppercase text-muted-foreground">Total Events</span>
-                  <span className="text-2xl font-headline font-black">{logs?.length || 0}</span>
-                </div>
-                <div className="flex flex-col items-center px-4">
-                  <span className="text-[10px] font-black uppercase text-muted-foreground">Status</span>
-                  <Badge variant="secondary" className="bg-green-100 text-green-700 border-none font-black h-6">Live</Badge>
-                </div>
               </div>
             </div>
           </header>
@@ -116,9 +100,6 @@ export default function AdminActivityPage() {
                             <Clock className="h-3 w-3 text-muted-foreground" />
                             {log.timestamp?.toDate ? formatDistanceToNow(log.timestamp.toDate(), { addSuffix: true }) : 'Just now'}
                           </span>
-                          <span className="text-[9px] text-muted-foreground opacity-60">
-                            {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : ''}
-                          </span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -128,16 +109,13 @@ export default function AdminActivityPage() {
                           </div>
                           <div className="flex flex-col">
                             <span className="text-sm font-bold truncate max-w-[180px]">{log.email}</span>
-                            <span className="text-[9px] font-mono opacity-40">{log.uid}</span>
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="font-mono text-[10px] bg-background border-primary/10 text-primary px-2 py-0.5">
-                            {log.path}
-                          </Badge>
-                        </div>
+                        <Badge variant="outline" className="font-mono text-[10px] bg-background border-primary/10 text-primary px-2 py-0.5">
+                          {log.path}
+                        </Badge>
                       </TableCell>
                       <TableCell className="pr-8 text-right">
                         <div className="flex items-center justify-end gap-2 text-muted-foreground opacity-60">
@@ -151,14 +129,6 @@ export default function AdminActivityPage() {
                   ))}
                 </TableBody>
               </Table>
-              {(!logs || logs.length === 0) && (
-                <div className="py-20 text-center">
-                  <div className="bg-muted/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-dashed">
-                    <Eye className="h-8 w-8 text-muted-foreground opacity-30" />
-                  </div>
-                  <p className="text-muted-foreground font-medium">No activity data synchronized yet.</p>
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
