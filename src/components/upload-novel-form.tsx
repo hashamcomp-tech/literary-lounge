@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -58,11 +57,7 @@ export function UploadNovelForm() {
   
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
-  const [progress, setProgress] = useState(0);
   const [canUploadCloud, setCanUploadCloud] = useState<boolean>(false);
-
-  const [coverPreview, setCoverPreview] = useState<string | null>(null);
-  const [isExtractingPreview, setIsExtractingPreview] = useState(false);
   const [wasAutoFilled, setWasAutoFilled] = useState(false);
 
   const [allBooks, setAllBooks] = useState<Suggestion[]>([]);
@@ -71,11 +66,8 @@ export function UploadNovelForm() {
   const suggestionRef = useRef<HTMLDivElement>(null);
 
   /**
-   * Manuscript Ingestion Engine (V2).
-   * Scans for patterns like:
-   * Line 1: Novel Name
-   * Line 2: Chapter X Title
-   * Line 3: [ 965 words ]
+   * Manuscript Ingestion Engine (V3).
+   * Rewritten to accurately decipher Novel Title, Chapter Details, and remove Word Counts.
    */
   const processManuscriptPaste = (rawText: string) => {
     if (!rawText || rawText.length < 10) return;
@@ -87,7 +79,6 @@ export function UploadNovelForm() {
     let linesToRemove: number[] = [];
 
     // 1. Identify Chapter Line (The Anchor)
-    // Supports: "Chapter 2841 Divine Chariot", "Ch 123", "2841 Title"
     const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)(?:[:\s-]*)(.*)$/i;
     let chapterIdx = -1;
 
@@ -121,7 +112,6 @@ export function UploadNovelForm() {
     }
 
     // 3. Identify Word Count Metadata (Anywhere in first 15 lines)
-    // Matches patterns like: [ 965 words ], (1200 words), 1500 words
     const wordCountRegex = /^[\[\(]?\s*[\d,]+\s*words\s*[\]\)]?$/i;
     for (let i = 0; i < Math.min(lines.length, 15); i++) {
       if (linesToRemove.includes(i)) continue;
@@ -157,7 +147,7 @@ export function UploadNovelForm() {
       
       toast({ 
         title: "Manuscript Parsed", 
-        description: `Title: ${novelNameFound || 'Matched'}, Ch: ${chNumFound}` 
+        description: `Linked to: ${novelNameFound || 'Series detected'}` 
       });
     }
   };
@@ -213,22 +203,19 @@ export function UploadNovelForm() {
     if (!title.trim() || !author.trim()) return;
     
     setLoading(true);
-    setProgress(10);
-    setLoadingMessage('Processing...');
+    setLoadingMessage('Integrating volume...');
     
     try {
       const searchTitle = title.trim();
-      const searchAuthor = author.trim();
       const existingBook = allBooks.find(b => b.title.trim().toLowerCase() === searchTitle.toLowerCase());
       const bookId = existingBook?.id || `${Date.now()}_${searchTitle.replace(/\s+/g, '_')}`;
       
       let preParsedChapters: { title: string; content: string }[] | undefined = undefined;
       let manualContent: string | undefined = undefined;
-      let extractedCoverFile: File | null = null;
 
       if (sourceMode === 'file' && selectedFile) {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
-          setLoadingMessage('Parsing EPUB...');
+          setLoadingMessage('Parsing Archive...');
           const zip = await JSZip.loadAsync(selectedFile);
           const containerXml = await zip.file("META-INF/container.xml")?.async("string");
           const parser = new DOMParser();
@@ -261,7 +248,6 @@ export function UploadNovelForm() {
             }
           }
           preParsedChapters = chapters;
-          if (coverPreview) extractedCoverFile = await urlToFile(coverPreview, `cover_${bookId}.jpg`);
         } else {
           manualContent = await selectedFile.text();
         }
@@ -273,14 +259,14 @@ export function UploadNovelForm() {
         if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
-          title: searchTitle, author: searchAuthor, genres: selectedGenres,
+          title: searchTitle, author: author.trim(), genres: selectedGenres,
           rawContent: manualContent, preParsedChapters,
-          coverFile: extractedCoverFile, ownerId: user!.uid,
+          ownerId: user!.uid,
           manualChapterInfo: manualContent ? { number: parseInt(chapterNumber), title: chapterTitle } : undefined
         });
       } else {
         await saveLocalBook({ 
-          id: bookId, title: searchTitle, author: searchAuthor, genre: selectedGenres, 
+          id: bookId, title: searchTitle, author: author.trim(), genre: selectedGenres, 
           isLocalOnly: true, totalChapters: preParsedChapters ? preParsedChapters.length : parseInt(chapterNumber)
         });
         if (preParsedChapters) {
@@ -337,7 +323,7 @@ export function UploadNovelForm() {
           <form onSubmit={handleUpload} className="space-y-6">
             <div className="grid gap-4">
               <div className="space-y-2 relative" ref={suggestionRef}>
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Series Metadata</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
@@ -358,11 +344,11 @@ export function UploadNovelForm() {
                     </ScrollArea>
                   </div>
                 )}
-                <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author" className="h-12 rounded-xl" required />
+                <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author Name" className="h-12 rounded-xl" required />
               </div>
               
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Genre</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Categories</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50">
@@ -394,24 +380,26 @@ export function UploadNovelForm() {
 
             <Tabs value={sourceMode} onValueChange={v => setSourceMode(v as any)}>
               <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1">
-                <TabsTrigger value="file" className="rounded-lg font-bold">File</TabsTrigger>
-                <TabsTrigger value="text" className="rounded-lg font-bold">Text</TabsTrigger>
+                <TabsTrigger value="file" className="rounded-lg font-bold">Upload File</TabsTrigger>
+                <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
               </TabsList>
               <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center">
                 <input type="file" className="hidden" id="file-upload" onChange={e => { const file = e.target.files?.[0]; if (file) setSelectedFile(file); }} />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
-                  {coverPreview ? (
-                    <img src={coverPreview} alt="Cover" className="aspect-[2/3] w-32 mx-auto rounded-lg shadow-xl" />
-                  ) : (
-                    <FileText className="h-8 w-8 text-primary mx-auto" />
-                  )}
-                  <p className="text-sm font-black uppercase text-primary">{selectedFile ? selectedFile.name : 'Select Manuscript'}</p>
+                  <FileText className="h-8 w-8 text-primary mx-auto opacity-40" />
+                  <p className="text-sm font-black uppercase text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} placeholder="Ch #" className="rounded-xl h-12" />
-                  <Input placeholder="Ch Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Sequence</Label>
+                    <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} placeholder="Ch #" className="rounded-xl h-12" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Chapter Name</Label>
+                    <Input placeholder="e.g. Divine Chariot" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
+                  </div>
                 </div>
                 <div className="relative">
                   <Textarea 
@@ -419,26 +407,27 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => { 
                       const text = e.clipboardData.getData('text'); 
+                      // Small delay to allow react-hook-form or state to stabilize if used
                       setTimeout(() => processManuscriptPaste(text), 50); 
                     }}
-                    placeholder="Paste novel content here..." 
-                    className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none" 
+                    placeholder="Paste novel content here... (Header metadata will be auto-parsed)" 
+                    className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none font-body text-base" 
                   />
                   {wasAutoFilled && (
-                    <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded-md">
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded-md animate-in fade-in zoom-in duration-300">
                       <Sparkles className="h-3 w-3" />
-                      <span className="text-[9px] font-black uppercase">Auto-Parsed</span>
+                      <span className="text-[9px] font-black uppercase tracking-tighter">Auto-Parsed Metadata</span>
                     </div>
                   )}
                 </div>
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl" disabled={loading || (!selectedFile && !pastedText.trim())}>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl transition-all hover:scale-[1.01]" disabled={loading || (!selectedFile && !pastedText.trim())}>
               {loading ? (
                 <><Loader2 className="animate-spin h-5 w-5 mr-2" /> {loadingMessage || 'Processing...'}</>
               ) : (
-                <><CloudUpload className="mr-2 h-5 w-5" />{uploadMode === 'cloud' ? 'Publish to Cloud' : 'Save to Archive'}</>
+                <><CloudUpload className="mr-2 h-5 w-5" />{uploadMode === 'cloud' ? 'Publish to Global Library' : 'Save to Archive'}</>
               )}
             </Button>
           </form>
