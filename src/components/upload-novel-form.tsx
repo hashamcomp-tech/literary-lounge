@@ -34,8 +34,10 @@ interface Suggestion {
 
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
- * Features a refined 3-line paste detection system.
- * Extracts Novel Title (line 1), Chapter Info (line 2), and Word Count (line 3).
+ * Features a refined 3-line paste detection system restricted to existing series.
+ * Line 1: Novel Name (Link check)
+ * Line 2: Chapter [Number] [Name]
+ * Line 3: [ xxx words ]
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -65,9 +67,7 @@ export function UploadNovelForm() {
 
   /**
    * Precise 3-Line Ingestion Engine.
-   * Line 1: Novel Name (Match check)
-   * Line 2: Chapter [Number] [Name]
-   * Line 3: [ xxx words ]
+   * Only initiates if first line matches a pre-existing novel.
    */
   const processManuscriptPaste = (rawText: string) => {
     const lines = rawText.split('\n');
@@ -80,62 +80,61 @@ export function UploadNovelForm() {
       }
     }
 
-    if (contentLines.length < 2) return;
+    if (contentLines.length < 1) return;
 
-    let linesToRemove: number[] = [];
-    let autoFilled = false;
-
-    // 1. Line 1: Novel Name check
+    // 1. Line 1 Check: Must match pre-existing novel
     const possibleTitle = contentLines[0].text;
     const existing = allBooks.find(b => b.title.toLowerCase() === possibleTitle.toLowerCase());
     
-    if (existing) {
-      setTitle(existing.title);
-      setAuthor(existing.author);
-      setSelectedGenres(existing.genre);
-      linesToRemove.push(contentLines[0].index);
-      autoFilled = true;
-    } else {
-      // Still treat as title if it looks like one
-      setTitle(possibleTitle);
-      linesToRemove.push(contentLines[0].index);
-      autoFilled = true;
+    if (!existing) {
+      // "Only initiate this if the first line match a pre existing novel"
+      return;
     }
 
-    // 2. Line 2: Chapter extraction
+    // Match found: Start deciphering and removing lines
+    let linesToRemove: number[] = [contentLines[0].index];
+    
+    // Auto-fill from linked series
+    setTitle(existing.title);
+    setAuthor(existing.author);
+    setSelectedGenres(existing.genre);
+
+    // 2. Line 2 Check: "Chapter [Numbers] [Phrase]"
     if (contentLines.length >= 2) {
-      const chRegex = /chapter\s+(\d+)\s*(.*)/i;
-      const match = contentLines[1].text.match(chRegex);
-      if (match) {
-        setChapterNumber(match[1]);
-        setChapterTitle(match[2].trim());
+      const line2 = contentLines[1].text;
+      const chMatch = line2.match(/chapter\s+(\d+)/i);
+      if (chMatch) {
+        const num = chMatch[1];
+        setChapterNumber(num);
+        
+        // Extract descriptive phrase (everything other than "chapter" and numbers)
+        const name = line2.replace(new RegExp(`chapter\\s+${num}`, 'i'), '').trim();
+        setChapterTitle(name);
+        
         linesToRemove.push(contentLines[1].index);
-        autoFilled = true;
       }
     }
 
-    // 3. Line 3: Word Count check
+    // 3. Line 3 Check: begins with "[" and has "words"
     if (contentLines.length >= 3) {
-      const l3 = contentLines[2].text;
-      if (l3.startsWith('[') && l3.toLowerCase().includes('words')) {
+      const line3 = contentLines[2].text;
+      if (line3.startsWith('[') && line3.toLowerCase().includes('words')) {
         linesToRemove.push(contentLines[2].index);
-        autoFilled = true;
       }
     }
 
-    if (autoFilled) {
-      const cleanedBody = lines
-        .filter((_, idx) => !linesToRemove.includes(idx))
-        .join('\n')
-        .trim();
+    // Construct cleaned body
+    const cleanedBody = lines
+      .filter((_, idx) => !linesToRemove.includes(idx))
+      .join('\n')
+      .trim();
 
-      setPastedText(cleanedBody);
-      setWasAutoFilled(true);
-      toast({ 
-        title: "Metadata Deciphered", 
-        description: "Bibliographic lines extracted and purged from body." 
-      });
-    }
+    setPastedText(cleanedBody);
+    setWasAutoFilled(true);
+    toast({ 
+      title: "Series Linked", 
+      description: `New chapter identified for "${existing.title}".` 
+    });
   };
 
   useEffect(() => {
@@ -395,13 +394,13 @@ export function UploadNovelForm() {
                       const text = e.clipboardData.getData('text'); 
                       setTimeout(() => processManuscriptPaste(text), 100); 
                     }}
-                    placeholder="Paste novel content here... (Header metadata will be auto-parsed)" 
+                    placeholder="Paste novel content here... (Metadata will auto-fill if the title matches a pre-existing novel)" 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none font-body text-base" 
                   />
                   {wasAutoFilled && (
                     <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded-md animate-in fade-in zoom-in duration-300">
                       <Sparkles className="h-3 w-3" />
-                      <span className="text-[9px] font-black uppercase tracking-tighter">Auto-Parsed Metadata</span>
+                      <span className="text-[9px] font-black uppercase tracking-tighter">Series Linked & Cleaned</span>
                     </div>
                   )}
                 </div>
