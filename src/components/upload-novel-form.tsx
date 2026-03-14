@@ -47,6 +47,7 @@ export function UploadNovelForm() {
   const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
+  // State with initial fallbacks
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
   const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
 
