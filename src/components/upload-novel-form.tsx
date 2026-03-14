@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
@@ -71,7 +72,7 @@ export function UploadNovelForm() {
    */
   const processManuscriptPaste = (rawText: string) => {
     const lines = rawText.split('\n');
-    // Get non-empty indices
+    // Get non-empty content lines
     const contentLines: { text: string; index: number }[] = [];
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].trim()) {
@@ -87,7 +88,7 @@ export function UploadNovelForm() {
     const existing = allBooks.find(b => b.title.toLowerCase() === possibleTitle.toLowerCase());
     
     if (!existing) {
-      // "Only initiate this if the first line match a pre existing novel"
+      // Only initiate if the first line matches a pre-existing novel
       return;
     }
 
@@ -133,7 +134,7 @@ export function UploadNovelForm() {
     setWasAutoFilled(true);
     toast({ 
       title: "Series Linked", 
-      description: `New chapter identified for "${existing.title}".` 
+      description: `Detected metadata for "${existing.title}". Fields auto-filled and headers stripped.` 
     });
   };
 
@@ -176,12 +177,30 @@ export function UploadNovelForm() {
       setShowSuggestions(false);
       return;
     }
+    
+    // Check if we already have a perfect match (prevents suggestion loop after selection)
+    const exactMatch = allBooks.find(b => b.title === trimmed);
+    if (exactMatch && author === exactMatch.author) {
+      setShowSuggestions(false);
+      return;
+    }
+
     const filtered = allBooks.filter(b => 
       b.title.toLowerCase().includes(trimmed.toLowerCase())
     );
     setFilteredSuggestions(filtered);
     setShowSuggestions(filtered.length > 0);
-  }, [title, allBooks]);
+  }, [title, allBooks, author]);
+
+  // Handle suggestion click
+  const selectNovel = (book: Suggestion) => {
+    setTitle(book.title);
+    setAuthor(book.author);
+    setSelectedGenres(book.genre);
+    setChapterNumber((book.totalChapters + 1).toString());
+    setShowSuggestions(false);
+    toast({ title: "Metadata Synced", description: `Linked to existing series: ${book.title}` });
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -282,7 +301,7 @@ export function UploadNovelForm() {
       if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
     };
     checkPermissions();
-  }, [user, db, isOfflineMode]);
+  }, [user, db, isOfflineMode, uploadMode]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
@@ -311,24 +330,44 @@ export function UploadNovelForm() {
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Series Metadata</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
+                  <Input 
+                    value={title} 
+                    onChange={(e) => setTitle(e.target.value)} 
+                    onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} 
+                    placeholder="Novel Title" 
+                    className="h-12 rounded-xl pl-10" 
+                    required 
+                  />
                 </div>
+                
+                {/* Novel Name Suggestions List */}
                 {showSuggestions && (
-                  <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <ScrollArea className="max-h-[240px]">
                       {filteredSuggestions.map((book) => (
-                        <button key={book.id} type="button" onClick={() => { setTitle(book.title); setAuthor(book.author); setSelectedGenres(book.genre); setChapterNumber((book.totalChapters + 1).toString()); setShowSuggestions(false); }} className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none">
-                          <div className="bg-primary/10 p-2 rounded-lg"><Book className="h-4 w-4 text-primary" /></div>
+                        <button 
+                          key={book.id} 
+                          type="button" 
+                          onClick={() => selectNovel(book)} 
+                          className="w-full flex items-center gap-3 p-3 hover:bg-primary/5 text-left transition-colors border-b last:border-none group"
+                        >
+                          <div className="bg-primary/10 p-2 rounded-lg group-hover:bg-primary/20 transition-colors">
+                            <Book className="h-4 w-4 text-primary" />
+                          </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold truncate">{book.title}</p>
-                            <p className="text-xs text-muted-foreground truncate">By {book.author}</p>
+                            <p className="text-[10px] text-muted-foreground truncate uppercase font-black tracking-tighter">By {book.author}</p>
                           </div>
-                          <div className="text-primary font-black text-sm pr-2">{book.totalChapters + 1}</div>
+                          <div className="flex flex-col items-end">
+                            <span className="text-primary font-black text-xs">Ch {book.totalChapters}</span>
+                            <span className="text-[8px] font-bold text-muted-foreground uppercase">Linked</span>
+                          </div>
                         </button>
                       ))}
                     </ScrollArea>
                   </div>
                 )}
+
                 <Input value={author} onChange={(e) => setAuthor(e.target.value)} placeholder="Author Name" className="h-12 rounded-xl" required />
               </div>
               
@@ -392,9 +431,10 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => { 
                       const text = e.clipboardData.getData('text'); 
+                      // Small delay to allow react to finish paste event if needed
                       setTimeout(() => processManuscriptPaste(text), 100); 
                     }}
-                    placeholder="Paste novel content here... (Metadata will auto-fill if the title matches a pre-existing novel)" 
+                    placeholder="Paste novel content here..." 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none font-body text-base" 
                   />
                   {wasAutoFilled && (
