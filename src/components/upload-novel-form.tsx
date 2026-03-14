@@ -39,6 +39,8 @@ interface Suggestion {
  * Line 1: Novel Name (Link check)
  * Line 2: Chapter [Number] [Name]
  * Line 3: [ xxx words ]
+ * 
+ * Includes persistence for user preferences (Cloud/Local, File/Text).
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -66,13 +68,36 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
+  // Persistence Logic: Load settings on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedUploadMode = localStorage.getItem('lounge-upload-pref') as 'cloud' | 'local';
+      const savedSourceMode = localStorage.getItem('lounge-source-pref') as 'file' | 'text';
+      
+      if (savedUploadMode) setUploadMode(savedUploadMode);
+      if (savedSourceMode) setSourceMode(savedSourceMode);
+    }
+  }, []);
+
+  // Persistence Logic: Save settings on change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lounge-upload-pref', uploadMode);
+    }
+  }, [uploadMode]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lounge-source-pref', sourceMode);
+    }
+  }, [sourceMode]);
+
   /**
    * Precise 3-Line Ingestion Engine.
    * Only initiates if first line matches a pre-existing novel.
    */
   const processManuscriptPaste = (rawText: string) => {
     const lines = rawText.split('\n');
-    // Get non-empty content lines
     const contentLines: { text: string; index: number }[] = [];
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].trim()) {
@@ -83,40 +108,29 @@ export function UploadNovelForm() {
 
     if (contentLines.length < 1) return;
 
-    // 1. Line 1 Check: Must match pre-existing novel
     const possibleTitle = contentLines[0].text;
     const existing = allBooks.find(b => b.title.toLowerCase() === possibleTitle.toLowerCase());
     
-    if (!existing) {
-      // Only initiate if the first line matches a pre-existing novel
-      return;
-    }
+    if (!existing) return;
 
-    // Match found: Start deciphering and removing lines
     let linesToRemove: number[] = [contentLines[0].index];
     
-    // Auto-fill from linked series
     setTitle(existing.title);
     setAuthor(existing.author);
     setSelectedGenres(existing.genre);
 
-    // 2. Line 2 Check: "Chapter [Numbers] [Phrase]"
     if (contentLines.length >= 2) {
       const line2 = contentLines[1].text;
       const chMatch = line2.match(/chapter\s+(\d+)/i);
       if (chMatch) {
         const num = chMatch[1];
         setChapterNumber(num);
-        
-        // Extract descriptive phrase (everything other than "chapter" and numbers)
         const name = line2.replace(new RegExp(`chapter\\s+${num}`, 'i'), '').trim();
         setChapterTitle(name);
-        
         linesToRemove.push(contentLines[1].index);
       }
     }
 
-    // 3. Line 3 Check: begins with "[" and has "words"
     if (contentLines.length >= 3) {
       const line3 = contentLines[2].text;
       if (line3.startsWith('[') && line3.toLowerCase().includes('words')) {
@@ -124,7 +138,6 @@ export function UploadNovelForm() {
       }
     }
 
-    // Construct cleaned body
     const cleanedBody = lines
       .filter((_, idx) => !linesToRemove.includes(idx))
       .join('\n')
@@ -178,7 +191,6 @@ export function UploadNovelForm() {
       return;
     }
     
-    // Check if we already have a perfect match (prevents suggestion loop after selection)
     const exactMatch = allBooks.find(b => b.title === trimmed);
     if (exactMatch && author === exactMatch.author) {
       setShowSuggestions(false);
@@ -192,7 +204,6 @@ export function UploadNovelForm() {
     setShowSuggestions(filtered.length > 0);
   }, [title, allBooks, author]);
 
-  // Handle suggestion click
   const selectNovel = (book: Suggestion) => {
     setTitle(book.title);
     setAuthor(book.author);
@@ -296,7 +307,8 @@ export function UploadNovelForm() {
     const checkPermissions = async () => {
       const pRef = doc(db, 'users', user.uid);
       const snap = await getDoc(pRef);
-      const permitted = user.email === 'hashamcomp@gmail.com' || snap.data()?.role === 'admin';
+      const data = snap.data();
+      const permitted = user.email === 'hashamcomp@gmail.com' || data?.role === 'admin';
       setCanUploadCloud(permitted);
       if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
     };
@@ -340,7 +352,6 @@ export function UploadNovelForm() {
                   />
                 </div>
                 
-                {/* Novel Name Suggestions List */}
                 {showSuggestions && (
                   <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-card border rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <ScrollArea className="max-h-[240px]">
@@ -431,7 +442,6 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => { 
                       const text = e.clipboardData.getData('text'); 
-                      // Small delay to allow react to finish paste event if needed
                       setTimeout(() => processManuscriptPaste(text), 100); 
                     }}
                     placeholder="Paste novel content here..." 
