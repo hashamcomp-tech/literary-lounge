@@ -36,23 +36,17 @@ interface Suggestion {
 
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
- * Features Structure-First Paste Detection and Pattern Deciphering.
- * Automatically strips detected headers (Title, Chapter Info, Word Counts) from content.
+ * Features a completely rewritten Structure-First Paste Detection system.
+ * Automatically identifies and fills Novel Name, Chapter Number, and Chapter Name.
+ * Strips these lines and Word Count metadata from the narrative body.
  */
 export function UploadNovelForm() {
   const router = useRouter();
   const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
-  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>(() => {
-    if (typeof window !== 'undefined') return (localStorage.getItem("lounge-upload-mode") as any) || 'local';
-    return 'local';
-  });
-  
-  const [sourceMode, setSourceMode] = useState<'file' | 'text'>(() => {
-    if (typeof window !== 'undefined') return (localStorage.getItem("lounge-source-mode") as any) || 'file';
-    return 'file';
-  });
+  const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
+  const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -76,147 +70,97 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  const persistSettings = (key: string, val: string) => {
-    if (typeof window !== 'undefined') localStorage.setItem(key, val);
-  };
-
   /**
-   * Greedy Pattern Deciphering.
-   * Scans the first 10 lines for Title, Chapter headers, and Word Count metadata.
-   * Automatically identifies and strips these lines from the narrative body.
+   * Manuscript Ingestion Engine (V2).
+   * Scans for patterns like:
+   * Line 1: Novel Name
+   * Line 2: Chapter X Title
+   * Line 3: [ 965 words ]
    */
-  const handleAnalyzePastedText = (rawText: string) => {
+  const processManuscriptPaste = (rawText: string) => {
     if (!rawText || rawText.length < 10) return;
-    
+
     const lines = rawText.split('\n');
-    let foundTitle = '';
-    let foundChNum = '';
-    let foundChTitle = '';
-    let headerLineIndices: number[] = [];
-    
-    // 1. Identify the Chapter Line (Supports: "Chapter 123", "Ch 123 Title", "123 Title", etc.)
+    let novelNameFound = "";
+    let chNumFound = "";
+    let chNameFound = "";
+    let linesToRemove: number[] = [];
+
+    // 1. Identify Chapter Line (The Anchor)
+    // Supports: "Chapter 2841 Divine Chariot", "Ch 123", "2841 Title"
     const chapterRegex = /^(?:Chapter|Ch|CHAPTER|CH)?\s*(\d+)(?:[:\s-]*)(.*)$/i;
-    let chapterLineIdx = -1;
+    let chapterIdx = -1;
 
     for (let i = 0; i < Math.min(lines.length, 10); i++) {
       const line = lines[i].trim();
       if (!line) continue;
       
       const match = line.match(chapterRegex);
-      const startsWithChapter = /^(?:Chapter|Ch|CHAPTER|CH)\s+/i.test(line);
+      // Heuristic: Must start with Chapter word OR look like a numeric header at the start of line
+      const looksLikeHeader = /^(?:Chapter|Ch|CHAPTER|CH)\s+/i.test(line) || /^\d+\s+.+/.test(line);
       
-      // If it starts with "Chapter" or clearly looks like a chapter header
-      if (match && (startsWithChapter || /^\d+\s+.+/.test(line))) {
-        chapterLineIdx = i;
-        foundChNum = match[1];
-        foundChTitle = match[2].trim();
-        headerLineIndices.push(i);
+      if (match && looksLikeHeader) {
+        chapterIdx = i;
+        chNumFound = match[1];
+        chNameFound = match[2].trim();
+        linesToRemove.push(i);
         break;
       }
     }
 
-    // 2. Identify Novel Title (First non-empty line before the chapter line)
-    if (chapterLineIdx > 0) {
-      for (let i = 0; i < chapterLineIdx; i++) {
+    // 2. Identify Novel Title (First non-empty line BEFORE the chapter line)
+    if (chapterIdx > 0) {
+      for (let i = 0; i < chapterIdx; i++) {
         const line = lines[i].trim();
-        if (line && !headerLineIndices.includes(i)) {
-          foundTitle = line;
-          headerLineIndices.push(i);
+        if (line && !linesToRemove.includes(i)) {
+          novelNameFound = line;
+          linesToRemove.push(i);
           break;
         }
       }
     }
 
-    // 3. Identify Word Count / Metadata markers
-    const wordCountRegex = /[\[\(]?\s*\d+\s*words\s*[\]\)]?/i;
+    // 3. Identify Word Count Metadata (Anywhere in first 15 lines)
+    // Matches patterns like: [ 965 words ], (1200 words), 1500 words
+    const wordCountRegex = /^[\[\(]?\s*[\d,]+\s*words\s*[\]\)]?$/i;
     for (let i = 0; i < Math.min(lines.length, 15); i++) {
-      if (headerLineIndices.includes(i)) continue;
+      if (linesToRemove.includes(i)) continue;
       const line = lines[i].trim();
       if (wordCountRegex.test(line)) {
-        headerLineIndices.push(i);
+        linesToRemove.push(i);
       }
     }
 
-    // 4. Update states and clean the narrative body
-    if (foundTitle || foundChNum) {
-      if (foundTitle) setTitle(foundTitle);
-      if (foundChNum) setChapterNumber(foundChNum);
-      if (foundChTitle) setChapterTitle(foundChTitle);
+    // 4. State Update and Body Cleaning
+    if (novelNameFound || chNumFound) {
+      if (novelNameFound) setTitle(novelNameFound);
+      if (chNumFound) setChapterNumber(chNumFound);
+      if (chNameFound) setChapterTitle(chNameFound);
 
-      // Match existing series
-      if (foundTitle) {
-        const existing = allBooks.find(b => b.title.toLowerCase() === foundTitle.toLowerCase());
+      // Attempt to link metadata from existing library series
+      if (novelNameFound) {
+        const existing = allBooks.find(b => b.title.toLowerCase() === novelNameFound.toLowerCase());
         if (existing) {
           setAuthor(existing.author);
           setSelectedGenres(existing.genre);
         }
       }
 
-      // Strip headers and metadata from the story text
-      const cleanedLines = lines.filter((_, idx) => !headerLineIndices.includes(idx));
-      
-      // Strip leading empty lines
-      let firstContentIdx = 0;
-      while (firstContentIdx < cleanedLines.length && !cleanedLines[firstContentIdx].trim()) {
-        firstContentIdx++;
-      }
-      
-      setPastedText(cleanedLines.slice(firstContentIdx).join('\n').trim());
+      // Generate the cleaned narrative body
+      const cleanedBody = lines
+        .filter((_, idx) => !linesToRemove.includes(idx))
+        .join('\n')
+        .trim();
+
+      setPastedText(cleanedBody);
       setWasAutoFilled(true);
-      toast({ title: "Pattern Deciphered", description: "Headers and word count purged from story." });
-    } else {
-      setWasAutoFilled(false);
+      
+      toast({ 
+        title: "Manuscript Parsed", 
+        description: `Title: ${novelNameFound || 'Matched'}, Ch: ${chNumFound}` 
+      });
     }
   };
-
-  useEffect(() => {
-    if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.epub')) {
-      setCoverPreview(null);
-      return;
-    }
-
-    const extractMetadata = async () => {
-      setIsExtractingPreview(true);
-      try {
-        const zip = await JSZip.loadAsync(selectedFile);
-        const containerXml = await zip.file("META-INF/container.xml")?.async("string");
-        if (!containerXml) throw new Error("Invalid Archive");
-
-        const parser = new DOMParser();
-        const containerDoc = parser.parseFromString(containerXml, "text/xml");
-        const opfPath = containerDoc.querySelector("rootfile")?.getAttribute("full-path");
-        if (!opfPath) throw new Error("OPF missing");
-
-        const opfXml = await zip.file(opfPath)?.async("string");
-        const opfDoc = parser.parseFromString(opfXml || "", "text/xml");
-
-        const titleText = opfDoc.querySelector("title")?.textContent || "";
-        const authorText = opfDoc.querySelector("creator")?.textContent || "";
-        
-        if (titleText) setTitle(titleText);
-        if (authorText) setAuthor(authorText);
-
-        const coverId = opfDoc.querySelector("meta[name='cover']")?.getAttribute("content") || 
-                        opfDoc.querySelector("item[properties='cover-image']")?.getAttribute("id");
-        
-        if (coverId) {
-          const coverItem = opfDoc.querySelector(`item[id='${coverId}']`);
-          const coverHref = coverItem?.getAttribute("href");
-          if (coverHref) {
-            const fullPath = opfPath.substring(0, opfPath.lastIndexOf('/') + 1) + coverHref;
-            const coverData = await zip.file(fullPath)?.async("blob");
-            if (coverData) setCoverPreview(URL.createObjectURL(coverData));
-          }
-        }
-        setWasAutoFilled(true);
-      } catch (e) {
-        console.warn("EPUB metadata extraction failed", e);
-      } finally {
-        setIsExtractingPreview(false);
-      }
-    };
-    extractMetadata();
-  }, [selectedFile]);
 
   useEffect(() => {
     fetchLibraryIndex();
@@ -284,7 +228,7 @@ export function UploadNovelForm() {
 
       if (sourceMode === 'file' && selectedFile) {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
-          setLoadingMessage('Parsing Digital Archive...');
+          setLoadingMessage('Parsing EPUB...');
           const zip = await JSZip.loadAsync(selectedFile);
           const containerXml = await zip.file("META-INF/container.xml")?.async("string");
           const parser = new DOMParser();
@@ -317,7 +261,7 @@ export function UploadNovelForm() {
             }
           }
           preParsedChapters = chapters;
-          if (coverPreview) extractedCoverFile = await urlToFile(coverPreview, `epub_cover_${bookId}.jpg`);
+          if (coverPreview) extractedCoverFile = await urlToFile(coverPreview, `cover_${bookId}.jpg`);
         } else {
           manualContent = await selectedFile.text();
         }
@@ -325,11 +269,8 @@ export function UploadNovelForm() {
         manualContent = pastedText;
       }
 
-      setLoadingMessage('Securing to Cloud...');
-      setProgress(70);
-
       if (uploadMode === 'cloud') {
-        if (!canUploadCloud) throw new Error("Publishing restricted.");
+        if (!canUploadCloud) throw new Error("Cloud publishing restricted.");
         await uploadBookToCloud({
           db: db!, storage: storage!, bookId,
           title: searchTitle, author: searchAuthor, genres: selectedGenres,
@@ -351,18 +292,12 @@ export function UploadNovelForm() {
         }
       }
 
-      setProgress(100);
-      toast({ title: 'Volume Secured', description: 'Manuscript integrated into the library.' });
-      
-      persistSettings("lounge-upload-mode", uploadMode);
-      persistSettings("lounge-source-mode", sourceMode);
-      
+      toast({ title: 'Success', description: 'Volume integrated into library.' });
       router.push('/');
     } catch (err: any) {
-      toast({ variant: 'destructive', title: 'Upload Failed', description: err.message });
+      toast({ variant: 'destructive', title: 'Error', description: err.message });
     } finally {
       setLoading(false);
-      setProgress(0);
     }
   };
 
@@ -380,19 +315,19 @@ export function UploadNovelForm() {
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
-      <Card className="border-none shadow-2xl bg-card/80 backdrop-blur-xl rounded-[2.5rem] overflow-hidden">
+      <Card className="border-none shadow-2xl bg-card/80 backdrop-blur rounded-[2.5rem] overflow-hidden">
         <div className="h-2 bg-primary w-full" />
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
               <CardTitle className="text-3xl font-headline font-black">Add Volume</CardTitle>
-              <CardDescription>Expand your personal or global library.</CardDescription>
+              <CardDescription>Expand your library collection.</CardDescription>
             </div>
             <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
-              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => { setUploadMode('cloud'); persistSettings("lounge-upload-mode", 'cloud'); }} disabled={!canUploadCloud && !isOfflineMode}>
+              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => setUploadMode('cloud')} disabled={!canUploadCloud}>
                 <Globe className="h-3 w-3 mr-1.5" /> Cloud
               </Button>
-              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => { setUploadMode('local'); persistSettings("lounge-upload-mode", 'local'); }}>
+              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => setUploadMode('local')}>
                 <HardDrive className="h-3 w-3 mr-1.5" /> Archive
               </Button>
             </div>
@@ -402,7 +337,7 @@ export function UploadNovelForm() {
           <form onSubmit={handleUpload} className="space-y-6">
             <div className="grid gap-4">
               <div className="space-y-2 relative" ref={suggestionRef}>
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Bibliographic Data</Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Metadata</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground opacity-50" />
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} onFocus={() => setShowSuggestions(filteredSuggestions.length > 0)} placeholder="Novel Title" className="h-12 rounded-xl pl-10" required />
@@ -427,29 +362,26 @@ export function UploadNovelForm() {
               </div>
               
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center justify-between">
-                  Categories
-                  {wasAutoFilled && <span className="text-primary flex items-center gap-1 animate-pulse"><Sparkles className="h-2.5 w-2.5" /> Context Deciphered</span>}
-                </Label>
+                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Genre</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50 hover:bg-muted/30 transition-colors">
+                    <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50">
                       {selectedGenres.length > 0 ? (
                         selectedGenres.map(g => (
-                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary gap-1.5 px-2 py-1 rounded-lg">
-                            {g} <X className="h-3 w-3 cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedGenres(prev => prev.filter(x => x !== g)); }} />
+                          <Badge key={g} variant="secondary" className="bg-primary/10 text-primary gap-1.5 px-2 py-1">
+                            {g} <X className="h-3 w-3 cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedGenres(p => p.filter(x => x !== g)); }} />
                           </Badge>
                         ))
                       ) : (
-                        <span className="text-sm text-muted-foreground">Select genre...</span>
+                        <span className="text-sm text-muted-foreground">Select genres...</span>
                       )}
                     </div>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[340px] p-0 rounded-2xl shadow-2xl border-none">
-                    <ScrollArea className="h-72 p-3">
-                      <div className="grid grid-cols-2 gap-2">
+                  <PopoverContent className="w-[300px] p-0 rounded-2xl overflow-hidden border-none shadow-2xl">
+                    <ScrollArea className="h-72 p-2">
+                      <div className="grid grid-cols-2 gap-1">
                         {GENRES.map(g => (
-                          <button key={g} type="button" onClick={() => setSelectedGenres(p => p.includes(g) ? p.filter(x => x !== g) : [...p, g])} className={`w-full text-left p-3 text-[11px] font-bold rounded-xl ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'bg-muted/50 hover:bg-muted'}`}>
+                          <button key={g} type="button" onClick={() => setSelectedGenres(p => p.includes(g) ? p.filter(x => x !== g) : [...p, g])} className={`w-full text-left p-2 text-[10px] font-bold rounded-lg ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
                             {g}
                           </button>
                         ))}
@@ -460,28 +392,26 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <Tabs value={sourceMode} onValueChange={v => { setSourceMode(v as any); persistSettings("lounge-source-mode", v); }}>
+            <Tabs value={sourceMode} onValueChange={v => setSourceMode(v as any)}>
               <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1">
-                <TabsTrigger value="file" className="rounded-lg font-bold">Manuscript File</TabsTrigger>
-                <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
+                <TabsTrigger value="file" className="rounded-lg font-bold">File</TabsTrigger>
+                <TabsTrigger value="text" className="rounded-lg font-bold">Text</TabsTrigger>
               </TabsList>
               <TabsContent value="file" className="p-10 border-2 border-dashed rounded-2xl text-center">
                 <input type="file" className="hidden" id="file-upload" onChange={e => { const file = e.target.files?.[0]; if (file) setSelectedFile(file); }} />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-3 block">
-                  {isExtractingPreview ? (
-                    <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
-                  ) : coverPreview ? (
+                  {coverPreview ? (
                     <img src={coverPreview} alt="Cover" className="aspect-[2/3] w-32 mx-auto rounded-lg shadow-xl" />
                   ) : (
                     <FileText className="h-8 w-8 text-primary mx-auto" />
                   )}
-                  <p className="text-sm font-black uppercase text-primary">{selectedFile ? selectedFile.name : 'Select EPUB or TXT'}</p>
+                  <p className="text-sm font-black uppercase text-primary">{selectedFile ? selectedFile.name : 'Select Manuscript'}</p>
                 </label>
               </TabsContent>
               <TabsContent value="text" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} placeholder="Chapter #" className="rounded-xl h-12" />
-                  <Input placeholder="Chapter Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
+                  <Input type="number" value={chapterNumber} onChange={e => setChapterNumber(e.target.value)} placeholder="Ch #" className="rounded-xl h-12" />
+                  <Input placeholder="Ch Title" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)} className="rounded-xl h-12" />
                 </div>
                 <div className="relative">
                   <Textarea 
@@ -489,35 +419,27 @@ export function UploadNovelForm() {
                     onChange={e => setPastedText(e.target.value)} 
                     onPaste={(e) => { 
                       const text = e.clipboardData.getData('text'); 
-                      setTimeout(() => handleAnalyzePastedText(text), 50); 
+                      setTimeout(() => processManuscriptPaste(text), 50); 
                     }}
-                    placeholder="Paste content here (pattern detection active)..." 
+                    placeholder="Paste novel content here..." 
                     className="min-h-[250px] rounded-2xl p-4 bg-muted/20 resize-none" 
                   />
                   {wasAutoFilled && (
-                    <div className="absolute top-2 right-2 animate-in fade-in zoom-in">
-                      <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20 text-[9px] font-black uppercase">
-                        Headers Cleaned
-                      </Badge>
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2 py-1 rounded-md">
+                      <Sparkles className="h-3 w-3" />
+                      <span className="text-[9px] font-black uppercase">Auto-Parsed</span>
                     </div>
                   )}
                 </div>
               </TabsContent>
             </Tabs>
 
-            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl relative overflow-hidden" disabled={loading || (!selectedFile && !pastedText.trim())}>
-              {loading && (
-                <div className="absolute bottom-0 left-0 right-0 bg-primary/20 transition-all duration-700 ease-in-out z-0" style={{ height: `${progress}%` }}>
-                  <div className="absolute top-0 left-1/2 w-[250%] aspect-square -translate-x-1/2 -translate-y-[92%] rounded-[42%] bg-primary/30 animate-liquid-wave opacity-80" />
-                </div>
+            <Button type="submit" className="w-full h-16 text-lg font-black rounded-2xl shadow-xl" disabled={loading || (!selectedFile && !pastedText.trim())}>
+              {loading ? (
+                <><Loader2 className="animate-spin h-5 w-5 mr-2" /> {loadingMessage || 'Processing...'}</>
+              ) : (
+                <><CloudUpload className="mr-2 h-5 w-5" />{uploadMode === 'cloud' ? 'Publish to Cloud' : 'Save to Archive'}</>
               )}
-              <div className="relative z-10 flex flex-col items-center">
-                {loading ? (
-                  <><Loader2 className="animate-spin h-5 w-5 mb-1" /><span className="text-[10px] font-black uppercase">{loadingMessage}</span></>
-                ) : (
-                  <><CloudUpload className="mr-2 h-5 w-5" />{uploadMode === 'cloud' ? 'Publish Globally' : 'Secure to Archive'}</>
-                )}
-              </div>
             </Button>
           </form>
         </CardContent>
