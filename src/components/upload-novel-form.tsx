@@ -10,7 +10,7 @@ import { Globe, HardDrive, FileText, X, Sparkles, Book, Search, CloudUpload, Loa
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
-import { saveLocalBook, saveLocalChapter, getAllLocalBooks, saveUserPreference, getUserPreference } from '@/lib/local-library';
+import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
 import { Badge } from '@/components/ui/badge';
@@ -38,8 +38,6 @@ interface Suggestion {
  * Line 1: Novel Name (Link check)
  * Line 2: Chapter [Number] [Name]
  * Line 3: [ xxx words ]
- * 
- * Includes persistence for user preferences using IndexedDB (Archive Storage).
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -48,7 +46,6 @@ export function UploadNovelForm() {
   
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
   const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
-  const [isPrefsLoaded, setIsPrefsLoaded] = useState(false);
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -67,37 +64,6 @@ export function UploadNovelForm() {
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
-
-  // Persistence Logic: Load settings from IndexedDB on mount
-  useEffect(() => {
-    const loadPrefs = async () => {
-      try {
-        const savedUploadMode = await getUserPreference<'cloud' | 'local'>('upload-mode');
-        const savedSourceMode = await getUserPreference<'file' | 'text'>('source-mode');
-        
-        if (savedUploadMode) setUploadMode(savedUploadMode);
-        if (savedSourceMode) setSourceMode(savedSourceMode);
-        setIsPrefsLoaded(true);
-      } catch (e) {
-        console.warn("Failed to recover IndexedDB preferences", e);
-        setIsPrefsLoaded(true);
-      }
-    };
-    loadPrefs();
-  }, []);
-
-  // Persistence Logic: Save settings to IndexedDB on change
-  useEffect(() => {
-    if (isPrefsLoaded) {
-      saveUserPreference('upload-mode', uploadMode);
-    }
-  }, [uploadMode, isPrefsLoaded]);
-
-  useEffect(() => {
-    if (isPrefsLoaded) {
-      saveUserPreference('source-mode', sourceMode);
-    }
-  }, [sourceMode, isPrefsLoaded]);
 
   /**
    * Precise 3-Line Ingestion Engine.
@@ -312,7 +278,7 @@ export function UploadNovelForm() {
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
       setCanUploadCloud(false);
-      if (uploadMode === 'cloud' && isPrefsLoaded) setUploadMode('local');
+      setUploadMode('local');
       return;
     }
     const checkPermissions = async () => {
@@ -321,10 +287,10 @@ export function UploadNovelForm() {
       const data = snap.data();
       const permitted = user.email === 'hashamcomp@gmail.com' || data?.role === 'admin';
       setCanUploadCloud(permitted);
-      if (uploadMode === 'cloud' && !permitted && isPrefsLoaded) setUploadMode('local');
+      if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
     };
     checkPermissions();
-  }, [user, db, isOfflineMode, uploadMode, isPrefsLoaded]);
+  }, [user, db, isOfflineMode, uploadMode]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
