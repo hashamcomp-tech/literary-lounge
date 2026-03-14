@@ -42,10 +42,11 @@ interface Suggestion {
  * @fileOverview Universal Manuscript Ingestion Form.
  * Features a refined 3-line paste detection system restricted to existing series.
  * Remembers user preferences for Upload Mode and Source Mode.
+ * Defaults to Cloud and Paste Text for the Super Admin.
  */
 export function UploadNovelForm() {
   const router = useRouter();
-  const { firestore: db, storage, user, isOfflineMode } = useFirebase();
+  const { firestore: db, storage, user, isOfflineMode, isUserLoading } = useFirebase();
   const { toast } = useToast();
   
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
@@ -70,18 +71,38 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  // 1. Load Preferences from IndexedDB
+  // 1. Load Preferences from IndexedDB with Super Admin defaults
   useEffect(() => {
     const loadPrefs = async () => {
       const savedUploadMode = await getUserPreference('uploadMode');
       const savedSourceMode = await getUserPreference('sourceMode');
       
-      if (savedUploadMode) setUploadMode(savedUploadMode);
-      if (savedSourceMode) setSourceMode(savedSourceMode);
+      const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
+
+      // Determine initial state: Stored Preference > Admin Default > Standard Default
+      if (savedUploadMode) {
+        setUploadMode(savedUploadMode);
+      } else if (isSuperAdmin) {
+        setUploadMode('cloud');
+      } else {
+        setUploadMode('local');
+      }
+
+      if (savedSourceMode) {
+        setSourceMode(savedSourceMode);
+      } else if (isSuperAdmin) {
+        setSourceMode('text');
+      } else {
+        setSourceMode('file');
+      }
+      
       setPreferencesLoaded(true);
     };
-    loadPrefs();
-  }, []);
+
+    if (!isUserLoading) {
+      loadPrefs();
+    }
+  }, [user, isUserLoading]);
 
   // 2. Persist Preferences when changed
   const handleSetUploadMode = (mode: 'cloud' | 'local') => {
@@ -307,7 +328,8 @@ export function UploadNovelForm() {
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
       setCanUploadCloud(false);
-      if (preferencesLoaded) setUploadMode('local');
+      // Revert to local if user has no permission
+      if (preferencesLoaded && uploadMode === 'cloud') setUploadMode('local');
       return;
     }
     const checkPermissions = async () => {
