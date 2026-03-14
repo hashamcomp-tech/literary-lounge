@@ -1,4 +1,5 @@
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { UploadNovelForm } from '@/components/upload-novel-form';
 
 /**
@@ -11,6 +12,8 @@ export default function UploadPage() {
       <Navbar />
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-2xl mx-auto">
+          <Breadcrumbs items={[{ label: 'Manuscript Ingestion' }]} />
+          
           <div className="text-center mb-10">
             <h1 className="text-4xl font-headline font-black mb-4">Add Chapter to Library</h1>
             <p className="text-lg text-muted-foreground">

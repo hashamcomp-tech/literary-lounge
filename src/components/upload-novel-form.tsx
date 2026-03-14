@@ -46,9 +46,9 @@ export function UploadNovelForm() {
   const { firestore: db, storage, user, isOfflineMode } = useFirebase();
   const { toast } = useToast();
   
-  // State with initial fallbacks
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
   const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
+  const [isPrefsLoaded, setIsPrefsLoaded] = useState(false);
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -77,8 +77,10 @@ export function UploadNovelForm() {
         
         if (savedUploadMode) setUploadMode(savedUploadMode);
         if (savedSourceMode) setSourceMode(savedSourceMode);
+        setIsPrefsLoaded(true);
       } catch (e) {
         console.warn("Failed to recover IndexedDB preferences", e);
+        setIsPrefsLoaded(true);
       }
     };
     loadPrefs();
@@ -86,12 +88,16 @@ export function UploadNovelForm() {
 
   // Persistence Logic: Save settings to IndexedDB on change
   useEffect(() => {
-    saveUserPreference('upload-mode', uploadMode);
-  }, [uploadMode]);
+    if (isPrefsLoaded) {
+      saveUserPreference('upload-mode', uploadMode);
+    }
+  }, [uploadMode, isPrefsLoaded]);
 
   useEffect(() => {
-    saveUserPreference('source-mode', sourceMode);
-  }, [sourceMode]);
+    if (isPrefsLoaded) {
+      saveUserPreference('source-mode', sourceMode);
+    }
+  }, [sourceMode, isPrefsLoaded]);
 
   /**
    * Precise 3-Line Ingestion Engine.
@@ -304,17 +310,21 @@ export function UploadNovelForm() {
   };
 
   useEffect(() => {
-    if (isOfflineMode || !db || !user || user.isAnonymous) return;
+    if (isOfflineMode || !db || !user || user.isAnonymous) {
+      setCanUploadCloud(false);
+      if (uploadMode === 'cloud' && isPrefsLoaded) setUploadMode('local');
+      return;
+    }
     const checkPermissions = async () => {
       const pRef = doc(db, 'users', user.uid);
       const snap = await getDoc(pRef);
       const data = snap.data();
       const permitted = user.email === 'hashamcomp@gmail.com' || data?.role === 'admin';
       setCanUploadCloud(permitted);
-      if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
+      if (uploadMode === 'cloud' && !permitted && isPrefsLoaded) setUploadMode('local');
     };
     checkPermissions();
-  }, [user, db, isOfflineMode, uploadMode]);
+  }, [user, db, isOfflineMode, uploadMode, isPrefsLoaded]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
@@ -387,7 +397,7 @@ export function UploadNovelForm() {
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Categories</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <div className="min-h-14 w-full cursor-pointer flex flex-wrap gap-2 p-3 border rounded-xl bg-background/50">
+                    <div className="min-h-14 w-full cursor-pointer flex wrap gap-2 p-3 border rounded-xl bg-background/50">
                       {selectedGenres.length > 0 ? (
                         selectedGenres.map(g => (
                           <Badge key={g} variant="secondary" className="bg-primary/10 text-primary gap-1.5 px-2 py-1">

@@ -1,10 +1,10 @@
-
 "use client";
 
 import { useParams, useRouter } from 'next/navigation';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import NovelCard from '@/components/novel-card';
 import { Loader2, BookX, ArrowLeft, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,8 @@ export default function GenrePage() {
       
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-6xl mx-auto">
+          <Breadcrumbs items={[{ label: 'Genres', href: '/explore' }, { label: decodedGenre }]} />
+          
           <header className="mb-12">
             <Button 
               variant="ghost" 

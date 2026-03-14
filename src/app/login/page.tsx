@@ -1,9 +1,9 @@
-
 "use client";
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -93,6 +93,8 @@ export default function LoginPage() {
       <Navbar />
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-md mx-auto">
+          <Breadcrumbs items={[{ label: 'Authentication Gate' }]} />
+          
           {!user || user.isAnonymous ? (
             <Card className="border-none shadow-2xl bg-card/80 rounded-[2.5rem] overflow-hidden">
               <div className="h-2 bg-primary w-full" />

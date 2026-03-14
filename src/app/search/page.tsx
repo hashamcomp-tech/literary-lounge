@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import Navbar from '@/components/navbar';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import NovelCard from '@/components/novel-card';
 import { Search as SearchIcon, Loader2, BookX, ArrowRight, Zap, User, Book } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -56,7 +57,6 @@ function SearchResults() {
 
     const fetchSuggestions = async () => {
       try {
-        // Querying flat fields at the root of 'books'
         const titleQuery = query(
           collection(db, 'books'),
           where('titleLower', '>=', lowerLocalQuery),
@@ -81,8 +81,8 @@ function SearchResults() {
           const data = doc.data();
           items.push({ 
             id: doc.id, 
-            title: data.metadata?.info?.bookTitle || 'Untitled', 
-            author: data.metadata?.info?.author || 'Unknown', 
+            title: data.metadata?.info?.bookTitle || data.title || 'Untitled', 
+            author: data.metadata?.info?.author || data.author || 'Unknown', 
             type: 'book' 
           });
         });
@@ -91,8 +91,8 @@ function SearchResults() {
           if (!items.find(i => i.id === doc.id)) {
             items.push({ 
               id: doc.id, 
-              title: data.metadata?.info?.bookTitle || 'Untitled', 
-              author: data.metadata?.info?.author || 'Unknown', 
+              title: data.metadata?.info?.bookTitle || data.title || 'Untitled', 
+              author: data.metadata?.info?.author || data.author || 'Unknown', 
               type: 'author' 
             });
           }
@@ -142,7 +142,6 @@ function SearchResults() {
         setSearchMethod('firestore');
         const lowerQuery = queryTerm.toLowerCase();
         
-        // Optimized case-insensitive queries using flat root fields
         const qTitle = query(
           collection(db, 'books'),
           where('titleLower', '>=', lowerQuery),
@@ -167,10 +166,10 @@ function SearchResults() {
           const data = doc.data();
           combinedMap.set(doc.id, {
             id: doc.id,
-            title: data.metadata?.info?.bookTitle || 'Untitled',
-            author: data.metadata?.info?.author || 'Unknown Author',
-            genre: data.metadata?.info?.genre || 'Novel',
-            coverImage: `https://picsum.photos/seed/${doc.id}/400/600`,
+            title: data.metadata?.info?.bookTitle || data.title || 'Untitled',
+            author: data.metadata?.info?.author || data.author || 'Unknown Author',
+            genre: data.metadata?.info?.genre || data.genre || 'Novel',
+            coverImage: data.coverURL || data.metadata?.info?.coverURL || `https://picsum.photos/seed/${doc.id}/400/600`,
           });
         });
 
@@ -188,6 +187,8 @@ function SearchResults() {
 
   return (
     <div className="container mx-auto px-4 pt-8">
+      <Breadcrumbs items={[{ label: 'Search Results' }, { label: queryTerm || 'Query' }]} />
+      
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
         <div className="flex items-center gap-3">
           <div className="bg-primary/10 p-3 rounded-2xl">
@@ -195,10 +196,10 @@ function SearchResults() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-3xl font-headline font-black">Search Results</h1>
+              <h1 className="text-3xl font-headline font-black">Search results</h1>
             </div>
             <p className="text-muted-foreground">
-              {loading ? "Searching..." : `${results.length} results for "${queryTerm}"`}
+              {loading ? "Searching..." : `${results.length} matches found for "${queryTerm}"`}
             </p>
           </div>
         </div>
@@ -260,7 +261,7 @@ function SearchResults() {
         <div className="py-20 text-center">
           <BookX className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-20" />
           <h2 className="text-2xl font-headline font-bold mb-2">No matches found</h2>
-          <Button variant="outline" className="mt-4" onClick={() => router.push('/')}>Back to Library</Button>
+          <Button variant="outline" className="mt-4 rounded-xl" onClick={() => router.push('/')}>Back to Library</Button>
         </div>
       )}
     </div>
@@ -269,7 +270,7 @@ function SearchResults() {
 
 export default function SearchPage() {
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-20 bg-background">
       <Navbar />
       <Suspense fallback={null}>
         <SearchResults />

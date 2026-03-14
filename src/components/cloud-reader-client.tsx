@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { doc, getDoc, collection, getDocs, updateDoc, increment, serverTimestamp, query, where, limit, setDoc, orderBy } from 'firebase/firestore';
 import { useFirebase, useUser } from '@/firebase';
+import { Breadcrumbs } from '@/components/breadcrumbs';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers, Menu, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,7 +74,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
-    // Scroll Persistence
     const handleScroll = () => {
       if (isLoading) return;
       
@@ -101,7 +101,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     };
   }, [id, isLoading, isScrollRestored, showRestorePrompt]);
 
-  // Unified Scroll Engine
   useEffect(() => {
     if (!autoScrollEnabled || isLoading || error || !isScrollRestored) return;
 
@@ -433,9 +432,18 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
       <header className="mb-12">
         <div className="flex items-center justify-between mb-8">
-          <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground hover:text-primary transition-colors group">
-            <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
-          </Button>
+          <div className="flex flex-col gap-4">
+            <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground hover:text-primary transition-colors group -ml-2">
+              <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
+            </Button>
+            <Breadcrumbs 
+              items={[
+                { label: 'Cloud', href: '/explore' },
+                { label: metadata?.title || 'Novel', href: `/book/${id}` },
+                { label: `Chapter ${currentChapterNum}` }
+              ]} 
+            />
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full shadow-sm">
               {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
