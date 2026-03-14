@@ -85,3 +85,17 @@ export async function deleteLocalBook(bookId: string): Promise<void> {
   await del(`lounge-chapters-${bookId}`);
   await del(`lounge-progress-${bookId}`);
 }
+
+/**
+ * Persists a user UI preference to IndexedDB.
+ */
+export async function setUserPreference(key: string, value: any): Promise<void> {
+  await set(`pref-${key}`, value);
+}
+
+/**
+ * Retrieves a persisted user UI preference.
+ */
+export async function getUserPreference(key: string): Promise<any> {
+  return await get(`pref-${key}`);
+}

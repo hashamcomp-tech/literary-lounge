@@ -10,7 +10,13 @@ import { Globe, HardDrive, FileText, X, Sparkles, Book, Search, CloudUpload, Loa
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs } from 'firebase/firestore';
 import { useFirebase } from '@/firebase/provider';
 import { useToast } from '@/hooks/use-toast';
-import { saveLocalBook, saveLocalChapter, getAllLocalBooks } from '@/lib/local-library';
+import { 
+  saveLocalBook, 
+  saveLocalChapter, 
+  getAllLocalBooks, 
+  setUserPreference, 
+  getUserPreference 
+} from '@/lib/local-library';
 import { GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
 import { Badge } from '@/components/ui/badge';
@@ -35,9 +41,7 @@ interface Suggestion {
 /**
  * @fileOverview Universal Manuscript Ingestion Form.
  * Features a refined 3-line paste detection system restricted to existing series.
- * Line 1: Novel Name (Link check)
- * Line 2: Chapter [Number] [Name]
- * Line 3: [ xxx words ]
+ * Remembers user preferences for Upload Mode and Source Mode.
  */
 export function UploadNovelForm() {
   const router = useRouter();
@@ -46,6 +50,7 @@ export function UploadNovelForm() {
   
   const [uploadMode, setUploadMode] = useState<'cloud' | 'local'>('local');
   const [sourceMode, setSourceMode] = useState<'file' | 'text'>('file');
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -64,6 +69,30 @@ export function UploadNovelForm() {
   const [filteredSuggestions, setFilteredSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
+
+  // 1. Load Preferences from IndexedDB
+  useEffect(() => {
+    const loadPrefs = async () => {
+      const savedUploadMode = await getUserPreference('uploadMode');
+      const savedSourceMode = await getUserPreference('sourceMode');
+      
+      if (savedUploadMode) setUploadMode(savedUploadMode);
+      if (savedSourceMode) setSourceMode(savedSourceMode);
+      setPreferencesLoaded(true);
+    };
+    loadPrefs();
+  }, []);
+
+  // 2. Persist Preferences when changed
+  const handleSetUploadMode = (mode: 'cloud' | 'local') => {
+    setUploadMode(mode);
+    setUserPreference('uploadMode', mode);
+  };
+
+  const handleSetSourceMode = (mode: 'file' | 'text') => {
+    setSourceMode(mode);
+    setUserPreference('sourceMode', mode);
+  };
 
   /**
    * Precise 3-Line Ingestion Engine.
@@ -278,7 +307,7 @@ export function UploadNovelForm() {
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
       setCanUploadCloud(false);
-      setUploadMode('local');
+      if (preferencesLoaded) setUploadMode('local');
       return;
     }
     const checkPermissions = async () => {
@@ -287,10 +316,12 @@ export function UploadNovelForm() {
       const data = snap.data();
       const permitted = user.email === 'hashamcomp@gmail.com' || data?.role === 'admin';
       setCanUploadCloud(permitted);
-      if (uploadMode === 'cloud' && !permitted) setUploadMode('local');
+      if (uploadMode === 'cloud' && !permitted && preferencesLoaded) {
+        setUploadMode('local');
+      }
     };
     checkPermissions();
-  }, [user, db, isOfflineMode, uploadMode]);
+  }, [user, db, isOfflineMode, uploadMode, preferencesLoaded]);
 
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
@@ -303,10 +334,21 @@ export function UploadNovelForm() {
               <CardDescription>Expand your library collection.</CardDescription>
             </div>
             <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-xl">
-              <Button size="sm" variant={uploadMode === 'cloud' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => setUploadMode('cloud')} disabled={!canUploadCloud}>
+              <Button 
+                size="sm" 
+                variant={uploadMode === 'cloud' ? 'default' : 'ghost'} 
+                className="rounded-lg h-8 text-[10px] font-black uppercase px-3" 
+                onClick={() => handleSetUploadMode('cloud')} 
+                disabled={!canUploadCloud}
+              >
                 <Globe className="h-3 w-3 mr-1.5" /> Cloud
               </Button>
-              <Button size="sm" variant={uploadMode === 'local' ? 'default' : 'ghost'} className="rounded-lg h-8 text-[10px] font-black uppercase px-3" onClick={() => setUploadMode('local')}>
+              <Button 
+                size="sm" 
+                variant={uploadMode === 'local' ? 'default' : 'ghost'} 
+                className="rounded-lg h-8 text-[10px] font-black uppercase px-3" 
+                onClick={() => handleSetUploadMode('local')}
+              >
                 <HardDrive className="h-3 w-3 mr-1.5" /> Archive
               </Button>
             </div>
@@ -390,7 +432,7 @@ export function UploadNovelForm() {
               </div>
             </div>
 
-            <Tabs value={sourceMode} onValueChange={v => setSourceMode(v as any)}>
+            <Tabs value={sourceMode} onValueChange={v => handleSetSourceMode(v as any)}>
               <TabsList className="grid w-full grid-cols-2 rounded-xl h-12 bg-muted/50 p-1">
                 <TabsTrigger value="file" className="rounded-lg font-bold">Upload File</TabsTrigger>
                 <TabsTrigger value="text" className="rounded-lg font-bold">Paste Text</TabsTrigger>
