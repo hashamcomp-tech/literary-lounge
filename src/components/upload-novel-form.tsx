@@ -72,7 +72,7 @@ export function UploadNovelForm() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  // 1. Load Preferences from IndexedDB with Super Admin defaults
+  // Load Preferences from IndexedDB with Super Admin defaults
   useEffect(() => {
     const loadPrefs = async () => {
       const savedUploadMode = await getUserPreference('uploadMode');
@@ -80,7 +80,6 @@ export function UploadNovelForm() {
       
       const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
 
-      // Determine initial state: Stored Preference > Admin Default > Standard Default
       if (savedUploadMode) {
         setUploadMode(savedUploadMode);
       } else if (isSuperAdmin) {
@@ -105,7 +104,6 @@ export function UploadNovelForm() {
     }
   }, [user, isUserLoading]);
 
-  // 2. Persist Preferences when changed
   const handleSetUploadMode = (mode: 'cloud' | 'local') => {
     setUploadMode(mode);
     setUserPreference('uploadMode', mode);
@@ -149,6 +147,7 @@ export function UploadNovelForm() {
       if (chMatch) {
         const num = chMatch[1];
         setChapterNumber(num);
+        // Extract everything after "Chapter X" as the title
         const name = line2.replace(new RegExp(`chapter\\s+${num}`, 'i'), '').trim();
         setChapterTitle(name);
         linesToRemove.push(contentLines[1].index);
@@ -329,7 +328,6 @@ export function UploadNovelForm() {
   useEffect(() => {
     if (isOfflineMode || !db || !user || user.isAnonymous) {
       setCanUploadCloud(false);
-      // Revert to local if user has no permission
       if (preferencesLoaded && uploadMode === 'cloud') setUploadMode('local');
       return;
     }

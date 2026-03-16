@@ -8,7 +8,7 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { BookX, Loader2, ChevronRight, ChevronLeft, ArrowLeft, Bookmark, Sun, Moon, Volume2, CloudOff, Square, Layers, Menu, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { playTextToSpeech, stopTextToSpeech, isSpeaking as isSpeakingService, chunkText } from '@/lib/tts-service';
 import { VoiceSettingsPopover } from '@/components/voice-settings-popover';
@@ -23,11 +23,16 @@ interface CloudReaderClientProps {
   chapterNumber: string;
 }
 
+/**
+ * @fileOverview Semantic Immersive Reader for Cloud Volumes.
+ * Optimized for Safari Reader Mode using <article> and <section> tags.
+ */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const currentChapterNum = parseInt(chapterNumber);
   
   const [metadata, setMetadata] = useState<any>(null);
@@ -44,17 +49,17 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [mergedRange, setMergedRange] = useState<number[]>([]);
   const [isScrollRestored, setIsScrollRestored] = useState(false);
   
-  // Restoration States
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [savedPos, setSavedPos] = useState(0);
   const [savedPct, setSavedPct] = useState(0);
   
-  // Table of Contents State
   const [tocChapters, setTocChapters] = useState<any[]>([]);
   const [isLoadingToc, setIsLoadingToc] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
+
+  const isMergedView = searchParams.get('mode') === 'merged';
 
   useEffect(() => {
     setMounted(true);
@@ -77,12 +82,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
     const handleScroll = () => {
       if (isLoading) return;
-      
       if (showRestorePrompt && window.scrollY > 100) {
         setShowRestorePrompt(false);
         setIsScrollRestored(true);
       }
-
       if (!isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
@@ -146,13 +149,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   useEffect(() => {
     if (isOfflineMode || !firestore || !id) return;
 
-    const loadChapter = async () => {
-      if (chaptersCache[currentChapterNum]) {
-        setIsLoading(false);
-        updateHistory(metadata);
-        return;
-      }
-
+    const loadChapterBatch = async () => {
       setIsLoading(true);
       setError(null);
       setIsScrollRestored(false);
@@ -173,12 +170,22 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         }
 
         const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        const q = query(chaptersCol, where('chapterNumber', '==', currentChapterNum), limit(1));
+        
+        // Define batch range: current + next 10 if in merged mode
+        const end = isMergedView ? Math.min(currentChapterNum + 10, meta.metadata?.info?.totalChapters || currentChapterNum + 10) : currentChapterNum;
+        const targetNumbers = Array.from({ length: end - currentChapterNum + 1 }, (_, i) => currentChapterNum + i);
+        
+        const q = query(chaptersCol, where('chapterNumber', 'in', targetNumbers));
         const querySnap = await getDocs(q);
         
         if (!querySnap.empty) {
-          const chData = { id: querySnap.docs[0].id, ...querySnap.docs[0].data() };
-          setChaptersCache(prev => ({ ...prev, [currentChapterNum]: chData }));
+          const newEntries: Record<number, any> = {};
+          querySnap.docs.forEach(d => {
+            const data = d.data();
+            newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
+          });
+          setChaptersCache(prev => ({ ...prev, ...newEntries }));
+          setMergedRange(targetNumbers);
           
           if (viewLoggedRef.current !== id) {
             updateDoc(doc(firestore, 'books', id), { views: increment(1) }).catch(() => {});
@@ -186,16 +193,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           }
           updateHistory(meta);
         } else {
-          const startQ = query(chaptersCol, orderBy('chapterNumber', 'asc'), limit(1));
-          const startSnap = await getDocs(startQ);
-          
-          if (!startSnap.empty) {
-            const firstNum = startSnap.docs[0].data().chapterNumber;
-            router.replace(`/pages/${id}/${firstNum}`);
-            return;
-          }
-          
-          setError(`This manuscript has no chapters available.`);
+          setError(`This manuscript section is unavailable.`);
         }
       } catch (err: any) {
         console.error("Chapter load failure:", err);
@@ -205,10 +203,9 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       }
     };
 
-    loadChapter();
+    loadChapterBatch();
     stopTextToSpeech();
-    setMergedRange([currentChapterNum]);
-  }, [firestore, id, currentChapterNum, isOfflineMode]);
+  }, [firestore, id, currentChapterNum, isOfflineMode, isMergedView]);
 
   useEffect(() => {
     if (!isLoading && !isScrollRestored && mounted) {
@@ -255,38 +252,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     }
   };
 
-  const handleMergeNext = async () => {
-    if (!firestore || !id || isMerging) return;
-    setIsMerging(true);
-    
-    try {
-      const start = Math.max(...mergedRange) + 1;
-      const end = Math.min(start + 9, metadata?.metadata?.info?.totalChapters || start + 9);
-      const targetNumbers = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-      
-      const missing = targetNumbers.filter(n => !chaptersCache[n]);
-      
-      if (missing.length > 0) {
-        const chaptersCol = collection(firestore, 'books', id, 'chapters');
-        const q = query(chaptersCol, where('chapterNumber', 'in', missing));
-        const snap = await getDocs(q);
-        
-        const newEntries: Record<number, any> = {};
-        snap.docs.forEach(d => {
-          const data = d.data();
-          newEntries[Number(data.chapterNumber)] = { id: d.id, ...data };
-        });
-        setChaptersCache(prev => ({ ...prev, ...newEntries }));
-      }
-
-      setMergedRange(prev => [...prev, ...targetNumbers].sort((a, b) => a - b));
-      // Simulate "page refresh" experience by scrolling slightly or updating layout
-      window.scrollTo({ top: window.scrollY + 50, behavior: 'smooth' });
-    } catch (e) {
-      console.error("Merge failed", e);
-    } finally {
-      setIsMerging(false);
-    }
+  const handleMergeNext = () => {
+    // Navigate to the same chapter but with merged mode active
+    // This provides a fresh page URL for Safari Reader to pick up
+    router.push(`/pages/${id}/${currentChapterNum}?mode=merged`);
   };
 
   const updateHistory = (metaOverride?: any) => {
@@ -443,7 +412,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               items={[
                 { label: 'Cloud', href: '/explore' },
                 { label: metadata?.title || 'Novel', href: `/book/${id}` },
-                { label: `Chapter ${currentChapterNum}` }
+                { label: isMergedView ? `Merged ${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : `Chapter ${currentChapterNum}` }
               ]} 
             />
           </div>
@@ -502,9 +471,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </header>
 
-      <div className="space-y-32">
+      {/* Main Article Segment - Safari Reader Optimized */}
+      <article className="space-y-32">
         {structuredChapters.map((chData, idx) => (
-          <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+          <section key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
             {idx > 0 && <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-32 h-px bg-border/50" />}
             <header className="mb-12 border-b border-border/50 pb-10">
               <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
@@ -523,7 +493,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               </h2>
             </header>
 
-            <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.8] text-foreground/90 font-body">
+            <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.8] text-foreground/90 font-body">
               {chData.paragraphs.map((para: any, pIdx: number) => (
                 <p key={pIdx} className="mb-8">
                   {para.sentences.map((seg: any) => (
@@ -542,29 +512,34 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
                 </p>
               ))}
             </div>
-          </article>
+          </section>
         ))}
-      </div>
+      </article>
 
       <footer className="mt-32 pt-12 border-t border-border/50 space-y-8">
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Button 
-            variant="outline" 
-            className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
-            onClick={handleMergeNext}
-            disabled={isMerging || (totalChapters > 0 && Math.max(...mergedRange) >= totalChapters)}
-          >
-            {isMerging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
-            Merge Next 10 Chapters
-          </Button>
-        </div>
+        {!isMergedView && (
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Button 
+              variant="outline" 
+              className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
+              onClick={handleMergeNext}
+              disabled={isMerging || (totalChapters > 0 && Math.max(...mergedRange) >= totalChapters)}
+            >
+              <Layers className="h-4 w-4" />
+              Merge Next 10 Chapters
+            </Button>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-8 pt-10">
           <Button 
             variant="outline" 
             className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest" 
             disabled={Math.min(...mergedRange) <= 1} 
-            onClick={() => router.push(`/pages/${id}/${Math.min(...mergedRange) - 1}`)}
+            onClick={() => {
+              const prevCh = Math.min(...mergedRange) - 1;
+              router.push(`/pages/${id}/${prevCh}`);
+            }}
           >
             <ChevronLeft className="mr-2 h-4 w-4" /> Prev
           </Button>
@@ -577,7 +552,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
             variant="default" 
             className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" 
             disabled={totalChapters > 0 && Math.max(...mergedRange) >= totalChapters} 
-            onClick={() => router.push(`/pages/${id}/${Math.max(...mergedRange) + 1}`)}
+            onClick={() => {
+              const nextCh = Math.max(...mergedRange) + 1;
+              router.push(`/pages/${id}/${nextCh}`);
+            }}
           >
             Next <ChevronRight className="mr-2 h-4 w-4" />
           </Button>

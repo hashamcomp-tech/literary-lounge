@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Loader2, BookX, ChevronLeft, ChevronRight, HardDrive, ArrowLeft, Sun, Moon, Volume2, Square, Layers, Bookmark, Menu, History, X } from 'lucide-react';
 import { getLocalBook, getLocalChapters, saveLocalProgress } from '@/lib/local-library';
@@ -15,10 +15,15 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
+/**
+ * @fileOverview Immersive Reader for Local Browser Archive.
+ * Supports "Merged View" via route navigation for Safari Reader Mode optimization.
+ */
 export default function LocalReader() {
   const { id, pageNumber } = useParams() as { id: string; pageNumber: string };
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const currentChapterNum = parseInt(pageNumber);
   
   const [novelData, setNovelData] = useState<any>(null);
@@ -31,15 +36,14 @@ export default function LocalReader() {
   const [scrollSpeed, setScrollSpeed] = useState(1);
   const [mounted, setMounted] = useState(false);
   const [mergedRange, setMergedRange] = useState<number[]>([]);
-  const [isMerging, setIsMerging] = useState(false);
   const [isScrollRestored, setIsScrollRestored] = useState(false);
   
-  // Restoration States
   const [showRestorePrompt, setShowRestorePrompt] = useState(false);
   const [savedPos, setSavedPos] = useState(0);
   const [savedPct, setSavedPct] = useState(0);
 
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
+  const isMergedView = searchParams.get('mode') === 'merged';
 
   useEffect(() => {
     setMounted(true);
@@ -62,12 +66,10 @@ export default function LocalReader() {
 
     const handleScroll = () => {
       if (loading) return;
-      
       if (showRestorePrompt && window.scrollY > 100) {
         setShowRestorePrompt(false);
         setIsScrollRestored(true);
       }
-
       if (!isScrollRestored) return;
       localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
@@ -146,7 +148,14 @@ export default function LocalReader() {
           const exists = sorted.some(ch => Number(ch.chapterNumber) === currentChapterNum);
           if (!exists && sorted.length > 0) {
             router.replace(`/local-pages/${id}/${sorted[0].chapterNumber}`);
+            return;
           }
+
+          const endNum = isMergedView ? Math.min(currentChapterNum + 10, sorted.length) : currentChapterNum;
+          const range = Array.from({ length: endNum - currentChapterNum + 1 }, (_, i) => currentChapterNum + i)
+            .filter(num => sorted.some(ch => Number(ch.chapterNumber) === num));
+          
+          setMergedRange(range);
         }
       } catch (error) {
         console.error("Failed to load local novel", error);
@@ -156,8 +165,7 @@ export default function LocalReader() {
     };
     loadLocalData();
     stopTextToSpeech();
-    setMergedRange([currentChapterNum]);
-  }, [id, currentChapterNum]);
+  }, [id, currentChapterNum, isMergedView]);
 
   useEffect(() => {
     if (!loading && !isScrollRestored && mounted) {
@@ -196,15 +204,7 @@ export default function LocalReader() {
   }, [id, currentChapterNum]);
 
   const handleMergeNext = () => {
-    setIsMerging(true);
-    const start = Math.max(...mergedRange) + 1;
-    const end = start + 9;
-    const nextBatch = Array.from({ length: end - start + 1 }, (_, i) => start + i)
-      .filter(num => allChapters.some(ch => Number(ch.chapterNumber) === num));
-    
-    setMergedRange(prev => [...prev, ...nextBatch].sort((a, b) => a - b));
-    setIsMerging(false);
-    window.scrollTo({ top: window.scrollY + 50, behavior: 'smooth' });
+    router.push(`/local-pages/${id}/${currentChapterNum}?mode=merged`);
   };
 
   const { structuredChapters, flatSentences } = useMemo(() => {
@@ -373,9 +373,10 @@ export default function LocalReader() {
           </div>
         </header>
 
-        <div className="space-y-32">
+        {/* Safari Reader Mode Targeted Structure */}
+        <article className="space-y-32">
           {structuredChapters.map((chData, idx) => (
-            <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+            <section key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
               {idx > 0 && <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-32 h-px bg-border/50" />}
               <header className="mb-12 border-b border-border/50 pb-10">
                 <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
@@ -393,7 +394,7 @@ export default function LocalReader() {
                 </h2>
               </header>
 
-              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.8] text-foreground/90 font-body">
+              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.8] text-foreground/90 font-body">
                 {chData.paragraphs.map((para: any, pIdx: number) => (
                   <p key={pIdx} className="mb-8">
                     {para.sentences.map((seg: any) => (
@@ -412,22 +413,24 @@ export default function LocalReader() {
                   </p>
                 ))}
               </div>
-            </article>
+            </section>
           ))}
-        </div>
+        </article>
 
         <section className="mt-32 pt-12 border-t border-border/50 space-y-8">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Button 
-              variant="outline" 
-              className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
-              onClick={handleMergeNext}
-              disabled={isMerging || Math.max(...mergedRange) >= Math.max(...allChapters.map(c => Number(c.chapterNumber)))}
-            >
-              {isMerging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
-              Merge Next 10 Chapters
-            </Button>
-          </div>
+          {!isMergedView && (
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Button 
+                variant="outline" 
+                className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
+                onClick={handleMergeNext}
+                disabled={Math.max(...mergedRange) >= allChapters.length}
+              >
+                <Layers className="h-4 w-4" />
+                Merge Next 10 Chapters
+              </Button>
+            </div>
+          )}
 
           <div className="flex flex-col sm:flex-row items-center justify-between gap-8 pt-10">
             <nav className="chapter-nav flex items-center justify-between gap-6 w-full sm:w-auto">
@@ -435,7 +438,10 @@ export default function LocalReader() {
                 variant="outline" 
                 className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest shadow-sm"
                 disabled={Math.min(...mergedRange) <= 1}
-                onClick={() => router.push(`/local-pages/${id}/${Math.min(...mergedRange) - 1}`)}
+                onClick={() => {
+                  const prev = Math.min(...mergedRange) - 1;
+                  router.push(`/local-pages/${id}/${prev}`);
+                }}
               >
                 <ChevronLeft className="h-4 w-4 mr-2" /> Prev
               </Button>
@@ -449,8 +455,11 @@ export default function LocalReader() {
               <Button 
                 variant="default" 
                 className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest"
-                disabled={Math.max(...mergedRange) >= Math.max(...allChapters.map(c => Number(c.chapterNumber)))}
-                onClick={() => router.push(`/local-pages/${id}/${Math.max(...mergedRange) + 1}`)}
+                disabled={Math.max(...mergedRange) >= allChapters.length}
+                onClick={() => {
+                  const next = Math.max(...mergedRange) + 1;
+                  router.push(`/local-pages/${id}/${next}`);
+                }}
               >
                 Next <ChevronRight className="h-4 w-4 ml-2" />
               </Button>
