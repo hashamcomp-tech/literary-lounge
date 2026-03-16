@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -208,12 +209,16 @@ export default function NovelReader({ novel }: NovelReaderProps) {
   const handleMergeNext = () => {
     setIsMerging(true);
     const start = Math.max(...mergedRange) + 1;
-    const end = start + 9;
+    const end = Math.min(start + 9, novel.chapters.length - 1);
     const nextBatch = Array.from({ length: end - start + 1 }, (_, i) => start + i)
       .filter(idx => idx < novel.chapters.length);
     
     setMergedRange(prev => [...prev, ...nextBatch].sort((a, b) => a - b));
     setIsMerging(false);
+    // Mimic refresh/jump to new content
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ top: 50, behavior: 'smooth' });
+    }
   };
 
   const { structuredChapters, flatSentences } = useMemo(() => {
@@ -350,10 +355,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
             </div>
           </header>
 
-          <div className="space-y-20">
-            {structuredChapters.map((chData) => (
-              <article key={chData.idx} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <header className="mb-10 border-b border-border/50 pb-10">
+          <div className="space-y-32">
+            {structuredChapters.map((chData, idx) => (
+              <article key={chData.idx} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+                {idx > 0 && <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-32 h-px bg-border/50" />}
+                <header className="mb-12 border-b border-border/50 pb-10">
                   <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
                     Chapter {chData.idx + 1}
                   </div>
@@ -369,7 +375,7 @@ export default function NovelReader({ novel }: NovelReaderProps) {
                   </h2>
                 </header>
 
-                <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
+                <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.8] text-foreground/90 font-body">
                   {chData.paragraphs.map((para: any, pIdx: number) => (
                     <p key={pIdx} className="mb-8">
                       {para.sentences.map((seg: any) => (
@@ -392,11 +398,11 @@ export default function NovelReader({ novel }: NovelReaderProps) {
             ))}
           </div>
 
-          <section className="mt-20 pt-12 border-t border-border/50 space-y-8">
+          <section className="mt-32 pt-12 border-t border-border/50 space-y-8">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Button 
                 variant="outline" 
-                className="rounded-2xl h-14 px-8 font-black uppercase text-[10px] tracking-widest gap-2 w-full sm:w-auto"
+                className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
                 onClick={handleMergeNext}
                 disabled={isMerging || Math.max(...mergedRange) >= novel.chapters.length - 1}
               >
@@ -405,20 +411,20 @@ export default function NovelReader({ novel }: NovelReaderProps) {
               </Button>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-8">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-8 pt-10">
               <nav className="chapter-nav flex items-center gap-6">
                 <Button 
                   variant="outline" 
                   className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest shadow-sm"
-                  disabled={currentChapterIndex === 0}
-                  onClick={() => setCurrentChapterIndex(prev => prev - 1)}
+                  disabled={Math.min(...mergedRange) === 0}
+                  onClick={() => setCurrentChapterIndex(Math.min(...mergedRange) - 1)}
                 >
                   <ChevronLeft className="h-4 w-4 mr-2" /> Prev
                 </Button>
                 
-                <div className="text-center min-w-[80px]">
-                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
-                    {mergedRange.length > 1 ? `${Math.min(...mergedRange) + 1}-${Math.max(...mergedRange) + 1}` : currentChapterIndex + 1} / {novel.chapters.length}
+                <div className="text-center min-w-[120px] bg-muted/30 px-6 py-2 rounded-full border border-border/50 shadow-inner">
+                  <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary">
+                    {mergedRange.length > 1 ? `${Math.min(...mergedRange) + 1} - ${Math.max(...mergedRange) + 1}` : currentChapterIndex + 1} / {novel.chapters.length}
                   </span>
                 </div>
 

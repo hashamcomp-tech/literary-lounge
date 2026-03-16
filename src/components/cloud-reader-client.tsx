@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
@@ -260,7 +261,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     
     try {
       const start = Math.max(...mergedRange) + 1;
-      const end = start + 9;
+      const end = Math.min(start + 9, metadata?.metadata?.info?.totalChapters || start + 9);
       const targetNumbers = Array.from({ length: end - start + 1 }, (_, i) => start + i);
       
       const missing = targetNumbers.filter(n => !chaptersCache[n]);
@@ -279,6 +280,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       }
 
       setMergedRange(prev => [...prev, ...targetNumbers].sort((a, b) => a - b));
+      // Simulate "page refresh" experience by scrolling slightly or updating layout
+      window.scrollTo({ top: window.scrollY + 50, behavior: 'smooth' });
     } catch (e) {
       console.error("Merge failed", e);
     } finally {
@@ -499,10 +502,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       </header>
 
-      <div className="space-y-20">
-        {structuredChapters.map((chData) => (
-          <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <header className="mb-10 border-b border-border/50 pb-10">
+      <div className="space-y-32">
+        {structuredChapters.map((chData, idx) => (
+          <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+            {idx > 0 && <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-32 h-px bg-border/50" />}
+            <header className="mb-12 border-b border-border/50 pb-10">
               <div className="flex items-center justify-center sm:justify-start gap-3 mb-6 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
                 <Bookmark className="h-4 w-4" />
                 Chapter {chData.num}
@@ -519,7 +523,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
               </h2>
             </header>
 
-            <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
+            <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.8] text-foreground/90 font-body">
               {chData.paragraphs.map((para: any, pIdx: number) => (
                 <p key={pIdx} className="mb-8">
                   {para.sentences.map((seg: any) => (
@@ -542,11 +546,11 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         ))}
       </div>
 
-      <footer className="mt-20 pt-12 border-t border-border/50 space-y-8">
+      <footer className="mt-32 pt-12 border-t border-border/50 space-y-8">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <Button 
             variant="outline" 
-            className="rounded-2xl h-14 px-8 font-black uppercase text-[10px] tracking-widest gap-2 w-full sm:w-auto"
+            className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
             onClick={handleMergeNext}
             disabled={isMerging || (totalChapters > 0 && Math.max(...mergedRange) >= totalChapters)}
           >
@@ -555,16 +559,26 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           </Button>
         </div>
 
-        <div className="flex items-center justify-between gap-8">
-          <Button variant="outline" className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest" disabled={currentChapterNum <= 1} onClick={() => router.push(`/pages/${id}/${currentChapterNum - 1}`)}>
+        <div className="flex items-center justify-between gap-8 pt-10">
+          <Button 
+            variant="outline" 
+            className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest" 
+            disabled={Math.min(...mergedRange) <= 1} 
+            onClick={() => router.push(`/pages/${id}/${Math.min(...mergedRange) - 1}`)}
+          >
             <ChevronLeft className="mr-2 h-4 w-4" /> Prev
           </Button>
-          <div className="text-center">
-             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
-               {mergedRange.length > 1 ? `${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : currentChapterNum} / {totalChapters || '...'}
+          <div className="text-center bg-muted/30 px-6 py-2 rounded-full border border-border/50 shadow-inner">
+             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary">
+               {mergedRange.length > 1 ? `${Math.min(...mergedRange)} - ${Math.max(...mergedRange)}` : currentChapterNum} / {totalChapters || '...'}
              </span>
           </div>
-          <Button variant="default" className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" disabled={totalChapters > 0 && Math.max(...mergedRange) >= totalChapters} onClick={() => router.push(`/pages/${id}/${Math.max(...mergedRange) + 1}`)}>
+          <Button 
+            variant="default" 
+            className="h-12 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-xl font-black text-xs uppercase tracking-widest" 
+            disabled={totalChapters > 0 && Math.max(...mergedRange) >= totalChapters} 
+            onClick={() => router.push(`/pages/${id}/${Math.max(...mergedRange) + 1}`)}
+          >
             Next <ChevronRight className="mr-2 h-4 w-4" />
           </Button>
         </div>

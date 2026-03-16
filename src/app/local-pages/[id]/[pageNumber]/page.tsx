@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
@@ -203,6 +204,7 @@ export default function LocalReader() {
     
     setMergedRange(prev => [...prev, ...nextBatch].sort((a, b) => a - b));
     setIsMerging(false);
+    window.scrollTo({ top: window.scrollY + 50, behavior: 'smooth' });
   };
 
   const { structuredChapters, flatSentences } = useMemo(() => {
@@ -362,7 +364,7 @@ export default function LocalReader() {
               <Badge variant="outline" className="border-amber-500/20 text-amber-600 bg-amber-500/5 uppercase tracking-widest gap-2 px-3 py-1 text-[10px] font-black">
                 <HardDrive className="h-3 w-3" /> Archive
               </Badge>
-              <Badge variant="secondary" className="bg-primary/5 text-primary border-none uppercase text-[10px] font-black px-3 py-1">{novelData?.genre || 'Novel'}</Badge>
+              <Badge variant="secondary" className="bg-primary/5 text-primary border-none uppercase text-[10px] font-black px-3 py-1">{novelData?.genre?.[0] || 'Novel'}</Badge>
             </div>
             <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight">
               {novelData?.title || 'Untitled'}
@@ -371,10 +373,11 @@ export default function LocalReader() {
           </div>
         </header>
 
-        <div className="space-y-20">
-          {structuredChapters.map((chData) => (
-            <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <header className="mb-10 border-b border-border/50 pb-10">
+        <div className="space-y-32">
+          {structuredChapters.map((chData, idx) => (
+            <article key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+              {idx > 0 && <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-32 h-px bg-border/50" />}
+              <header className="mb-12 border-b border-border/50 pb-10">
                 <div className="text-xs font-black uppercase tracking-[0.3em] text-primary/60 mb-4">
                   Chapter {chData.num}
                 </div>
@@ -390,7 +393,7 @@ export default function LocalReader() {
                 </h2>
               </header>
 
-              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.6] text-foreground/90 font-body">
+              <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] architecture leading-[1.8] text-foreground/90 font-body">
                 {chData.paragraphs.map((para: any, pIdx: number) => (
                   <p key={pIdx} className="mb-8">
                     {para.sentences.map((seg: any) => (
@@ -413,11 +416,11 @@ export default function LocalReader() {
           ))}
         </div>
 
-        <section className="mt-20 pt-12 border-t border-border/50 space-y-8">
+        <section className="mt-32 pt-12 border-t border-border/50 space-y-8">
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Button 
               variant="outline" 
-              className="rounded-2xl h-14 px-8 font-black uppercase text-[10px] tracking-widest gap-2 w-full sm:w-auto"
+              className="rounded-2xl h-14 px-10 font-black uppercase text-[10px] tracking-widest gap-3 w-full sm:w-auto hover:bg-primary hover:text-white transition-all shadow-xl"
               onClick={handleMergeNext}
               disabled={isMerging || Math.max(...mergedRange) >= Math.max(...allChapters.map(c => Number(c.chapterNumber)))}
             >
@@ -426,20 +429,20 @@ export default function LocalReader() {
             </Button>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-8 pt-10">
             <nav className="chapter-nav flex items-center justify-between gap-6 w-full sm:w-auto">
               <Button 
                 variant="outline" 
                 className="h-12 px-8 rounded-2xl border-primary/20 font-black text-xs uppercase tracking-widest shadow-sm"
-                disabled={currentChapterNum <= 1}
-                onClick={() => router.push(`/local-pages/${id}/${currentChapterNum - 1}`)}
+                disabled={Math.min(...mergedRange) <= 1}
+                onClick={() => router.push(`/local-pages/${id}/${Math.min(...mergedRange) - 1}`)}
               >
                 <ChevronLeft className="h-4 w-4 mr-2" /> Prev
               </Button>
               
-              <div className="text-center min-w-[80px]">
-                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">
-                   {mergedRange.length > 1 ? `${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : currentChapterNum} / {allChapters.length}
+              <div className="text-center min-w-[120px] bg-muted/30 px-6 py-2 rounded-full border border-border/50 shadow-inner">
+                 <span className="text-[10px] font-black uppercase tracking-[0.4em] text-primary">
+                   {mergedRange.length > 1 ? `${Math.min(...mergedRange)} - ${Math.max(...mergedRange)}` : currentChapterNum} / {allChapters.length}
                  </span>
               </div>
 
