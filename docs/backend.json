@@ -1,386 +1,101 @@
-// ===============================
-// PRODUCTION-STYLE AUTH SYSTEM
-// Firebase + Firestore Backend
-// ===============================
-
-// INSTALL:
-// npm install firebase firebase-admin express cors helmet rate-limiter-flexible bcrypt jsonwebtoken ua-parser-js
-
-// ===============================
-// IMPORTS
-// ===============================
-
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const crypto = require("crypto");
-const UAParser = require("ua-parser-js");
-
-const admin = require("firebase-admin");
-
-const {
-  RateLimiterMemory
-} = require("rate-limiter-flexible");
-
-// ===============================
-// FIREBASE INIT
-// ===============================
-
-admin.initializeApp({
-  credential: admin.credential.cert(require("./serviceAccountKey.json"))
-});
-
-const db = admin.firestore();
-const auth = admin.auth();
-
-// ===============================
-// APP INIT
-// ===============================
-
-const app = express();
-
-app.use(express.json());
-app.use(cors());
-app.use(helmet());
-
-// ===============================
-// RATE LIMITER
-// ===============================
-
-const loginLimiter = new RateLimiterMemory({
-  points: 10,
-  duration: 60
-});
-
-// ===============================
-// HELPERS
-// ===============================
-
-// Hash sensitive identifiers
-function sha256(input) {
-  return crypto.createHash("sha256").update(input).digest("hex");
-}
-
-// Get client IP safely
-function getClientIP(req) {
-  return (
-    req.headers["x-forwarded-for"] ||
-    req.connection.remoteAddress ||
-    req.socket.remoteAddress ||
-    "unknown"
-  ).toString();
-}
-
-// Parse user agent
-function parseUserAgent(ua) {
-  const parser = new UAParser(ua);
-  return parser.getResult();
-}
-
-// ===============================
-// USER REGISTRATION
-// ===============================
-
-app.post("/register", async (req, res) => {
-  try {
-    const {
-      email,
-      password,
-      username
-    } = req.body;
-
-    if (!email || !password || !username) {
-      return res.status(400).json({
-        error: "Missing fields"
-      });
+{
+  "entities": {
+    "UsernameMap": {
+      "title": "Username Map",
+      "description": "Mapping of username to email/uid for multi-identifier login.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "PublishRequest": {
+      "title": "Publish Request",
+      "description": "Reader application for cloud contributor status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+      },
+      "required": ["uid", "email", "status"]
+    },
+    "Book": {
+      "title": "Book",
+      "description": "A cloud-hosted literary volume.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "genre": { "type": "array", "items": { "type": "string" } },
+        "views": { "type": "number" },
+        "coverURL": { "type": "string" },
+        "isCloud": { "type": "boolean" }
+      },
+      "required": ["title", "author", "genre"]
+    },
+    "ActivityLog": {
+      "title": "Activity Log",
+      "description": "Records user navigation and interaction events for administrative auditing.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "path": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "userAgent": { "type": "string" }
+      },
+      "required": ["path", "timestamp"]
+    },
+    "SupportReport": {
+      "title": "Support Report",
+      "description": "User submitted bug report or feature request.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "category": { "type": "string", "enum": ["Bug", "Feature Request", "Content Issue", "Other"] },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["new", "resolved"] }
+      },
+      "required": ["email", "category", "description", "status"]
+    },
+    "HeroSlide": {
+      "title": "Hero Slide",
+      "description": "Configuration for a single display panel in the hero section.",
+      "type": "object",
+      "properties": {
+        "headline": { "type": "string" },
+        "headlineSize": { "type": "string", "description": "Tailwind text size class for responsive heading." },
+        "subheadline": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "backgroundImageURL": { "type": "string" },
+        "tagline": { "type": "string" },
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "bookId": { "type": "string", "description": "Optional ID of a novel to link to." }
+      }
+    },
+    "HeroConfig": {
+      "title": "Hero Configuration",
+      "description": "Global settings for the multi-slide landing page hero.",
+      "type": "object",
+      "properties": {
+        "slides": { "type": "array", "items": { "$ref": "#/entities/HeroSlide" } }
+      }
     }
-
-    // Create auth user
-    const userRecord = await auth.createUser({
-      email,
-      password
-    });
-
-    const uid = userRecord.uid;
-
-    // Store profile
-    await db.collection("users").doc(uid).set({
-      username,
-      email,
-      role: "reader",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastLoginAt: null,
-      status: "active",
-      emailVerified: false
-    });
-
-    // Username lookup map
-    await db.collection("usernames").doc(username).set({
-      uid
-    });
-
-    return res.json({
-      success: true,
-      uid
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      error: err.message
-    });
-  }
-});
-
-// ===============================
-// LOGIN EVENT LOGGER
-// ===============================
-
-app.post("/log-login", async (req, res) => {
-
-  try {
-
-    const {
-      uid
-    } = req.body;
-
-    if (!uid) {
-      return res.status(400).json({
-        error: "Missing uid"
-      });
-    }
-
-    const ip = getClientIP(req);
-
-    // Rate limit by IP
-    await loginLimiter.consume(ip);
-
-    const uaRaw = req.headers["user-agent"] || "unknown";
-    const uaParsed = parseUserAgent(uaRaw);
-
-    const ipHash = sha256(ip);
-
-    // Update user last login
-    await db.collection("users").doc(uid).update({
-      lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    // Security event
-    await db.collection("securityEvents").add({
-      uid,
-      eventType: "login_success",
-      ipHash,
-      userAgent: uaParsed,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      riskLevel: "low"
-    });
-
-    return res.json({
-      success: true
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    if (err.remainingPoints === 0) {
-      return res.status(429).json({
-        error: "Too many requests"
-      });
-    }
-
-    return res.status(500).json({
-      error: err.message
-    });
-  }
-});
-
-// ===============================
-// ACTIVITY LOGGER
-// ===============================
-
-app.post("/activity", async (req, res) => {
-
-  try {
-
-    const {
-      uid,
-      path
-    } = req.body;
-
-    if (!uid || !path) {
-      return res.status(400).json({
-        error: "Missing fields"
-      });
-    }
-
-    const ip = getClientIP(req);
-
-    await db.collection("activityLogs").add({
-      uid,
-      path,
-      ipHash: sha256(ip),
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    return res.json({
-      success: true
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(500).json({
-      error: err.message
-    });
-  }
-});
-
-// ===============================
-// SUPPORT REPORTS
-// ===============================
-
-app.post("/support-report", async (req, res) => {
-
-  try {
-
-    const {
-      uid,
-      category,
-      description
-    } = req.body;
-
-    if (!uid || !category || !description) {
-      return res.status(400).json({
-        error: "Missing fields"
-      });
-    }
-
-    await db.collection("supportReports").add({
-      uid,
-      category,
-      description,
-      status: "new",
-      timestamp: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    return res.json({
-      success: true
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(500).json({
-      error: err.message
-    });
-  }
-});
-
-// ===============================
-// PUBLISH REQUESTS
-// ===============================
-
-app.post("/publish-request", async (req, res) => {
-
-  try {
-
-    const {
-      uid
-    } = req.body;
-
-    if (!uid) {
-      return res.status(400).json({
-        error: "Missing uid"
-      });
-    }
-
-    await db.collection("publishRequests").add({
-      uid,
-      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: "pending"
-    });
-
-    return res.json({
-      success: true
-    });
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(500).json({
-      error: err.message
-    });
-  }
-});
-
-// ===============================
-// AUTH MIDDLEWARE
-// ===============================
-
-async function verifyToken(req, res, next) {
-
-  try {
-
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
-      return res.status(401).json({
-        error: "Unauthorized"
-      });
-    }
-
-    const token = authHeader.split("Bearer ")[1];
-
-    const decoded = await auth.verifyIdToken(token);
-
-    req.user = decoded;
-
-    next();
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(401).json({
-      error: "Invalid token"
-    });
+  },
+  "auth": {
+    "providers": ["email"]
+  },
+  "firestore": {
+    "/usernames/{username}": { "schema": { "$ref": "#/entities/UsernameMap" }, "description": "Lookup index for username-based login." },
+    "/publishRequests/{requestId}": { "schema": { "$ref": "#/entities/PublishRequest" }, "description": "Global queue for contributor vetting." },
+    "/books/{bookId}": { "schema": { "$ref": "#/entities/Book" }, "description": "Main cloud library storage." },
+    "/activityLogs/{logId}": { "schema": { "$ref": "#/entities/ActivityLog" }, "description": "Global trail of reader movements." },
+    "/supportReports/{reportId}": { "schema": { "$ref": "#/entities/SupportReport" }, "description": "User feedback channel." },
+    "/settings/hero": { "schema": { "$ref": "#/entities/HeroConfig" }, "description": "Global landing page configuration." }
   }
 }
-
-// ===============================
-// PROTECTED ROUTE EXAMPLE
-// ===============================
-
-app.get("/me", verifyToken, async (req, res) => {
-
-  try {
-
-    const uid = req.user.uid;
-
-    const userDoc = await db.collection("users").doc(uid).get();
-
-    return res.json(userDoc.data());
-
-  } catch (err) {
-
-    console.error(err);
-
-    return res.status(500).json({
-      error: err.message
-    });
-  }
-});
-
-// ===============================
-// START SERVER
-// ===============================
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log(`Secure auth server running on port ${PORT}`);
-});
