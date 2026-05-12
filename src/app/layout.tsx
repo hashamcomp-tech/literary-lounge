@@ -1,4 +1,3 @@
-
 import type {Metadata} from 'next';
 import './globals.css';
 import { FirebaseClientProvider } from '@/firebase';
@@ -35,6 +34,7 @@ export default function RootLayout({
             <ActivityTracker />
             {children}
             <Toaster />
+            <Analytics />
           </FirebaseClientProvider>
         </ThemeProvider>
       </body>
