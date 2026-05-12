@@ -5,24 +5,29 @@ import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
-/**
- * Initializes Firebase with a strict check for production environments.
- * Prevents multiple initialization attempts which can cause auth hangs.
- */
 export function initializeFirebase() {
   let firebaseApp: FirebaseApp;
 
   if (!getApps().length) {
     try {
-      // In production (Vercel), we rely on the hardcoded config to ensure the bucket name matches exactly.
       firebaseApp = initializeApp(firebaseConfig);
     } catch (e) {
       console.error('Firebase initialization failed:', e);
-      firebaseApp = getApp(); // Fallback to existing
+      firebaseApp = getApp();
     }
   } else {
     firebaseApp = getApp();
+  }
+
+  if (typeof window !== 'undefined') {
+    initializeAppCheck(firebaseApp, {
+      provider: new ReCaptchaV3Provider(
+        process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!
+      ),
+      isTokenAutoRefreshEnabled: true,
+    });
   }
 
   return getSdks(firebaseApp);
@@ -32,11 +37,10 @@ export function getSdks(firebaseApp: FirebaseApp) {
   const auth = getAuth(firebaseApp);
   const firestore = getFirestore(firebaseApp);
   const storage = getStorage(firebaseApp);
-  
-  // Explicitly set browser-based persistence to keep users logged in
+
   if (typeof window !== 'undefined') {
     setPersistence(auth, browserLocalPersistence).catch((err) => {
-      console.error("Auth persistence setup failed", err);
+      console.error('Auth persistence setup failed', err);
     });
   }
 
@@ -44,7 +48,7 @@ export function getSdks(firebaseApp: FirebaseApp) {
     firebaseApp,
     auth,
     firestore,
-    storage
+    storage,
   };
 }
 
