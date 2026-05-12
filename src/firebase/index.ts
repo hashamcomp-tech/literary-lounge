@@ -7,6 +7,8 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
+let appCheckInitialized = false;
+
 export function initializeFirebase() {
   let firebaseApp: FirebaseApp;
 
@@ -21,13 +23,18 @@ export function initializeFirebase() {
     firebaseApp = getApp();
   }
 
-  if (typeof window !== 'undefined') {
-    initializeAppCheck(firebaseApp, {
-      provider: new ReCaptchaV3Provider(
-        process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!
-      ),
-      isTokenAutoRefreshEnabled: true,
-    });
+  if (typeof window !== 'undefined' && !appCheckInitialized) {
+    try {
+      initializeAppCheck(firebaseApp, {
+        provider: new ReCaptchaV3Provider(
+          process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!
+        ),
+        isTokenAutoRefreshEnabled: true,
+      });
+      appCheckInitialized = true;
+    } catch (e) {
+      console.error('App Check initialization failed:', e);
+    }
   }
 
   return getSdks(firebaseApp);
