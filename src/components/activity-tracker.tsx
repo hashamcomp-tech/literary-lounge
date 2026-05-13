@@ -8,11 +8,37 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 /**
  * @fileOverview Global Site Traffic Monitor.
- * Silently records page transitions to Firestore for administrative auditing.
- * Helps Super Admins understand reader behavior and popular content.
- * 
- * NOTE: Tracking is suppressed for the Super Admin to maintain clean analytics.
+ * Records page transitions to Firestore and enriches each log with the
+ * visitor's IP address (fetched once per session, cached at module level)
+ * so the admin Active Users panel can show country, flag & timezone.
+ *
+ * NOTE: Tracking is suppressed for the Super Admin to keep analytics clean.
  */
+
+// Module-level cache — only one IP lookup per browser session
+let cachedIp: string | null = null;
+
+async function getClientIp(): Promise<string> {
+  if (cachedIp) return cachedIp;
+  try {
+    const res = await fetch('https://ipapi.co/ip/', { cache: 'no-store' });
+    if (!res.ok) throw new Error();
+    const ip = (await res.text()).trim();
+    cachedIp = ip;
+    return ip;
+  } catch {
+    try {
+      const res2 = await fetch('https://api.ipify.org?format=text', { cache: 'no-store' });
+      if (!res2.ok) throw new Error();
+      const ip = (await res2.text()).trim();
+      cachedIp = ip;
+      return ip;
+    } catch {
+      return 'unknown';
+    }
+  }
+}
+
 export function ActivityTracker() {
   const pathname = usePathname();
   const { user, isUserLoading } = useUser();
@@ -21,13 +47,12 @@ export function ActivityTracker() {
   useEffect(() => {
     if (!db || isUserLoading) return;
 
-    // Suppression Protocol: Do not log activity for the Super Admin
     const isSuperAdmin = user?.email === 'hashamcomp@gmail.com';
     if (isSuperAdmin) return;
 
-    // Log the visit to Firestore
     const logVisit = async () => {
       try {
+        const ip = await getClientIp();
         const logsRef = collection(db, 'activityLogs');
         await addDoc(logsRef, {
           path: pathname,
@@ -35,18 +60,17 @@ export function ActivityTracker() {
           email: user?.email || 'Guest',
           timestamp: serverTimestamp(),
           userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-          isAnonymous: !user || user.isAnonymous
+          isAnonymous: !user || user.isAnonymous,
+          ip,
         });
       } catch (err) {
-        // Silently fail to not interrupt user experience
-        console.warn("Activity logging paused: connection restricted.");
+        console.warn('Activity logging paused: connection restricted.');
       }
     };
 
-    // Small delay to ensure route stabilization
     const timer = setTimeout(logVisit, 1000);
     return () => clearTimeout(timer);
   }, [pathname, user, isUserLoading, db]);
 
-  return null; // This component has no visual presence
+  return null;
 }
