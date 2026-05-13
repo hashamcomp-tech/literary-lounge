@@ -42,7 +42,7 @@ service cloud.firestore {
         allow write: if isAdmin();
       }
     }
-    
+
     // Explicitly allow listing the books collection for discovery
     match /books {
       allow list: if true;
@@ -58,10 +58,10 @@ service cloud.firestore {
     // Admins can read all profiles for the Active Users panel
     match /users/{userId} {
       allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
 
-      
       match /history/{bookId} {
-        allow read, write: if isSignedIn() && request.auth.uid == userId;
+        allow read, write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
       }
     }
 
