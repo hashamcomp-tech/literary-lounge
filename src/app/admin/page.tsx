@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/navbar';
 import { Breadcrumbs } from '@/components/breadcrumbs';
@@ -11,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, useFirebase, useStorage } from '@/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc, arrayUnion, arrayRemove, query, orderBy, limit, onSnapshot, updateDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX, MousePointer2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, ShieldCheck, UserCheck, UserX, Mail, BookOpen, Layers, Activity, BarChart3, Inbox, Users, Star, CloudOff, Trash2, Search, ExternalLink, ChevronDown, UserMinus, ImagePlus, Settings2, Save, FileX, MousePointer2, AlertTriangle, CheckCircle2, Globe, Clock, MapPin, Mail as MailIcon, User, ChevronRight, ArrowLeft, Shield } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AdminStorageBar from '@/components/admin-storage-bar';
 import Link from 'next/link';
@@ -51,8 +50,58 @@ import { formatDistanceToNow } from 'date-fns';
 /**
  * @fileOverview Lounge Control Panel.
  * Primary command center for administrators.
- * Includes Narrative Summary management for the Novel Details page.
+ * Includes Active Users panel with IP geolocation, timezone, and profile viewer.
  */
+
+// ─── IP Geolocation Cache ────────────────────────────────────────────────────
+const geoCache: Record<string, { country: string; countryCode: string; timezone: string; city: string; flag: string }> = {};
+
+async function getGeoInfo(ip: string) {
+  if (!ip || ip === 'unknown' || ip.startsWith('::')) {
+    return { country: 'Unknown', countryCode: '', timezone: 'Unknown', city: 'Unknown', flag: '🌐' };
+  }
+  if (geoCache[ip]) return geoCache[ip];
+  try {
+    const res = await fetch(`https://ipapi.co/${ip}/json/`);
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const result = {
+      country: data.country_name || 'Unknown',
+      countryCode: data.country_code || '',
+      timezone: data.timezone || 'Unknown',
+      city: data.city || 'Unknown',
+      flag: data.country_code
+        ? String.fromCodePoint(...[...data.country_code].map(c => 0x1F1E0 - 65 + c.charCodeAt(0)))
+        : '🌐',
+    };
+    geoCache[ip] = result;
+    return result;
+  } catch {
+    return { country: 'Unknown', countryCode: '', timezone: 'Unknown', city: 'Unknown', flag: '🌐' };
+  }
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface EnrichedUser {
+  uid: string;
+  email: string;
+  displayName?: string;
+  username?: string;
+  photoURL?: string;
+  role?: string;
+  createdAt?: any;
+  lastActive?: any;
+  ip?: string;
+  country?: string;
+  countryCode?: string;
+  timezone?: string;
+  city?: string;
+  flag?: string;
+  isAnonymous?: boolean;
+  lastPath?: string;
+  isGeoLoading?: boolean;
+}
+
 export default function AdminPage() {
   const db = useFirestore();
   const storage = useStorage();
@@ -64,7 +113,7 @@ export default function AdminPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [approvedEmails, setApprovedEmails] = useState<string[]>([]);
-  
+
   // Settings Dialog State
   const [selectedBook, setSelectedBook] = useState<any | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -77,13 +126,20 @@ export default function AdminPage() {
   const [chapterCount, setChapterCount] = useState<number>(0);
   const [totalUsers, setTotalUsers] = useState<number>(0);
 
+  // Active Users Panel State
+  const [isActiveUsersOpen, setIsActiveUsersOpen] = useState(false);
+  const [enrichedUsers, setEnrichedUsers] = useState<EnrichedUser[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<EnrichedUser | null>(null);
+  const [isUserProfileOpen, setIsUserProfileOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const profileRef = useMemoFirebase(() => {
     if (!db || !user || user.isAnonymous || isUserLoading) return null;
     return doc(db, 'users', user.uid);
   }, [db, user, isUserLoading]);
-  
+
   const { data: profile } = useDoc(profileRef);
 
   useEffect(() => {
@@ -139,6 +195,114 @@ export default function AdminPage() {
     };
     fetchStats();
   }, [db, isAdmin, isOfflineMode]);
+
+  // ─── Load Active Users ────────────────────────────────────────────────────
+  const loadActiveUsers = useCallback(async () => {
+    if (!db || !isAdmin || isOfflineMode) return;
+    setIsLoadingUsers(true);
+    try {
+      // 1. Fetch all registered users
+      const usersSnap = await getDocs(collection(db, 'users'));
+
+      // 2. Fetch recent activity logs for IP + last path
+      const logsSnap = await getDocs(
+        query(collection(db, 'activityLogs'), orderBy('timestamp', 'desc'), limit(500))
+      );
+
+      // Build uid -> most recent log map
+      const latestLogByUid: Record<string, any> = {};
+      const anonByIp: Record<string, any> = {};
+
+      logsSnap.docs.forEach(d => {
+        const log = { id: d.id, ...d.data() };
+        const uid = log.uid || 'anonymous';
+        if (uid !== 'anonymous') {
+          if (!latestLogByUid[uid]) latestLogByUid[uid] = log;
+        } else {
+          const ipKey = log.ip || log.userAgent || 'unknown';
+          if (!anonByIp[ipKey]) anonByIp[ipKey] = log;
+        }
+      });
+
+      // 3. Build enriched list from registered users
+      const usersMap: Record<string, boolean> = {};
+      const registeredUsers: EnrichedUser[] = usersSnap.docs.map(d => {
+        usersMap[d.id] = true;
+        const data = d.data();
+        const log = latestLogByUid[d.id];
+        return {
+          uid: d.id,
+          email: data.email || log?.email || 'No email',
+          displayName: data.displayName || data.username || '',
+          username: data.username || '',
+          photoURL: data.photoURL || '',
+          role: data.role || 'reader',
+          createdAt: data.createdAt,
+          lastActive: log?.timestamp || data.lastActive,
+          ip: log?.ip || data.ip || '',
+          lastPath: log?.path || '',
+          isAnonymous: false,
+          flag: '🌐',
+          country: 'Loading...',
+          timezone: 'Loading...',
+          city: '',
+          isGeoLoading: true,
+        };
+      });
+
+      // 4. Add anonymous visitors not in /users
+      const anonUsers: EnrichedUser[] = Object.values(anonByIp)
+        .filter(log => !usersMap[log.uid])
+        .slice(0, 20)
+        .map((log, i) => ({
+          uid: `anon_${i}`,
+          email: 'Guest',
+          isAnonymous: true,
+          ip: log.ip || '',
+          lastPath: log.path || '',
+          lastActive: log.timestamp,
+          flag: '🌐',
+          country: 'Loading...',
+          timezone: 'Loading...',
+          city: '',
+          isGeoLoading: true,
+        }));
+
+      const allUsers = [...registeredUsers, ...anonUsers];
+      setEnrichedUsers(allUsers);
+      setIsLoadingUsers(false);
+
+      // 5. Geo-enrich each user in the background
+      allUsers.forEach(async (u, idx) => {
+        if (!u.ip) {
+          setEnrichedUsers(prev => prev.map((p, i) => i === idx
+            ? { ...p, country: 'Unknown', timezone: 'Unknown', city: 'Unknown', flag: '🌐', isGeoLoading: false }
+            : p
+          ));
+          return;
+        }
+        const geo = await getGeoInfo(u.ip);
+        setEnrichedUsers(prev => prev.map((p, i) => i === idx
+          ? { ...p, ...geo, isGeoLoading: false }
+          : p
+        ));
+      });
+
+    } catch (err) {
+      console.error('Error loading users:', err);
+      setIsLoadingUsers(false);
+    }
+  }, [db, isAdmin, isOfflineMode]);
+
+  const handleOpenActiveUsers = () => {
+    setIsActiveUsersOpen(true);
+    loadActiveUsers();
+  };
+
+  const handleOpenUserProfile = (u: EnrichedUser) => {
+    setSelectedUser(u);
+    setIsUserProfileOpen(true);
+  };
 
   const requestsQuery = useMemoFirebase(() => {
     if (!isAdmin || isOfflineMode || !db) return null;
@@ -206,10 +370,10 @@ export default function AdminPage() {
     if (!db || !selectedBook) return;
     setIsSavingMetadata(true);
     try {
-      await updateCloudBookMetadata(db, selectedBook.id, { 
-        title: editTitle, 
+      await updateCloudBookMetadata(db, selectedBook.id, {
+        title: editTitle,
         author: editAuthor,
-        summary: editSummary 
+        summary: editSummary
       });
       toast({ title: "Volume Updated", description: "Bibliographic data synchronized successfully." });
       setIsSettingsOpen(false);
@@ -227,7 +391,6 @@ export default function AdminPage() {
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedBook || !db || !storage) return;
-
     setProcessingId(selectedBook.id);
     try {
       const optimizedBlob = await optimizeCoverImage(file);
@@ -264,11 +427,11 @@ export default function AdminPage() {
     <div className="min-h-screen pb-20 bg-background">
       <Navbar />
       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onFileChange} />
-      
+
       <main className="container mx-auto px-4 pt-12">
         <div className="max-w-5xl mx-auto">
           <Breadcrumbs items={[{ label: 'Control Panel' }]} />
-          
+
           <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
             <div>
               <div className="flex items-center gap-2 mb-2">
@@ -287,12 +450,24 @@ export default function AdminPage() {
             </div>
           </header>
 
+          {/* ── Stats Cards ── */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-            <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
+
+            {/* Active Readers — clickable */}
+            <Card
+              className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl cursor-pointer hover:bg-primary/10 hover:shadow-2xl transition-all group relative overflow-hidden"
+              onClick={handleOpenActiveUsers}
+            >
+              <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-[2rem]" />
               <Users className="h-6 w-6 text-primary mb-4" />
               <h3 className="text-4xl font-headline font-black">{totalUsers}</h3>
               <p className="text-[10px] font-black uppercase text-muted-foreground mt-2">Active Readers</p>
+              <div className="flex items-center gap-1 mt-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-[10px] font-black uppercase">View All</span>
+                <ChevronRight className="h-3 w-3" />
+              </div>
             </Card>
+
             <Card className="bg-card/40 p-8 rounded-[2rem] border-none shadow-xl">
               <BookOpen className="h-6 w-6 text-primary mb-4" />
               <h3 className="text-4xl font-headline font-black">{bookCount}</h3>
@@ -335,7 +510,7 @@ export default function AdminPage() {
                           <TableRow key={report.id} className={report.status === 'resolved' ? 'opacity-50' : ''}>
                             <TableCell className="font-bold">
                               {report.email}
-                              <br/>
+                              <br />
                               <span className="text-[9px] text-muted-foreground uppercase font-black">
                                 {report.timestamp?.toDate ? formatDistanceToNow(report.timestamp.toDate(), { addSuffix: true }) : 'Just now'}
                               </span>
@@ -346,9 +521,9 @@ export default function AdminPage() {
                             </TableCell>
                             <TableCell className="text-right space-x-2">
                               {report.status === 'new' ? (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => handleResolveReport(report.id)}
                                   className="text-green-600 font-bold text-[10px]"
                                 >
@@ -357,9 +532,9 @@ export default function AdminPage() {
                               ) : (
                                 <Badge variant="secondary" className="bg-green-100 text-green-700 uppercase text-[9px] font-black">Archived</Badge>
                               )}
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => handleDeleteReport(report.id)}
                                 className="text-destructive h-8 w-8"
                               >
@@ -397,14 +572,14 @@ export default function AdminPage() {
                           <TableRow key={book.id}>
                             <TableCell className="font-bold">
                               {book.title || book.metadata?.info?.bookTitle}
-                              <br/>
+                              <br />
                               <span className="text-[10px] text-muted-foreground">By {book.author || book.metadata?.info?.author}</span>
                             </TableCell>
                             <TableCell><Badge variant="outline">{Array.isArray(book.genre) ? book.genre[0] : book.genre}</Badge></TableCell>
                             <TableCell className="text-right">
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => openSettings(book)}
                                 className="text-primary"
                                 title="Manuscript Settings"
@@ -484,14 +659,14 @@ export default function AdminPage() {
         </div>
       </main>
 
-      {/* Manuscript Settings Dialog */}
+      {/* ── Manuscript Settings Dialog ── */}
       <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
         <DialogContent className="max-w-3xl rounded-[2.5rem] border-none shadow-2xl overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-3xl font-headline font-black">Manuscript Settings</DialogTitle>
             <DialogDescription>Modify volume metadata, summary, or review indexed chapters.</DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-8 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
@@ -519,9 +694,9 @@ export default function AdminPage() {
 
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Narrative Summary (Displays on Details Page)</Label>
-              <Textarea 
-                value={editSummary} 
-                onChange={e => setEditSummary(e.target.value)} 
+              <Textarea
+                value={editSummary}
+                onChange={e => setEditSummary(e.target.value)}
                 placeholder="Write a captivating summary for readers..."
                 className="min-h-[120px] rounded-2xl p-4 bg-muted/20 border-none resize-none"
               />
@@ -571,13 +746,233 @@ export default function AdminPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Active Users Dialog ── */}
+      <Dialog open={isActiveUsersOpen} onOpenChange={setIsActiveUsersOpen}>
+        <DialogContent className="max-w-4xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+          <div className="bg-gradient-to-br from-primary/10 to-background p-8 border-b">
+            <DialogHeader>
+              <DialogTitle className="text-3xl font-headline font-black flex items-center gap-3">
+                <div className="bg-primary/10 p-2.5 rounded-2xl">
+                  <Users className="h-6 w-6 text-primary" />
+                </div>
+                Active Users
+              </DialogTitle>
+              <DialogDescription className="text-sm mt-1">
+                {enrichedUsers.length} reader{enrichedUsers.length !== 1 ? 's' : ''} registered in the Lounge. Click any user to view their full profile.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <ScrollArea className="h-[500px]">
+            {isLoadingUsers ? (
+              <div className="flex items-center justify-center h-40">
+                <Loader2 className="animate-spin text-primary h-8 w-8" />
+              </div>
+            ) : enrichedUsers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+                <Users className="h-10 w-10 opacity-20" />
+                <p className="font-medium text-sm">No users found</p>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {enrichedUsers.map((u, i) => (
+                  <button
+                    key={u.uid + i}
+                    onClick={() => handleOpenUserProfile(u)}
+                    className="w-full text-left px-8 py-5 hover:bg-muted/40 transition-colors flex items-center gap-5 group"
+                  >
+                    {/* Avatar */}
+                    <div className="relative flex-shrink-0">
+                      {u.photoURL ? (
+                        <img src={u.photoURL} className="h-11 w-11 rounded-full object-cover ring-2 ring-primary/10" alt="" />
+                      ) : (
+                        <div className={`h-11 w-11 rounded-full flex items-center justify-center text-lg font-black ring-2 ring-primary/10 ${u.isAnonymous ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary'}`}>
+                          {u.isAnonymous ? '?' : (u.displayName?.[0] || u.email?.[0] || '?').toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Identity */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-bold text-sm truncate">
+                          {u.isAnonymous ? 'Guest Visitor' : (u.displayName || u.email)}
+                        </span>
+                        {u.role === 'admin' && (
+                          <Badge className="text-[9px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20 font-black">ADMIN</Badge>
+                        )}
+                        {u.isAnonymous && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 font-black">GUEST</Badge>
+                        )}
+                      </div>
+                      {!u.isAnonymous && u.displayName && (
+                        <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                      )}
+                    </div>
+
+                    {/* Location */}
+                    <div className="flex-shrink-0 text-right hidden sm:block">
+                      {u.isGeoLoading ? (
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span className="text-[10px]">Locating...</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span className="text-lg leading-none">{u.flag}</span>
+                            <span className="text-xs font-bold">{u.country}</span>
+                          </div>
+                          <p className="text-[10px] text-muted-foreground font-medium">{u.timezone}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Last seen */}
+                    <div className="flex-shrink-0 text-right hidden md:block w-24">
+                      {u.lastActive?.toDate ? (
+                        <p className="text-[10px] text-muted-foreground">{formatDistanceToNow(u.lastActive.toDate(), { addSuffix: true })}</p>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground">—</p>
+                      )}
+                    </div>
+
+                    <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── User Profile Dialog ── */}
+      <Dialog open={isUserProfileOpen} onOpenChange={setIsUserProfileOpen}>
+        <DialogContent className="max-w-lg rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+          {selectedUser && (
+            <>
+              {/* Header */}
+              <div className="bg-gradient-to-br from-primary/20 via-primary/10 to-transparent p-8 pb-6">
+                <button
+                  onClick={() => setIsUserProfileOpen(false)}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase text-muted-foreground hover:text-foreground transition-colors mb-6"
+                >
+                  <ArrowLeft className="h-3 w-3" /> Back to Users
+                </button>
+
+                <div className="flex items-start gap-5">
+                  {selectedUser.photoURL ? (
+                    <img src={selectedUser.photoURL} className="h-20 w-20 rounded-3xl object-cover shadow-xl ring-4 ring-background" alt="" />
+                  ) : (
+                    <div className={`h-20 w-20 rounded-3xl flex items-center justify-center text-3xl font-black shadow-xl ring-4 ring-background ${selectedUser.isAnonymous ? 'bg-muted text-muted-foreground' : 'bg-primary/20 text-primary'}`}>
+                      {selectedUser.isAnonymous ? '?' : (selectedUser.displayName?.[0] || selectedUser.email?.[0] || '?').toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-2xl font-headline font-black truncate mb-1">
+                      {selectedUser.isAnonymous ? 'Guest Visitor' : (selectedUser.displayName || selectedUser.username || 'Reader')}
+                    </h2>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedUser.role === 'admin' && (
+                        <Badge className="bg-primary/20 text-primary border-primary/30 text-[9px] font-black px-2">
+                          <Shield className="h-2.5 w-2.5 mr-1" /> ADMIN
+                        </Badge>
+                      )}
+                      {selectedUser.isAnonymous ? (
+                        <Badge variant="outline" className="text-[9px] font-black px-2">GUEST</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[9px] font-black px-2 border-green-500/30 text-green-600">REGISTERED</Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profile Details */}
+              <ScrollArea className="max-h-[450px]">
+                <div className="p-8 pt-6 space-y-6">
+
+                  <section>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Identity</p>
+                    <div className="bg-muted/30 rounded-2xl divide-y divide-border/50 overflow-hidden">
+                      <InfoRow icon={<MailIcon className="h-4 w-4" />} label="Email" value={selectedUser.email || '—'} />
+                      {selectedUser.username && (
+                        <InfoRow icon={<User className="h-4 w-4" />} label="Username" value={`@${selectedUser.username}`} />
+                      )}
+                      <InfoRow icon={<Shield className="h-4 w-4" />} label="Role" value={selectedUser.role || 'reader'} />
+                      <InfoRow icon={<User className="h-4 w-4" />} label="User ID" value={selectedUser.uid} mono />
+                    </div>
+                  </section>
+
+                  <section>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Location & Timezone</p>
+                    <div className="bg-muted/30 rounded-2xl divide-y divide-border/50 overflow-hidden">
+                      <InfoRow
+                        icon={<span className="text-base leading-none">{selectedUser.flag}</span>}
+                        label="Country"
+                        value={selectedUser.isGeoLoading ? 'Resolving...' : (selectedUser.country || 'Unknown')}
+                      />
+                      {selectedUser.city && selectedUser.city !== 'Unknown' && (
+                        <InfoRow icon={<MapPin className="h-4 w-4" />} label="City" value={selectedUser.city} />
+                      )}
+                      <InfoRow
+                        icon={<Clock className="h-4 w-4" />}
+                        label="Timezone"
+                        value={selectedUser.isGeoLoading ? 'Resolving...' : (selectedUser.timezone || 'Unknown')}
+                      />
+                      {selectedUser.ip && (
+                        <InfoRow icon={<Globe className="h-4 w-4" />} label="IP Address" value={selectedUser.ip} mono />
+                      )}
+                    </div>
+                  </section>
+
+                  <section>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Activity</p>
+                    <div className="bg-muted/30 rounded-2xl divide-y divide-border/50 overflow-hidden">
+                      <InfoRow
+                        icon={<Clock className="h-4 w-4" />}
+                        label="Last Active"
+                        value={selectedUser.lastActive?.toDate
+                          ? formatDistanceToNow(selectedUser.lastActive.toDate(), { addSuffix: true })
+                          : '—'}
+                      />
+                      {selectedUser.lastPath && (
+                        <InfoRow icon={<MousePointer2 className="h-4 w-4" />} label="Last Page" value={selectedUser.lastPath} mono />
+                      )}
+                      {selectedUser.createdAt?.toDate && (
+                        <InfoRow
+                          icon={<Users className="h-4 w-4" />}
+                          label="Joined"
+                          value={selectedUser.createdAt.toDate().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        />
+                      )}
+                    </div>
+                  </section>
+
+                </div>
+              </ScrollArea>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-/**
- * Sub-component to fetch and list chapters for a specific book.
- */
+// ── Helper component ──────────────────────────────────────────────────────────
+function InfoRow({ icon, label, value, mono = false }: { icon: React.ReactNode; label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center gap-4 px-4 py-3">
+      <div className="text-muted-foreground flex-shrink-0 w-4 flex justify-center">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className={`text-sm font-bold truncate mt-0.5 ${mono ? 'font-mono text-xs' : ''}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
 function ChapterList({ bookId }: { bookId: string | undefined }) {
   const db = useFirestore();
   const [chapters, setChapters] = useState<any[]>([]);
@@ -588,12 +983,10 @@ function ChapterList({ bookId }: { bookId: string | undefined }) {
     setLoading(true);
     const colRef = collection(db, 'books', bookId, 'chapters');
     const q = query(colRef, orderBy('chapterNumber', 'asc'));
-    
     const unsubscribe = onSnapshot(q, (snap) => {
       setChapters(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [bookId, db]);
 
@@ -603,13 +996,11 @@ function ChapterList({ bookId }: { bookId: string | undefined }) {
   return (
     <div className="divide-y">
       {chapters.map((ch) => (
-        <div key={ch.id} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors">
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-black text-primary bg-primary/10 w-6 h-6 rounded flex items-center justify-center">
-              {ch.chapterNumber}
-            </span>
-            <span className="text-sm font-bold truncate max-w-[400px]">{ch.title || 'Untitled Chapter'}</span>
-          </div>
+        <div key={ch.id} className="p-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
+          <span className="text-[10px] font-black text-primary bg-primary/10 w-6 h-6 rounded flex items-center justify-center flex-shrink-0">
+            {ch.chapterNumber}
+          </span>
+          <span className="text-sm font-bold truncate">{ch.title || 'Untitled Chapter'}</span>
         </div>
       ))}
     </div>
