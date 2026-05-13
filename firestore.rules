@@ -55,9 +55,10 @@ service cloud.firestore {
     }
 
     // User profiles and private reading history
+    // Admins can read all profiles for the Active Users panel
     match /users/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
-      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+
       
       match /history/{bookId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
