@@ -255,35 +255,132 @@ export function UploadNovelForm() {
         if (selectedFile.name.toLowerCase().endsWith('.epub')) {
           setLoadingMessage('Parsing Archive...');
           const zip = await JSZip.loadAsync(selectedFile);
+
+          // ── 1. Locate OPF ─────────────────────────────────────────────
           const containerXml = await zip.file("META-INF/container.xml")?.async("string");
           const parser = new DOMParser();
           const containerDoc = parser.parseFromString(containerXml || "", "text/xml");
-          const opfPath = containerDoc.querySelector("rootfile")?.getAttribute("full-path");
-          const opfXml = await zip.file(opfPath || "")?.async("string");
-          const opfDoc = parser.parseFromString(opfXml || "", "text/xml");
+          const opfPath = containerDoc.querySelector("rootfile")?.getAttribute("full-path") || "";
+          const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : "";
+          const opfXml = await zip.file(opfPath)?.async("string") || "";
+          const opfDoc = parser.parseFromString(opfXml, "text/xml");
 
+          // ── 2. Build manifest href map ─────────────────────────────────
           const manifest: Record<string, string> = {};
           opfDoc.querySelectorAll("manifest item").forEach(item => {
-            manifest[item.getAttribute("id")!] = item.getAttribute("href")!;
+            const id = item.getAttribute("id");
+            const href = item.getAttribute("href");
+            if (id && href) manifest[id] = href;
           });
 
+          // ── 3. Build title map from NAV / NCX TOC ──────────────────────
+          // nav.xhtml (epub3)
+          const tocTitles: Record<string, string> = {};
+          const navId = Array.from(opfDoc.querySelectorAll("manifest item")).find(
+            i => i.getAttribute("properties")?.includes("nav") || i.getAttribute("media-type") === "application/xhtml+xml" && i.getAttribute("href")?.includes("nav")
+          )?.getAttribute("id");
+          if (navId && manifest[navId]) {
+            const navPath = opfDir + manifest[navId];
+            const navXml = await zip.file(navPath)?.async("string") || "";
+            const navDoc = parser.parseFromString(navXml, "text/html");
+            navDoc.querySelectorAll("nav a, nav li a").forEach(a => {
+              const href = (a as HTMLAnchorElement).getAttribute("href")?.split("#")[0];
+              const label = a.textContent?.trim();
+              if (href && label) tocTitles[href] = label;
+            });
+          }
+          // ncx fallback (epub2)
+          const ncxId = Array.from(opfDoc.querySelectorAll("manifest item")).find(
+            i => i.getAttribute("media-type") === "application/x-dtbncx+xml"
+          )?.getAttribute("id");
+          if (ncxId && manifest[ncxId]) {
+            const ncxPath = opfDir + manifest[ncxId];
+            const ncxXml = await zip.file(ncxPath)?.async("string") || "";
+            const ncxDoc = parser.parseFromString(ncxXml, "text/xml");
+            ncxDoc.querySelectorAll("navPoint").forEach(np => {
+              const src = np.querySelector("content")?.getAttribute("src")?.split("#")[0];
+              const label = np.querySelector("navLabel text")?.textContent?.trim();
+              if (src && label) tocTitles[src] = label;
+            });
+          }
+
+          // ── 4. Helper: HTML → structured plain text ────────────────────
+          // DOMParser does NOT support innerText; we must walk the DOM manually
+          // to preserve paragraph breaks, headings, and whitespace.
+          function htmlToPlainText(htmlStr: string): string {
+            const d = parser.parseFromString(htmlStr, "text/html");
+            const blocks: string[] = [];
+            function walk(node: Node) {
+              if (node.nodeType === Node.TEXT_NODE) {
+                const t = node.textContent || "";
+                if (t.trim()) blocks.push(t.trim());
+                return;
+              }
+              if (node.nodeType !== Node.ELEMENT_NODE) return;
+              const el = node as Element;
+              const tag = el.tagName.toLowerCase();
+
+              // Block elements: emit their children then a blank-line separator
+              const blockTags = new Set(["p","div","section","article","blockquote","li","dd","dt","figcaption","td","th","br","h1","h2","h3","h4","h5","h6"]);
+              const isBlock = blockTags.has(tag);
+
+              if (tag === "br") { blocks.push(""); return; }
+              if (tag === "style" || tag === "script") return; // skip
+
+              el.childNodes.forEach(walk);
+
+              if (isBlock) blocks.push(""); // blank line after each block element
+            }
+            walk(d.body);
+            // Collapse > 2 consecutive blank lines, trim each line
+            return blocks
+              .map(b => b.replace(/\s+/g, " ").trim())
+              .join("\n")
+              .replace(/\n{3,}/g, "\n\n")
+              .trim();
+          }
+
+          // ── 5. Helper: extract chapter title from parsed doc ───────────
+          function extractTitle(d: Document, fallbackHref: string, chIndex: number): string {
+            // Priority 1: nav/ncx TOC
+            const tocTitle = tocTitles[fallbackHref];
+            if (tocTitle && !/^chapter\s*\d+$/i.test(tocTitle.trim())) return tocTitle.trim();
+            // Priority 2: first h1/h2/h3 that isn't just "Chapter N"
+            const headings = Array.from(d.querySelectorAll("h1,h2,h3"));
+            for (const h of headings) {
+              const t = h.textContent?.trim() || "";
+              if (t && !/^chapter\s*\d+$/i.test(t)) return t;
+            }
+            // Priority 3: <title> tag
+            const titleTag = d.querySelector("title")?.textContent?.trim();
+            if (titleTag && titleTag !== "Navigation" && !/^chapter\s*\d+$/i.test(titleTag)) return titleTag;
+            // Priority 4: any heading
+            if (headings[0]?.textContent?.trim()) return headings[0].textContent!.trim();
+            // Priority 5: TOC even if generic
+            if (tocTitle) return tocTitle.trim();
+            // Fallback
+            return `Chapter ${chIndex + 1}`;
+          }
+
+          // ── 6. Walk spine items ────────────────────────────────────────
           const spineIds = Array.from(opfDoc.querySelectorAll("spine itemref")).map(i => i.getAttribute("idref")!);
           const chapters: { title: string; content: string }[] = [];
 
           for (let i = 0; i < spineIds.length; i++) {
             const href = manifest[spineIds[i]];
-            if (href) {
-              const fullPath = opfPath!.substring(0, opfPath!.lastIndexOf('/') + 1) + href;
-              const content = await zip.file(fullPath)?.async("string");
-              if (content) {
-                const doc = parser.parseFromString(content, "text/html");
-                const bodyText = doc.body.innerText || doc.body.textContent || "";
-                if (bodyText.trim().length > 100) {
-                  const heading = doc.querySelector("h1, h2, h3")?.textContent || `Chapter ${chapters.length + 1}`;
-                  chapters.push({ title: heading, content: bodyText });
-                }
-              }
-            }
+            if (!href) continue;
+            const fullPath = opfDir + href;
+            const rawHtml = await zip.file(fullPath)?.async("string");
+            if (!rawHtml) continue;
+
+            const chDoc = parser.parseFromString(rawHtml, "text/html");
+            const plainText = htmlToPlainText(rawHtml);
+
+            // Skip spine items that are clearly navigation/toc pages (< 150 meaningful chars)
+            if (plainText.replace(/\s/g, "").length < 150) continue;
+
+            const chTitle = extractTitle(chDoc, href, chapters.length);
+            chapters.push({ title: chTitle, content: plainText });
           }
           preParsedChapters = chapters;
         } else {
