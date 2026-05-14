@@ -8,7 +8,13 @@ import { uploadCoverImage } from "./upload-cover";
  */
 export function cleanContent(text: string): string {
   if (!text) return "";
-  return text.trim().replace(/\r\n/g, "\n");
+  return text
+    .trim()
+    .replace(/\r\n/g, "\n")       // normalize line endings
+    .replace(/\r/g, "\n")           // stray carriage returns
+    .replace(/[ \t]+/g, " ")         // collapse inline whitespace (not newlines)
+    .replace(/[ \t]*\n[ \t]*/g, "\n") // trim spaces around newlines
+    .replace(/\n{3,}/g, "\n\n");    // max 1 blank line between paragraphs
 }
 
 /**
