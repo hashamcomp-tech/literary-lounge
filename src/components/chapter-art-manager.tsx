@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, Firestore } from 'firebase/firestore';
 import { X, Upload, Trash2, Check, Loader2, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { optimizeCoverImage } from '@/lib/image-utils';
 
@@ -63,6 +64,7 @@ export function ChapterArtManager({ bookId, firestore, currentChapterNum, onClos
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>('original');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { loadArt(); }, []);
@@ -88,7 +90,7 @@ export function ChapterArtManager({ bookId, firestore, currentChapterNum, onClos
     setUploading(true);
     setUploadError(null);
     try {
-      const optimized = await optimizeCoverImage(file, 1400);
+      const optimized = await optimizeCoverImage(file, 1400, selectedAspectRatio);
       const optimizedFile = new File([optimized], file.name, { type: 'image/jpeg' });
       const buffer = await optimizedFile.arrayBuffer();
       const filename = `chapterArt/${bookId}_${Date.now()}.jpg`;
@@ -192,6 +194,26 @@ export function ChapterArtManager({ bookId, firestore, currentChapterNum, onClos
         <div className="flex-1 overflow-y-auto">
           {/* Upload */}
           <div className="px-6 pt-5 pb-4 border-b border-border/30">
+            <div className="flex gap-3 mb-3">
+              <div className="flex-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2 block">
+                  Aspect Ratio
+                </label>
+                <Select value={selectedAspectRatio} onValueChange={setSelectedAspectRatio}>
+                  <SelectTrigger className="w-full h-10 rounded-xl border-border bg-background text-sm">
+                    <SelectValue placeholder="Select aspect ratio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="original">Original (keep aspect ratio)</SelectItem>
+                    <SelectItem value="16:9">16:9 (Widescreen)</SelectItem>
+                    <SelectItem value="4:3">4:3 (Standard)</SelectItem>
+                    <SelectItem value="1:1">1:1 (Square)</SelectItem>
+                    <SelectItem value="3:2">3:2 (Classic Photo)</SelectItem>
+                    <SelectItem value="21:9">21:9 (Ultra-wide)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
             <button
               onClick={() => fileInputRef.current?.click()}

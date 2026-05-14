@@ -5,7 +5,7 @@
 /**
  * Resizes an image to a maximum dimension while maintaining aspect ratio.
  */
-export async function optimizeCoverImage(file: File | Blob, maxDimension: number = 1000): Promise<Blob> {
+export async function optimizeCoverImage(file: File | Blob, maxDimension: number = 1000, aspectRatio?: string): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -16,25 +16,49 @@ export async function optimizeCoverImage(file: File | Blob, maxDimension: number
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
+        let sourceX = 0;
+        let sourceY = 0;
+        let sourceWidth = width;
+        let sourceHeight = height;
 
-        if (width > height) {
-          if (width > maxDimension) {
-            height *= maxDimension / width;
-            width = maxDimension;
+        // Handle aspect ratio cropping
+        if (aspectRatio && aspectRatio !== 'original') {
+          const [targetWidthRatio, targetHeightRatio] = aspectRatio.split(':').map(Number);
+          const targetRatio = targetWidthRatio / targetHeightRatio;
+          const currentRatio = width / height;
+
+          if (currentRatio > targetRatio) {
+            // Image is too wide, crop width
+            sourceWidth = height * targetRatio;
+            sourceX = (width - sourceWidth) / 2;
+          } else if (currentRatio < targetRatio) {
+            // Image is too tall, crop height
+            sourceHeight = width / targetRatio;
+            sourceY = (height - sourceHeight) / 2;
           }
-        } else {
-          if (height > maxDimension) {
-            width *= maxDimension / height;
-            height = maxDimension;
+          // If ratios match, no cropping needed
+        }
+
+        // Calculate final dimensions
+        let finalWidth = sourceWidth;
+        let finalHeight = sourceHeight;
+
+        if (finalWidth > maxDimension || finalHeight > maxDimension) {
+          if (finalWidth > finalHeight) {
+            finalHeight *= maxDimension / finalWidth;
+            finalWidth = maxDimension;
+          } else {
+            finalWidth *= maxDimension / finalHeight;
+            finalHeight = maxDimension;
           }
         }
 
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = finalWidth;
+        canvas.height = finalHeight;
         const ctx = canvas.getContext('2d');
         if (!ctx) return reject(new Error('Canvas context failed'));
 
-        ctx.drawImage(img, 0, 0, width, height);
+        ctx.drawImage(img, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, finalWidth, finalHeight);
         
         canvas.toBlob(
           (blob) => {
