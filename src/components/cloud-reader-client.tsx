@@ -104,10 +104,19 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const checkAdmin = async () => {
       try {
         if (!user) {
-          console.log('No authenticated user');
-          setIsAdmin(false);
-          return;
+        console.log('No authenticated user');
+        setIsAdmin(false);
+        return;
+      }
+
+      // Super admin bypass
+      const superAdmins = ['hashamcomp@gmail.com'];
+        if (user.email && superAdmins.includes(user.email)) {
+          console.log('Admin via super admin');
+          setIsAdmin(true);
+        return;
         }
+
 
         console.log('Checking admin...');
         console.log('UID:', user.uid);
