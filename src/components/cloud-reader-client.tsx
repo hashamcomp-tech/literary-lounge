@@ -23,10 +23,6 @@ interface CloudReaderClientProps {
   chapterNumber: string;
 }
 
-/**
- * @fileOverview Semantic Immersive Reader for Cloud Volumes.
- * Optimized for Safari Reader Mode using <article> and <section> tags.
- */
 export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps) {
   const { firestore, isOfflineMode } = useFirebase();
   const { user } = useUser();
@@ -55,9 +51,12 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   
   const [tocChapters, setTocChapters] = useState<any[]>([]);
   const [isLoadingToc, setIsLoadingToc] = useState(false);
+  const [headerBg, setHeaderBg] = useState<string | null>(null);
+  const [isUploadingBg, setIsUploadingBg] = useState(false);
   
   const viewLoggedRef = useRef<string | null>(null);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
+  const bgInputRef = useRef<HTMLInputElement | null>(null);
 
   const isMergedView = searchParams.get('mode') === 'merged';
 
@@ -72,6 +71,10 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         setScrollSpeed(parsed.scrollSpeed ?? 1);
       } catch (e) {}
     }
+
+    // Load saved header background for this book
+    const savedBg = localStorage.getItem(`lounge-header-bg-${id}`);
+    if (savedBg) setHeaderBg(savedBg);
 
     const handleSettingsChange = (e: any) => {
       setHighlightEnabled(e.detail.highlightEnabled);
@@ -171,7 +174,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
         const chaptersCol = collection(firestore, 'books', id, 'chapters');
         
-        // Define batch range: current + next 10 if in merged mode
         const end = isMergedView ? Math.min(currentChapterNum + 10, meta.metadata?.info?.totalChapters || currentChapterNum + 10) : currentChapterNum;
         const targetNumbers = Array.from({ length: end - currentChapterNum + 1 }, (_, i) => currentChapterNum + i);
         
@@ -253,9 +255,26 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   };
 
   const handleMergeNext = () => {
-    // Navigate to the same chapter but with merged mode active
-    // This provides a fresh page URL for Safari Reader to pick up
     router.push(`/pages/${id}/${currentChapterNum}?mode=merged`);
+  };
+
+  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingBg(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setHeaderBg(dataUrl);
+      localStorage.setItem(`lounge-header-bg-${id}`, dataUrl);
+      setIsUploadingBg(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveBg = () => {
+    setHeaderBg(null);
+    localStorage.removeItem(`lounge-header-bg-${id}`);
   };
 
   const updateHistory = (metaOverride?: any) => {
@@ -403,71 +422,120 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       )}
 
       <header className="mb-12">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex flex-col gap-4">
-            <Button variant="ghost" size="sm" onClick={() => router.back()} className="text-muted-foreground hover:text-primary transition-colors group -ml-2">
-              <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
-            </Button>
-            <Breadcrumbs 
-              items={[
-                { label: 'Cloud', href: '/explore' },
-                { label: metadata?.title || 'Novel', href: `/book/${id}` },
-                { label: isMergedView ? `Merged ${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : `Chapter ${currentChapterNum}` }
-              ]} 
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full shadow-sm">
-              {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
-            </Button>
-            
-            <Sheet onOpenChange={(open) => open && loadToc()}>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full shadow-sm">
-                  <Menu className="h-4 w-4" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="rounded-l-3xl border-none shadow-2xl w-80">
-                <SheetHeader>
-                  <SheetTitle className="font-headline font-black text-2xl truncate">{metadata?.title || 'Chapters'}</SheetTitle>
-                </SheetHeader>
-                <ScrollArea className="h-[calc(100vh-120px)] mt-6">
-                  <div className="space-y-1">
-                    {isLoadingToc ? (
-                      <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
-                    ) : (
-                      tocChapters.map((ch) => (
-                        <Button
-                          key={ch.id}
-                          variant={currentChapterNum === ch.chapterNumber ? "secondary" : "ghost"}
-                          className={`w-full justify-start text-left rounded-xl h-auto py-3 px-4 ${currentChapterNum === ch.chapterNumber ? 'bg-primary/10 text-primary font-bold shadow-sm' : 'hover:bg-muted/50'}`}
-                          onClick={() => {
-                            router.push(`/pages/${id}/${ch.chapterNumber}`);
-                          }}
-                        >
-                          <span className={`text-[10px] font-mono mr-3 shrink-0 ${currentChapterNum === ch.chapterNumber ? 'text-primary' : 'opacity-30'}`}>
-                            {ch.chapterNumber.toString().padStart(2, '0')}
-                          </span>
-                          <span className="truncate text-sm">{ch.title || `Chapter ${ch.chapterNumber}`}</span>
-                        </Button>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-              </SheetContent>
-            </Sheet>
-          </div>
-        </div>
+        {/* Hidden file input for background image */}
+        <input
+          ref={bgInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleBgUpload}
+        />
 
-        <div className="space-y-6 text-center sm:text-left">
-          <div className="flex items-center justify-center sm:justify-start gap-3">
-             <Badge variant="secondary" className="bg-primary/10 text-primary border-none text-[10px] font-black px-4 py-1">Cloud</Badge>
-             <Badge variant="outline" className="border-accent/30 text-accent uppercase text-[10px] font-black px-4 py-1">{metadata?.genre?.[0] || 'Novel'}</Badge>
+        {/* Header with optional background art */}
+        <div
+          className="relative rounded-3xl overflow-hidden mb-8"
+          style={headerBg ? {
+            backgroundImage: `url(${headerBg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          } : undefined}
+        >
+          {/* Dark overlay when bg image is set */}
+          {headerBg && (
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />
+          )}
+
+          {/* Content layer */}
+          <div className={`relative z-10 ${headerBg ? 'px-6 pt-6 pb-8 sm:px-8 sm:pt-8 sm:pb-10' : ''}`}>
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex flex-col gap-4">
+                <Button variant="ghost" size="sm" onClick={() => router.back()} className={`transition-colors group -ml-2 ${headerBg ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-muted-foreground hover:text-primary'}`}>
+                  <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
+                </Button>
+                <Breadcrumbs 
+                  items={[
+                    { label: 'Cloud', href: '/explore' },
+                    { label: metadata?.title || 'Novel', href: `/book/${id}` },
+                    { label: isMergedView ? `Merged ${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : `Chapter ${currentChapterNum}` }
+                  ]} 
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Background image upload/remove button */}
+                {headerBg ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRemoveBg}
+                    className="rounded-full text-[10px] font-black uppercase tracking-widest bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white backdrop-blur-sm"
+                  >
+                    Remove Art
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => bgInputRef.current?.click()}
+                    disabled={isUploadingBg}
+                    className="rounded-full text-[10px] font-black uppercase tracking-widest"
+                  >
+                    {isUploadingBg ? 'Loading...' : '+ Add Art'}
+                  </Button>
+                )}
+
+                <Button variant={headerBg ? "ghost" : "outline"} size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`rounded-full shadow-sm ${headerBg ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white' : ''}`}>
+                  {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
+                </Button>
+                
+                <Sheet onOpenChange={(open) => open && loadToc()}>
+                  <SheetTrigger asChild>
+                    <Button variant={headerBg ? "ghost" : "outline"} size="icon" className={`rounded-full shadow-sm ${headerBg ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white' : ''}`}>
+                      <Menu className="h-4 w-4" />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="right" className="rounded-l-3xl border-none shadow-2xl w-80">
+                    <SheetHeader>
+                      <SheetTitle className="font-headline font-black text-2xl truncate">{metadata?.title || 'Chapters'}</SheetTitle>
+                    </SheetHeader>
+                    <ScrollArea className="h-[calc(100vh-120px)] mt-6">
+                      <div className="space-y-1">
+                        {isLoadingToc ? (
+                          <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
+                        ) : (
+                          tocChapters.map((ch) => (
+                            <Button
+                              key={ch.id}
+                              variant={currentChapterNum === ch.chapterNumber ? "secondary" : "ghost"}
+                              className={`w-full justify-start text-left rounded-xl h-auto py-3 px-4 ${currentChapterNum === ch.chapterNumber ? 'bg-primary/10 text-primary font-bold shadow-sm' : 'hover:bg-muted/50'}`}
+                              onClick={() => {
+                                router.push(`/pages/${id}/${ch.chapterNumber}`);
+                              }}
+                            >
+                              <span className={`text-[10px] font-mono mr-3 shrink-0 ${currentChapterNum === ch.chapterNumber ? 'text-primary' : 'opacity-30'}`}>
+                                {ch.chapterNumber.toString().padStart(2, '0')}
+                              </span>
+                              <span className="truncate text-sm">{ch.title || `Chapter ${ch.chapterNumber}`}</span>
+                            </Button>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </SheetContent>
+                </Sheet>
+              </div>
+            </div>
+
+            <div className="space-y-6 text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-3">
+                 <Badge variant="secondary" className={`border-none text-[10px] font-black px-4 py-1 ${headerBg ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>Cloud</Badge>
+                 <Badge variant="outline" className={`uppercase text-[10px] font-black px-4 py-1 ${headerBg ? 'border-white/30 text-white/80' : 'border-accent/30 text-accent'}`}>{metadata?.genre?.[0] || 'Novel'}</Badge>
+              </div>
+              <h1 className={`text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight ${headerBg ? 'text-white drop-shadow-lg' : ''}`}>
+                {metadata?.title || 'Untitled'}
+              </h1>
+              <p className={`text-xl italic font-medium opacity-80 ${headerBg ? 'text-white/80' : 'text-muted-foreground'}`}>By {metadata?.author || 'Unknown'}</p>
+            </div>
           </div>
-          <h1 className="text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight">
-            {metadata?.title || 'Untitled'}
-          </h1>
-          <p className="text-xl text-muted-foreground italic font-medium opacity-80">By {metadata?.author || 'Unknown'}</p>
         </div>
       </header>
 
