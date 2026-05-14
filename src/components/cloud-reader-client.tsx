@@ -81,53 +81,151 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   };
 
   useEffect(() => {
+    if (!firestore) return;
+
     setMounted(true);
+
     const saved = localStorage.getItem('lounge-voice-settings');
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+
         setHighlightEnabled(parsed.highlightEnabled ?? true);
         setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
         setScrollSpeed(parsed.scrollSpeed ?? 1);
-      } catch {}
+      } catch (err) {
+        console.error('Voice settings parse failed:', err);
+      }
     }
 
     loadArtLibrary();
 
-    if (user && firestore) {
-      getDoc(doc(firestore, 'users', user.uid)).then(snap => {
-        if (snap.exists() && snap.data().role === 'admin') { setIsAdmin(true); return; }
-        if (user.email) {
-          getDoc(doc(firestore, 'settings', 'approvedEmails')).then(s => {
-            if (s.exists()) setIsAdmin((s.data().emails || []).includes(user.email!));
-          }).catch(() => {});
+    const checkAdmin = async () => {
+      try {
+        if (!user) {
+          console.log('No authenticated user');
+          setIsAdmin(false);
+          return;
         }
-      }).catch(() => {});
-    }
+
+        console.log('Checking admin...');
+        console.log('UID:', user.uid);
+        console.log('EMAIL:', user.email);
+
+        const userRef = doc(firestore, 'users', user.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+
+          console.log('User doc:', userData);
+
+          if (userData.role === 'admin') {
+            console.log('Admin via role');
+            setIsAdmin(true);
+            return;
+          }
+        }
+
+        if (user.email) {
+          const approvedRef = doc(
+            firestore,
+            'settings',
+            'approvedEmails'
+          );
+
+          const approvedSnap = await getDoc(approvedRef);
+
+          if (approvedSnap.exists()) {
+            const emails = approvedSnap.data().emails || [];
+
+            console.log('Approved emails:', emails);
+
+            if (emails.includes(user.email)) {
+              console.log('Admin via approved email');
+              setIsAdmin(true);
+              return;
+            }
+          }
+        }
+
+        console.log('Admin check failed');
+        setIsAdmin(false);
+
+      } catch (err) {
+        console.error('Admin check crashed:', err);
+        setIsAdmin(false);
+      }
+    };
+
+    checkAdmin();
 
     const handleSettingsChange = (e: any) => {
       setHighlightEnabled(e.detail.highlightEnabled);
       setAutoScrollEnabled(e.detail.autoScrollEnabled);
       setScrollSpeed(e.detail.scrollSpeed);
     };
-    window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
+
+    window.addEventListener(
+      'lounge-voice-settings-changed',
+      handleSettingsChange
+    );
 
     let scrollTimeout: NodeJS.Timeout;
+
     const handleScroll = () => {
       if (isLoading) return;
-      if (showRestorePrompt && window.scrollY > 100) { setShowRestorePrompt(false); setIsScrollRestored(true); }
+
+      if (showRestorePrompt && window.scrollY > 100) {
+        setShowRestorePrompt(false);
+        setIsScrollRestored(true);
+      }
+
       if (!isScrollRestored) return;
-      localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
+
+      localStorage.setItem(
+        `lounge-scroll-${id}`,
+        window.scrollY.toString()
+      );
     };
-    const debouncedScroll = () => { clearTimeout(scrollTimeout); scrollTimeout = setTimeout(handleScroll, 500); };
-    window.addEventListener('scroll', debouncedScroll);
+
+    const debouncedScroll = () => {
+      clearTimeout(scrollTimeout);
+
+      scrollTimeout = setTimeout(
+        handleScroll,
+        500
+      );
+    };
+
+    window.addEventListener(
+      'scroll',
+      debouncedScroll
+    );
 
     return () => {
       stopTextToSpeech();
-      window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
-      window.removeEventListener('scroll', debouncedScroll);
+
+      window.removeEventListener(
+        'lounge-voice-settings-changed',
+        handleSettingsChange
+      );
+
+      window.removeEventListener(
+        'scroll',
+        debouncedScroll
+      );
     };
-  }, [id, isLoading, isScrollRestored, showRestorePrompt]);
+
+  }, [
+    firestore,
+    user,
+    id,
+    isLoading,
+    isScrollRestored,
+    showRestorePrompt
+  ]);
 
   useEffect(() => {
     if (!autoScrollEnabled || isLoading || error || !isScrollRestored) return;
@@ -469,3 +567,4 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     </div>
   );
 }
+
