@@ -340,52 +340,52 @@ export function UploadNovelForm() {
               .trim();
           }
 
-            // ── 5. Helper: detect if a string looks like a chapter title ──
-           const GENERIC_TITLE = /^(chapter|summary|contents?|navigation|toc|preface|introduction|prologue|epilogue|cover|title\s*page)\s*[\d\w]*$/i;
+           // ── 5. Helper: extract chapter title ──────────────────────────
+// Matches patterns like:
+//   "Chapter 4"  "Chapter IV"  "Chapter I. THE WAVE OF FORTUNE"
+//   "CHAPTER 12 - The Dark Road"  "Ch. 3: Dawn"
+const CHAPTER_HEADING_RE = /^(chapter|ch\.?)\s+([IVXLCDM]+|\d+)([\.:\-–—]\s*.+)?$/i;
+// Words that are never a real chapter title on their own
+const JUNK_TITLE = /^(summary|contents?|navigation|toc|preface|cover|title\s*page|copyright|dedication|acknowledgements?)\s*$/i;
 
-      function extractTitle(d: Document, fallbackHref: string, chIndex: number): string {
-       // Priority 1: nav/ncx TOC label (most reliable — human written)
-       const tocTitle = tocTitles[fallbackHref];
-       if (tocTitle && !GENERIC_TITLE.test(tocTitle.trim())) return tocTitle.trim();
+function extractTitle(d: Document, fallbackHref: string, chIndex: number): string {
+  const paragraphs = Array.from(d.querySelectorAll("p"));
+  const headings  = Array.from(d.querySelectorAll("h1,h2,h3,h4"));
 
-       // Priority 2: first h1/h2/h3 that isn't generic
-       const headings = Array.from(d.querySelectorAll("h1,h2,h3,h4"));
-       for (const h of headings) {
-         const t = h.textContent?.trim() || "";
-         if (t && !GENERIC_TITLE.test(t)) return t;
-      }
+  // Priority 1: first <p> or heading matching "Chapter X. SUBTITLE" pattern
+  // Catches epub exports that put the full title in a plain paragraph
+  const allTop = [...headings, ...paragraphs.slice(0, 8)];
+  for (const el of allTop) {
+    const t = el.textContent?.trim() || "";
+    if (CHAPTER_HEADING_RE.test(t) && !JUNK_TITLE.test(t)) return t;
+  }
 
-      // Priority 3: first <p> that looks like a title
-      // Criteria: short (< 120 chars), not sentence-like (no period mid-text),
-      // appears in first 5 paragraphs
-      const paragraphs = Array.from(d.querySelectorAll("p"));
-      for (const p of paragraphs.slice(0, 5)) {
-        const t = p.textContent?.trim() || "";
-        if (
-          t.length > 2 &&
-          t.length < 120 &&
-          !GENERIC_TITLE.test(t) &&
-          !/[.!?]\s+[A-Z]/.test(t) // not a sentence (no mid-text sentence ending)
-        ) {
-          return t;
-        }
-      }
+  // Priority 2: nav/ncx TOC label (human-written, but may be generic "Chapter N")
+  const tocTitle = tocTitles[fallbackHref];
+  if (tocTitle && !JUNK_TITLE.test(tocTitle.trim())) return tocTitle.trim();
 
-       // Priority 4: any heading at all (even generic)
-        for (const h of headings) {
-        const t = h.textContent?.trim() || "";
-        if (t) return t;
-      }
+  // Priority 3: first heading that isn't junk
+  for (const h of headings) {
+    const t = h.textContent?.trim() || "";
+    if (t && !JUNK_TITLE.test(t)) return t;
+  }
 
-      // Priority 5: TOC even if generic
-      if (tocTitle) return tocTitle.trim();
+  // Priority 4: any heading
+  for (const h of headings) {
+    const t = h.textContent?.trim() || "";
+    if (t) return t;
+  }
 
-      // Priority 6: <title> tag (last resort — often "Summary", "Navigation" etc)
-      const titleTag = d.querySelector("title")?.textContent?.trim();
-      if (titleTag && titleTag !== "Navigation") return titleTag;
- 
-      return `Chapter ${chIndex + 1}`;
-    }
+  // Priority 5: TOC even if generic
+  if (tocTitle) return tocTitle.trim();
+
+  // Priority 6: <title> tag (last resort — often "Summary", "Navigation" etc)
+  const titleTag = d.querySelector("title")?.textContent?.trim();
+  if (titleTag && !JUNK_TITLE.test(titleTag) && titleTag !== "Navigation") return titleTag;
+
+  return `Chapter ${chIndex + 1}`;
+}
+
 
 
           // ── 6. Walk spine items ────────────────────────────────────────
