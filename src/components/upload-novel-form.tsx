@@ -18,7 +18,7 @@ import {
   setUserPreference, 
   getUserPreference 
 } from '@/lib/local-library';
-import { GENRES } from '@/lib/genres';
+import { GENRES, ALL_GENRES } from '@/lib/genres';
 import { uploadBookToCloud, cleanContent } from '@/lib/upload-book';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -441,7 +441,7 @@ export function UploadNovelForm() {
                   <PopoverContent className="w-[300px] p-0 rounded-2xl overflow-hidden border-none shadow-2xl">
                     <ScrollArea className="h-72 p-2">
                       <div className="grid grid-cols-2 gap-1">
-                        {GENRES.map(g => (
+                        {ALL_GENRES.map(g => (
                           <button key={g} type="button" onClick={() => setSelectedGenres(p => p.includes(g) ? p.filter(x => x !== g) : [...p, g])} className={`w-full text-left p-2 text-[10px] font-bold rounded-lg ${selectedGenres.includes(g) ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
                             {g}
                           </button>

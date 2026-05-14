@@ -56,3 +56,6 @@ export const GENRES: Genre[] = [
     ],
   }
 ];
+
+// Flat array of all genre strings for UI components
+export const ALL_GENRES: string[] = GENRES.flatMap(category => category.subGenres || []);

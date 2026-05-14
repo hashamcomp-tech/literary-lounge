@@ -3,19 +3,20 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { collection, query, where, orderBy, limit } from 'firebase/firestore';
-import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { useFirestore, useCollection, useMemoFirebase, useFirebase } from '@/firebase';
 import Navbar from '@/components/navbar';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import NovelCard from '@/components/novel-card';
 import { Loader2, BookOpen, Filter, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { GENRES } from '@/lib/genres';
+import { GENRES, ALL_GENRES } from '@/lib/genres';
 
 function ExploreContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const db = useFirestore();
+  const { isOfflineMode } = useFirebase();
   const initialGenre = searchParams.get('genre') || 'All';
 
   const [selectedGenre, setSelectedGenre] = useState(initialGenre);
@@ -46,7 +47,7 @@ function ExploreContent() {
     );
   }, [db, selectedGenre]);
 
-  const { data: books, isLoading } = useCollection(exploreQuery);
+  const { data: books, isLoading, error } = useCollection(exploreQuery);
 
   const handleGenreChange = (genre: string) => {
     const params = new URLSearchParams(searchParams);
@@ -104,7 +105,7 @@ function ExploreContent() {
               >
                 All Volumes
               </Button>
-              {GENRES.map((genre) => (
+              {ALL_GENRES.map((genre) => (
                 <Button
                   key={genre}
                   variant={selectedGenre === genre ? 'default' : 'ghost'}
@@ -121,10 +122,40 @@ function ExploreContent() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isOfflineMode ? (
+        <div className="py-32 text-center border-2 border-dashed rounded-[3rem] bg-amber-500/5 border-amber-500/20">
+          <BookOpen className="h-16 w-16 text-amber-600 mx-auto mb-4 opacity-50" />
+          <h2 className="text-2xl font-headline font-black mb-2 text-amber-700">Independent Mode Active</h2>
+          <p className="text-muted-foreground max-w-md mx-auto mb-8">
+            Cloud library access is unavailable. The global collection is not accessible in offline mode.
+          </p>
+          <Button 
+            variant="outline" 
+            className="rounded-2xl h-14 px-10 font-bold border-amber-500/20 text-amber-700 hover:bg-amber-500/5"
+            onClick={() => router.push('/')}
+          >
+            Return Home
+          </Button>
+        </div>
+      ) : isLoading ? (
         <div className="py-32 flex flex-col items-center justify-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary opacity-20" />
           <p className="mt-4 text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground animate-pulse">Syncing Library...</p>
+        </div>
+      ) : error ? (
+        <div className="py-32 text-center border-2 border-dashed rounded-[3rem] bg-destructive/5 border-destructive/20">
+          <BookOpen className="h-16 w-16 text-destructive mx-auto mb-4 opacity-50" />
+          <h2 className="text-2xl font-headline font-black mb-2 text-destructive">Library Access Error</h2>
+          <p className="text-muted-foreground max-w-md mx-auto mb-8">
+            Unable to load the library collection. This may be due to network issues or missing permissions.
+          </p>
+          <Button 
+            variant="outline" 
+            className="rounded-2xl h-14 px-10 font-bold border-destructive/20 text-destructive hover:bg-destructive/5"
+            onClick={() => window.location.reload()}
+          >
+            Try Again
+          </Button>
         </div>
       ) : books && books.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
