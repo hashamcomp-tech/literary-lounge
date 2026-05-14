@@ -37,6 +37,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [highlightEnabled, setHighlightEnabled] = useState(true);
+  const [clickToNarrate, setClickToNarrate] = useState(false);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         setHighlightEnabled(parsed.highlightEnabled ?? true);
         setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
         setScrollSpeed(parsed.scrollSpeed ?? 1);
+        setClickToNarrate(parsed.clickToNarrate ?? false);
       } catch (err) {
         console.error('Voice settings parse failed:', err);
       }
@@ -146,6 +148,7 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setHighlightEnabled(e.detail.highlightEnabled);
       setAutoScrollEnabled(e.detail.autoScrollEnabled);
       setScrollSpeed(e.detail.scrollSpeed);
+      setClickToNarrate(e.detail.clickToNarrate ?? false);
     };
 
     window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
@@ -284,11 +287,13 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     playTextToSpeech(flatSentences, { voice: voiceOptions.voice, rate: voiceOptions.rate || 1.0, contextId: `cloud-${id}-${currentChapterNum}-merged-${mergedRange.length}`, charOffset, onChunkStart: (index) => setActiveIndex(index) });
   };
 
-  const handleJumpToSegment = (globalIndex: number) => {
+    const handleJumpToSegment = (globalIndex: number) => {
+    if (!clickToNarrate) return;
     let offset = 0;
     for (let i = 0; i < globalIndex; i++) offset += flatSentences[i].length + 1;
     handleReadAloud(offset);
   };
+
 
   if (isOfflineMode) return (
     <div className="max-w-[700px] mx-auto px-5 py-24 text-center">
