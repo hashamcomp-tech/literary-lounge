@@ -194,26 +194,49 @@ export function ChapterArtManager({ bookId, firestore, currentChapterNum, onClos
         <div className="flex-1 overflow-y-auto">
           {/* Upload */}
           <div className="px-6 pt-5 pb-4 border-b border-border/30">
-            <div className="flex gap-3 mb-3">
-              <div className="flex-1">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2 block">
-                  Aspect Ratio
-                </label>
-                <Select value={selectedAspectRatio} onValueChange={setSelectedAspectRatio}>
-                  <SelectTrigger className="w-full h-10 rounded-xl border-border bg-background text-sm">
-                    <SelectValue placeholder="Select aspect ratio" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="original">Original (keep aspect ratio)</SelectItem>
-                    <SelectItem value="16:9">16:9 (Widescreen)</SelectItem>
-                    <SelectItem value="4:3">4:3 (Standard)</SelectItem>
-                    <SelectItem value="1:1">1:1 (Square)</SelectItem>
-                    <SelectItem value="3:2">3:2 (Classic Photo)</SelectItem>
-                    <SelectItem value="21:9">21:9 (Ultra-wide)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+          <div className="mb-4">
+   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3 block">
+    Aspect Ratio
+  </label>
+
+  <div className="grid grid-cols-3 gap-3">
+    {[
+      { value: "original", label: "Original", preview: "aspect-[4/3]" },
+      { value: "16:9", label: "16:9", preview: "aspect-video" },
+      { value: "4:3", label: "4:3", preview: "aspect-[4/3]" },
+      { value: "1:1", label: "1:1", preview: "aspect-square" },
+      { value: "3:2", label: "3:2", preview: "aspect-[3/2]" },
+      { value: "21:9", label: "21:9", preview: "aspect-[21/9]" },
+    ].map((ratio) => {
+      const active = selectedAspectRatio === ratio.value;
+
+      return (
+        <button
+          key={ratio.value}
+          type="button"
+          onClick={() => setSelectedAspectRatio(ratio.value)}
+          className={cn(
+            "rounded-2xl border-2 p-3 transition-all flex flex-col items-center gap-2",
+            active
+              ? "border-primary bg-primary/10 shadow-lg shadow-primary/20"
+              : "border-border hover:border-primary/40"
+          )}
+        >
+          <div
+            className={cn(
+              "w-full max-w-[70px] bg-muted rounded-md border border-border",
+              ratio.preview
+            )}
+          />
+
+          <span className="text-[11px] font-bold">
+            {ratio.label}
+          </span>
+        </button>
+      );
+    })}
+  </div>
+</div>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
             <button
               onClick={() => fileInputRef.current?.click()}
