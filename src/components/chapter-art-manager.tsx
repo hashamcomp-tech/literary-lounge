@@ -194,14 +194,10 @@ export function ChapterArtManager({ bookId, firestore, currentChapterNum, onClos
         <div className="flex-1 overflow-y-auto">
           {/* Upload */}
           <div className="px-6 pt-5 pb-4 border-b border-border/30">
-          <div className="mb-4">
-   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3 block">
-    Aspect Ratio
-  </label>
-
-  <div className="grid grid-cols-3 gap-3">
+          <div className="mb-3">
+  <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
     {[
-      { value: "original", label: "Original", preview: "aspect-[4/3]" },
+      { value: "original", label: "Orig", preview: "aspect-[4/3]" },
       { value: "16:9", label: "16:9", preview: "aspect-video" },
       { value: "4:3", label: "4:3", preview: "aspect-[4/3]" },
       { value: "1:1", label: "1:1", preview: "aspect-square" },
@@ -216,20 +212,20 @@ export function ChapterArtManager({ bookId, firestore, currentChapterNum, onClos
           type="button"
           onClick={() => setSelectedAspectRatio(ratio.value)}
           className={cn(
-            "rounded-2xl border-2 p-3 transition-all flex flex-col items-center gap-2",
+            "min-w-[58px] rounded-xl border p-2 flex flex-col items-center gap-1 transition-all shrink-0",
             active
-              ? "border-primary bg-primary/10 shadow-lg shadow-primary/20"
+              ? "border-primary bg-primary/10"
               : "border-border hover:border-primary/40"
           )}
         >
           <div
             className={cn(
-              "w-full max-w-[70px] bg-muted rounded-md border border-border",
+              "w-8 bg-muted rounded-sm border border-border",
               ratio.preview
             )}
           />
 
-          <span className="text-[11px] font-bold">
+          <span className="text-[9px] font-bold leading-none">
             {ratio.label}
           </span>
         </button>
