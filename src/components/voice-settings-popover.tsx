@@ -30,6 +30,7 @@ export interface VoiceSettings {
   highlightEnabled: boolean;
   autoScrollEnabled: boolean;
   scrollSpeed: number;
+  clickToNarrate: boolean;
 }
 
 export function VoiceSettingsPopover() {
@@ -41,9 +42,9 @@ export function VoiceSettingsPopover() {
     highlightEnabled: true,
     autoScrollEnabled: false,
     scrollSpeed: 1,
+    clickToNarrate: false,
   });
 
-  // Pronunciation State
   const [pronunciations, setPronunciations] = useState<PronunciationMap>({});
   const [newWord, setNewWord] = useState('');
   const [newSoundsLike, setNewSoundsLike] = useState('');
@@ -53,7 +54,7 @@ export function VoiceSettingsPopover() {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       const available = window.speechSynthesis.getVoices();
       const targetNames = ['daniel', 'karen', 'rishi'];
-      const filtered = available.filter(v => 
+      const filtered = available.filter(v =>
         targetNames.some(name => v.name.toLowerCase().includes(name))
       );
       const sortedVoices = filtered.sort((a, b) => a.name.localeCompare(b.name));
@@ -63,12 +64,13 @@ export function VoiceSettingsPopover() {
       if (!saved && sortedVoices.length > 0) {
         const daniel = sortedVoices.find(v => v.name.toLowerCase().includes('daniel'));
         if (daniel) {
-          const defaultSettings = { 
-            voice: daniel.voiceURI, 
-            rate: 1.0, 
+          const defaultSettings = {
+            voice: daniel.voiceURI,
+            rate: 1.0,
             highlightEnabled: true,
             autoScrollEnabled: false,
-            scrollSpeed: 1
+            scrollSpeed: 1,
+            clickToNarrate: false,
           };
           setSettings(defaultSettings);
           localStorage.setItem('lounge-voice-settings', JSON.stringify(defaultSettings));
@@ -92,7 +94,8 @@ export function VoiceSettingsPopover() {
           rate: parsed.rate || 1.0,
           highlightEnabled: parsed.highlightEnabled !== undefined ? parsed.highlightEnabled : true,
           autoScrollEnabled: parsed.autoScrollEnabled || false,
-          scrollSpeed: parsed.scrollSpeed || 1
+          scrollSpeed: parsed.scrollSpeed || 1,
+          clickToNarrate: parsed.clickToNarrate || false,
         });
       } catch (e) {}
     }
@@ -107,14 +110,12 @@ export function VoiceSettingsPopover() {
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
     localStorage.setItem('lounge-voice-settings', JSON.stringify(newSettings));
-    
-    // Dispatch custom event for real-time reactivity in reader components
     window.dispatchEvent(new CustomEvent('lounge-voice-settings-changed', { detail: newSettings }));
   };
 
   const handleTestVoice = async () => {
     try {
-      await playTextToSpeech("Testing your selected reading speed and voice profiles in the Lounge.", { 
+      await playTextToSpeech("Testing your selected reading speed and voice profiles in the Lounge.", {
         voice: settings.voice,
         rate: settings.rate
       });
@@ -129,7 +130,6 @@ export function VoiceSettingsPopover() {
 
   const handleAddPronunciation = () => {
     if (!newWord.trim() || !newSoundsLike.trim()) return;
-    
     const updated = { ...pronunciations, [newWord.trim()]: newSoundsLike.trim() };
     setPronunciations(updated);
     localStorage.setItem('lounge-pronunciations', JSON.stringify(updated));
@@ -149,9 +149,9 @@ export function VoiceSettingsPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button 
-          variant="outline" 
-          size="icon" 
+        <Button
+          variant="outline"
+          size="icon"
           className="h-7 w-7 rounded-full text-muted-foreground border-border/50 hover:bg-muted shadow-sm"
           title="Reader Settings"
         >
@@ -171,8 +171,21 @@ export function VoiceSettingsPopover() {
 
         <ScrollArea className="max-h-[450px]">
           <div className="p-5 space-y-6">
-            {/* Visuals & Reading Mode */}
             <div className="space-y-4">
+
+              <div className="flex items-center justify-between py-2 border-b border-muted">
+                <div className="flex flex-col gap-0.5">
+                  <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
+                    <MousePointer2 className="h-2.5 w-2.5" /> Click to Narrate
+                  </Label>
+                  <p className="text-[9px] text-muted-foreground opacity-60">Tap any word to read from there</p>
+                </div>
+                <Switch
+                  checked={settings.clickToNarrate}
+                  onCheckedChange={(checked) => updateSettings({ clickToNarrate: checked })}
+                />
+              </div>
+
               <div className="flex items-center justify-between py-2 border-b border-muted">
                 <div className="flex flex-col gap-0.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
@@ -180,8 +193,8 @@ export function VoiceSettingsPopover() {
                   </Label>
                   <p className="text-[9px] text-muted-foreground opacity-60">Visually track narration</p>
                 </div>
-                <Switch 
-                  checked={settings.highlightEnabled} 
+                <Switch
+                  checked={settings.highlightEnabled}
                   onCheckedChange={(checked) => updateSettings({ highlightEnabled: checked })}
                 />
               </div>
@@ -205,8 +218,8 @@ export function VoiceSettingsPopover() {
                   </div>
                   <p className="text-[9px] text-muted-foreground opacity-60">Hands-free reading mode</p>
                 </div>
-                <Switch 
-                  checked={settings.autoScrollEnabled} 
+                <Switch
+                  checked={settings.autoScrollEnabled}
                   onCheckedChange={(checked) => updateSettings({ autoScrollEnabled: checked })}
                 />
               </div>
@@ -234,7 +247,6 @@ export function VoiceSettingsPopover() {
               )}
             </div>
 
-            {/* Voice & Speed */}
             <div className="space-y-5 pt-4 border-t">
               <div className="space-y-2">
                 <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
@@ -272,15 +284,14 @@ export function VoiceSettingsPopover() {
               </div>
             </div>
 
-            {/* Pronunciation Editor */}
             <div className="space-y-3 pt-5 border-t">
               <div className="flex items-center justify-between">
                 <Label className="text-[9px] font-black uppercase tracking-widest flex items-center gap-2 text-muted-foreground">
                   <MessageSquare className="h-3 w-3" /> Fix Pronunciation
                 </Label>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="h-5 text-[9px] font-black uppercase tracking-tighter text-primary hover:bg-primary/10"
                   onClick={() => setIsAdding(!isAdding)}
                 >
@@ -291,15 +302,15 @@ export function VoiceSettingsPopover() {
 
               {isAdding && (
                 <div className="bg-primary/5 p-3 rounded-2xl space-y-2 animate-in fade-in slide-in-from-top-2">
-                  <Input 
-                    placeholder="Word (e.g. Firebase)" 
-                    value={newWord} 
+                  <Input
+                    placeholder="Word (e.g. Firebase)"
+                    value={newWord}
                     onChange={e => setNewWord(e.target.value)}
                     className="h-8 text-[11px] rounded-lg border-primary/20"
                   />
-                  <Input 
-                    placeholder="Sounds like (e.g. Fire base)" 
-                    value={newSoundsLike} 
+                  <Input
+                    placeholder="Sounds like (e.g. Fire base)"
+                    value={newSoundsLike}
                     onChange={e => setNewSoundsLike(e.target.value)}
                     className="h-8 text-[11px] rounded-lg border-primary/20"
                   />
@@ -316,9 +327,9 @@ export function VoiceSettingsPopover() {
                       <p className="text-[10px] font-black truncate">{word}</p>
                       <p className="text-[9px] text-muted-foreground italic truncate">Sounds like: {soundsLike}</p>
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-6 w-6 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => handleRemovePronunciation(word)}
                     >
@@ -332,9 +343,9 @@ export function VoiceSettingsPopover() {
               </div>
             </div>
 
-            <Button 
-              variant="secondary" 
-              className="w-full h-10 rounded-2xl font-black uppercase text-[9px] tracking-widest shadow-sm" 
+            <Button
+              variant="secondary"
+              className="w-full h-10 rounded-2xl font-black uppercase text-[9px] tracking-widest shadow-sm"
               onClick={handleTestVoice}
             >
               <Play className="h-3 w-3 mr-2" />
