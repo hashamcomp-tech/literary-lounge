@@ -340,27 +340,53 @@ export function UploadNovelForm() {
               .trim();
           }
 
-          // ── 5. Helper: extract chapter title from parsed doc ───────────
-          function extractTitle(d: Document, fallbackHref: string, chIndex: number): string {
-            // Priority 1: nav/ncx TOC
-            const tocTitle = tocTitles[fallbackHref];
-            if (tocTitle && !/^chapter\s*\d+$/i.test(tocTitle.trim())) return tocTitle.trim();
-            // Priority 2: first h1/h2/h3 that isn't just "Chapter N"
-            const headings = Array.from(d.querySelectorAll("h1,h2,h3"));
-            for (const h of headings) {
-              const t = h.textContent?.trim() || "";
-              if (t && !/^chapter\s*\d+$/i.test(t)) return t;
-            }
-            // Priority 3: <title> tag
-            const titleTag = d.querySelector("title")?.textContent?.trim();
-            if (titleTag && titleTag !== "Navigation" && !/^chapter\s*\d+$/i.test(titleTag)) return titleTag;
-            // Priority 4: any heading
-            if (headings[0]?.textContent?.trim()) return headings[0].textContent!.trim();
-            // Priority 5: TOC even if generic
-            if (tocTitle) return tocTitle.trim();
-            // Fallback
-            return `Chapter ${chIndex + 1}`;
-          }
+            // ── 5. Helper: detect if a string looks like a chapter title ──
+           const GENERIC_TITLE = /^(chapter|summary|contents?|navigation|toc|preface|introduction|prologue|epilogue|cover|title\s*page)\s*[\d\w]*$/i;
+
+      function extractTitle(d: Document, fallbackHref: string, chIndex: number): string {
+       // Priority 1: nav/ncx TOC label (most reliable — human written)
+       const tocTitle = tocTitles[fallbackHref];
+       if (tocTitle && !GENERIC_TITLE.test(tocTitle.trim())) return tocTitle.trim();
+
+       // Priority 2: first h1/h2/h3 that isn't generic
+       const headings = Array.from(d.querySelectorAll("h1,h2,h3,h4"));
+       for (const h of headings) {
+         const t = h.textContent?.trim() || "";
+         if (t && !GENERIC_TITLE.test(t)) return t;
+      }
+
+      // Priority 3: first <p> that looks like a title
+      // Criteria: short (< 120 chars), not sentence-like (no period mid-text),
+      // appears in first 5 paragraphs
+      const paragraphs = Array.from(d.querySelectorAll("p"));
+      for (const p of paragraphs.slice(0, 5)) {
+        const t = p.textContent?.trim() || "";
+        if (
+          t.length > 2 &&
+          t.length < 120 &&
+          !GENERIC_TITLE.test(t) &&
+          !/[.!?]\s+[A-Z]/.test(t) // not a sentence (no mid-text sentence ending)
+        ) {
+          return t;
+        }
+      }
+
+       // Priority 4: any heading at all (even generic)
+        for (const h of headings) {
+        const t = h.textContent?.trim() || "";
+        if (t) return t;
+      }
+
+      // Priority 5: TOC even if generic
+      if (tocTitle) return tocTitle.trim();
+
+      // Priority 6: <title> tag (last resort — often "Summary", "Navigation" etc)
+      const titleTag = d.querySelector("title")?.textContent?.trim();
+      if (titleTag && titleTag !== "Navigation") return titleTag;
+ 
+      return `Chapter ${chIndex + 1}`;
+    }
+
 
           // ── 6. Walk spine items ────────────────────────────────────────
           const spineIds = Array.from(opfDoc.querySelectorAll("spine itemref")).map(i => i.getAttribute("idref")!);
