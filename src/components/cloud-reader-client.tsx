@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
@@ -53,11 +52,8 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
 
   // Cloud art state
   const [artList, setArtList] = useState<ChapterArt[]>([]);
-  const [headerArtUrl, setHeaderArtUrl] = useState<string | null>(null);
   const [showArtManager, setShowArtManager] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isUploadingBg, setIsUploadingBg] = useState(false);
-  const bgInputRef = useRef<HTMLInputElement | null>(null);
 
   const viewLoggedRef = useRef<string | null>(null);
   const activeSegmentRef = useRef<HTMLSpanElement | null>(null);
@@ -90,7 +86,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-
         setHighlightEnabled(parsed.highlightEnabled ?? true);
         setAutoScrollEnabled(parsed.autoScrollEnabled ?? false);
         setScrollSpeed(parsed.scrollSpeed ?? 1);
@@ -104,64 +99,41 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
     const checkAdmin = async () => {
       try {
         if (!user) {
-        console.log('No authenticated user');
-        setIsAdmin(false);
-        return;
-      }
-
-      // Super admin bypass
-      const superAdmins = ['hashamcomp@gmail.com'];
-        if (user.email && superAdmins.includes(user.email)) {
-          console.log('Admin via super admin');
-          setIsAdmin(true);
-        return;
+          setIsAdmin(false);
+          return;
         }
 
-
-        console.log('Checking admin...');
-        console.log('UID:', user.uid);
-        console.log('EMAIL:', user.email);
+        // Super admin bypass
+        const superAdmins = ['hashamcomp@gmail.com'];
+        if (user.email && superAdmins.includes(user.email)) {
+          setIsAdmin(true);
+          return;
+        }
 
         const userRef = doc(firestore, 'users', user.uid);
         const userSnap = await getDoc(userRef);
 
         if (userSnap.exists()) {
           const userData = userSnap.data();
-
-          console.log('User doc:', userData);
-
           if (userData.role === 'admin') {
-            console.log('Admin via role');
             setIsAdmin(true);
             return;
           }
         }
 
         if (user.email) {
-          const approvedRef = doc(
-            firestore,
-            'settings',
-            'approvedEmails'
-          );
-
+          const approvedRef = doc(firestore, 'settings', 'approvedEmails');
           const approvedSnap = await getDoc(approvedRef);
-
           if (approvedSnap.exists()) {
             const emails = approvedSnap.data().emails || [];
-
-            console.log('Approved emails:', emails);
-
             if (emails.includes(user.email)) {
-              console.log('Admin via approved email');
               setIsAdmin(true);
               return;
             }
           }
         }
 
-        console.log('Admin check failed');
         setIsAdmin(false);
-
       } catch (err) {
         console.error('Admin check crashed:', err);
         setIsAdmin(false);
@@ -176,65 +148,33 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
       setScrollSpeed(e.detail.scrollSpeed);
     };
 
-    window.addEventListener(
-      'lounge-voice-settings-changed',
-      handleSettingsChange
-    );
+    window.addEventListener('lounge-voice-settings-changed', handleSettingsChange);
 
     let scrollTimeout: NodeJS.Timeout;
 
     const handleScroll = () => {
       if (isLoading) return;
-
       if (showRestorePrompt && window.scrollY > 100) {
         setShowRestorePrompt(false);
         setIsScrollRestored(true);
       }
-
       if (!isScrollRestored) return;
-
-      localStorage.setItem(
-        `lounge-scroll-${id}`,
-        window.scrollY.toString()
-      );
+      localStorage.setItem(`lounge-scroll-${id}`, window.scrollY.toString());
     };
 
     const debouncedScroll = () => {
       clearTimeout(scrollTimeout);
-
-      scrollTimeout = setTimeout(
-        handleScroll,
-        500
-      );
+      scrollTimeout = setTimeout(handleScroll, 500);
     };
 
-    window.addEventListener(
-      'scroll',
-      debouncedScroll
-    );
+    window.addEventListener('scroll', debouncedScroll);
 
     return () => {
       stopTextToSpeech();
-
-      window.removeEventListener(
-        'lounge-voice-settings-changed',
-        handleSettingsChange
-      );
-
-      window.removeEventListener(
-        'scroll',
-        debouncedScroll
-      );
+      window.removeEventListener('lounge-voice-settings-changed', handleSettingsChange);
+      window.removeEventListener('scroll', debouncedScroll);
     };
-
-  }, [
-    firestore,
-    user,
-    id,
-    isLoading,
-    isScrollRestored,
-    showRestorePrompt
-  ]);
+  }, [firestore, user, id, isLoading, isScrollRestored, showRestorePrompt]);
 
   useEffect(() => {
     if (!autoScrollEnabled || isLoading || error || !isScrollRestored) return;
@@ -269,7 +209,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
           const snapshot = await getDoc(doc(firestore, 'books', id));
           if (!snapshot.exists()) { setError('Manuscript not found in the global library.'); setIsLoading(false); return; }
           meta = snapshot.data(); setMetadata(meta);
-          if (meta.headerArtUrl) setHeaderArtUrl(meta.headerArtUrl);
         }
         const end = isMergedView ? Math.min(currentChapterNum + 10, meta.metadata?.info?.totalChapters || currentChapterNum + 10) : currentChapterNum;
         const targetNumbers = Array.from({ length: end - currentChapterNum + 1 }, (_, i) => currentChapterNum + i);
@@ -314,29 +253,6 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
   };
 
   const handleMergeNext = () => router.push(`/pages/${id}/${currentChapterNum}?mode=merged`);
-
-  const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !firestore) return;
-    setIsUploadingBg(true);
-    try {
-      const { optimizeCoverImage } = await import('@/lib/image-utils');
-      const optimized = await optimizeCoverImage(file, 1400);
-      const buffer = await (new File([optimized], file.name, { type: 'image/jpeg' })).arrayBuffer();
-      const res = await fetch(`/api/upload?filename=${encodeURIComponent(`chapterArt/${id}_header_${Date.now()}.jpg`)}`, { method: 'POST', body: buffer });
-      if (!res.ok) throw new Error('Upload failed');
-      const blob = await res.json();
-      setHeaderArtUrl(blob.url);
-      await updateDoc(doc(firestore, 'books', id), { headerArtUrl: blob.url });
-    } catch (err: any) { alert('Upload failed: ' + err.message); }
-    finally { setIsUploadingBg(false); if (bgInputRef.current) bgInputRef.current.value = ''; }
-  };
-
-  const handleRemoveBg = async () => {
-    if (!firestore) return;
-    setHeaderArtUrl(null);
-    await updateDoc(doc(firestore, 'books', id), { headerArtUrl: null }).catch(() => {});
-  };
 
   const updateHistory = (metaOverride?: any) => {
     const meta = metaOverride || metadata; if (!meta) return;
@@ -416,65 +332,46 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         </div>
       )}
 
-      <header className="mb-12">
-        <input ref={bgInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
-        <div className="relative rounded-3xl overflow-hidden mb-8"
-          style={headerArtUrl ? { backgroundImage: `url(${headerArtUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-          {headerArtUrl && <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" />}
-          <div className={`relative z-10 ${headerArtUrl ? 'px-6 pt-6 pb-8 sm:px-8 sm:pt-8 sm:pb-10' : ''}`}>
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex flex-col gap-4">
-                <Button variant="ghost" size="sm" onClick={() => router.back()} className={`transition-colors group -ml-2 ${headerArtUrl ? 'text-white/80 hover:text-white hover:bg-white/10' : 'text-muted-foreground hover:text-primary'}`}>
-                  <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
+      <header className="mb-0">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-2">
+            <Button variant="ghost" size="sm" onClick={() => router.back()} className="transition-colors group -ml-2 text-muted-foreground hover:text-primary">
+              <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" /> Back
+            </Button>
+            <Breadcrumbs items={[{ label: 'Cloud', href: '/explore' }, { label: metadata?.title || 'Novel', href: `/book/${id}` }, { label: isMergedView ? `Merged ${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : `Chapter ${currentChapterNum}` }]} />
+          </div>
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => setShowArtManager(true)} className="rounded-full text-[10px] font-black uppercase tracking-widest">
+                Chapter Art
+              </Button>
+            )}
+            <Button variant="outline" size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="rounded-full shadow-sm">
+              {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
+            </Button>
+            <Sheet onOpenChange={(open) => open && loadToc()}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="icon" className="rounded-full shadow-sm">
+                  <Menu className="h-4 w-4" />
                 </Button>
-                <Breadcrumbs items={[{ label: 'Cloud', href: '/explore' }, { label: metadata?.title || 'Novel', href: `/book/${id}` }, { label: isMergedView ? `Merged ${Math.min(...mergedRange)}-${Math.max(...mergedRange)}` : `Chapter ${currentChapterNum}` }]} />
-              </div>
-              <div className="flex items-center gap-2">
-                {isAdmin && (<>
-                  {headerArtUrl
-                    ? <Button variant="outline" size="sm" onClick={handleRemoveBg} className="rounded-full text-[10px] font-black uppercase tracking-widest bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white backdrop-blur-sm">Remove Header Art</Button>
-                    : <Button variant="outline" size="sm" onClick={() => bgInputRef.current?.click()} disabled={isUploadingBg} className="rounded-full text-[10px] font-black uppercase tracking-widest">{isUploadingBg ? 'Uploading...' : '+ Header Art'}</Button>
-                  }
-                  <Button variant="outline" size="sm" onClick={() => setShowArtManager(true)} className={cn("rounded-full text-[10px] font-black uppercase tracking-widest", headerArtUrl ? "bg-white/10 border-white/20 text-white hover:bg-white/20" : "")}>
-                    Chapter Art
-                  </Button>
-                </>)}
-                <Button variant={headerArtUrl ? "ghost" : "outline"} size="icon" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`rounded-full shadow-sm ${headerArtUrl ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white' : ''}`}>
-                  {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-500" /> : <Moon className="h-4 w-4 text-indigo-500" />}
-                </Button>
-                <Sheet onOpenChange={(open) => open && loadToc()}>
-                  <SheetTrigger asChild>
-                    <Button variant={headerArtUrl ? "ghost" : "outline"} size="icon" className={`rounded-full shadow-sm ${headerArtUrl ? 'bg-white/10 border-white/20 hover:bg-white/20 text-white' : ''}`}>
-                      <Menu className="h-4 w-4" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="right" className="rounded-l-3xl border-none shadow-2xl w-80">
-                    <SheetHeader><SheetTitle className="font-headline font-black text-2xl truncate">{metadata?.title || 'Chapters'}</SheetTitle></SheetHeader>
-                    <ScrollArea className="h-[calc(100vh-120px)] mt-6">
-                      <div className="space-y-1">
-                        {isLoadingToc ? <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
-                          : tocChapters.map(ch => (
-                            <Button key={ch.id} variant={currentChapterNum === ch.chapterNumber ? "secondary" : "ghost"}
-                              className={`w-full justify-start text-left rounded-xl h-auto py-3 px-4 ${currentChapterNum === ch.chapterNumber ? 'bg-primary/10 text-primary font-bold shadow-sm' : 'hover:bg-muted/50'}`}
-                              onClick={() => router.push(`/pages/${id}/${ch.chapterNumber}`)}>
-                              <span className={`text-[10px] font-mono mr-3 shrink-0 ${currentChapterNum === ch.chapterNumber ? 'text-primary' : 'opacity-30'}`}>{ch.chapterNumber.toString().padStart(2, '0')}</span>
-                              <span className="truncate text-sm">{ch.title || `Chapter ${ch.chapterNumber}`}</span>
-                            </Button>
-                          ))}
-                      </div>
-                    </ScrollArea>
-                  </SheetContent>
-                </Sheet>
-              </div>
-            </div>
-            <div className="space-y-6 text-center sm:text-left">
-              <div className="flex items-center justify-center sm:justify-start gap-3">
-                <Badge variant="secondary" className={`border-none text-[10px] font-black px-4 py-1 ${headerArtUrl ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}>Cloud</Badge>
-                <Badge variant="outline" className={`uppercase text-[10px] font-black px-4 py-1 ${headerArtUrl ? 'border-white/30 text-white/80' : 'border-accent/30 text-accent'}`}>{metadata?.genre?.[0] || 'Novel'}</Badge>
-              </div>
-              <h1 className={`text-5xl sm:text-6xl font-headline font-black leading-tight tracking-tight ${headerArtUrl ? 'text-white drop-shadow-lg' : ''}`}>{metadata?.title || 'Untitled'}</h1>
-              <p className={`text-xl italic font-medium opacity-80 ${headerArtUrl ? 'text-white/80' : 'text-muted-foreground'}`}>By {metadata?.author || 'Unknown'}</p>
-            </div>
+              </SheetTrigger>
+              <SheetContent side="right" className="rounded-l-3xl border-none shadow-2xl w-80">
+                <SheetHeader><SheetTitle className="font-headline font-black text-2xl truncate">{metadata?.title || 'Chapters'}</SheetTitle></SheetHeader>
+                <ScrollArea className="h-[calc(100vh-120px)] mt-6">
+                  <div className="space-y-1">
+                    {isLoadingToc ? <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
+                      : tocChapters.map(ch => (
+                        <Button key={ch.id} variant={currentChapterNum === ch.chapterNumber ? "secondary" : "ghost"}
+                          className={`w-full justify-start text-left rounded-xl h-auto py-3 px-4 ${currentChapterNum === ch.chapterNumber ? 'bg-primary/10 text-primary font-bold shadow-sm' : 'hover:bg-muted/50'}`}
+                          onClick={() => router.push(`/pages/${id}/${ch.chapterNumber}`)}>
+                          <span className={`text-[10px] font-mono mr-3 shrink-0 ${currentChapterNum === ch.chapterNumber ? 'text-primary' : 'opacity-30'}`}>{ch.chapterNumber.toString().padStart(2, '0')}</span>
+                          <span className="truncate text-sm">{ch.title || `Chapter ${ch.chapterNumber}`}</span>
+                        </Button>
+                      ))}
+                  </div>
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
           </div>
         </div>
       </header>
@@ -483,35 +380,64 @@ export function CloudReaderClient({ id, chapterNumber }: CloudReaderClientProps)
         {structuredChapters.map((chData, idx) => {
           const chArtUrl = artMap[chData.num];
           return (
-            <section key={chData.num} className="animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
-              {idx > 0 && <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-32 h-px bg-border/50" />}
-              <div className="relative rounded-2xl overflow-hidden mb-12"
-                style={chArtUrl ? { backgroundImage: `url(${chArtUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
-                {chArtUrl && <div className="absolute inset-0 bg-black/65 backdrop-blur-[2px]" />}
-                <header className={cn("border-b border-border/50 pb-10 relative z-10", chArtUrl ? "mb-0 px-6 pt-8 pb-10" : "mb-12")}>
+            <section key={chData.num} className="animate-in fade-in duration-700 relative">
+              {idx > 0 && <div className="mb-20 w-32 h-px bg-border/50 mx-auto" />}
+
+              {chArtUrl ? (
+                <div className="relative -mx-5 mb-0">
+                  <div className="relative w-full h-[70vh] min-h-[400px] max-h-[700px] overflow-hidden">
+                    <img src={chArtUrl} alt="" className="w-full h-full object-cover object-center" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-background via-background/80 to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 px-5 pb-10 z-10">
+                      <div className="flex items-end justify-between gap-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.3em] text-foreground/50">
+                            <Bookmark className="h-3.5 w-3.5" /> Chapter {chData.num}
+                          </div>
+                          <h2
+                            ref={highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? activeSegmentRef : null}
+                            className={cn("text-4xl font-headline font-black leading-tight cursor-pointer transition-all duration-300 rounded px-1 text-foreground",
+                              highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? "bg-primary/20" : "hover:text-primary")}
+                            onClick={() => handleJumpToSegment(chData.titleSegment.globalIndex)}
+                          >
+                            {chData.title || `Chapter ${chData.num}`}
+                          </h2>
+                        </div>
+                        {isAdmin && (
+                          <button onClick={() => setShowArtManager(true)}
+                            className="shrink-0 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-border text-muted-foreground hover:border-primary hover:text-primary transition-all">
+                            Edit Art
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-12">
                   <div className="flex items-center justify-between mb-6">
-                    <div className={cn("flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em]", chArtUrl ? "text-white/70" : "text-primary/60")}>
+                    <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.3em] text-primary/60">
                       <Bookmark className="h-4 w-4" /> Chapter {chData.num}
                     </div>
                     {isAdmin && (
                       <button onClick={() => setShowArtManager(true)}
-                        className={cn("text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border transition-all",
-                          chArtUrl ? "bg-white/10 border-white/20 text-white hover:bg-white/20" : "border-border text-muted-foreground hover:border-primary hover:text-primary")}>
-                        {chArtUrl ? "Edit Art" : "+ Art"}
+                        className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-border text-muted-foreground hover:border-primary hover:text-primary transition-all">
+                        + Art
                       </button>
                     )}
                   </div>
                   <h2
                     ref={highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? activeSegmentRef : null}
-                    className={cn("text-4xl font-headline font-black leading-tight cursor-pointer transition-all duration-300 rounded px-1",
-                      chArtUrl ? "text-white drop-shadow-lg" : "text-primary",
-                      highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : chArtUrl ? "hover:text-white/80" : "hover:text-primary/80")}
+                    className={cn("text-4xl font-headline font-black leading-tight cursor-pointer transition-all duration-300 rounded px-1 text-primary",
+                      highlightEnabled && activeIndex === chData.titleSegment.globalIndex ? "bg-primary/20 shadow-[0_0_15px_rgba(var(--primary),0.1)]" : "hover:text-primary/80")}
                     onClick={() => handleJumpToSegment(chData.titleSegment.globalIndex)}
                   >
                     {chData.title || `Chapter ${chData.num}`}
                   </h2>
-                </header>
-              </div>
+                </div>
+              )}
+
               <div className="prose prose-slate dark:prose-invert max-w-none text-[18px] leading-[1.8] text-foreground/90 font-body">
                 {chData.paragraphs.map((para: any, pIdx: number) => (
                   <p key={pIdx} className="mb-8">
