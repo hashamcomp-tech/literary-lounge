@@ -112,9 +112,8 @@ function getAspectRatioClass(ratio?: string) {
     case '16:9':
       return 'aspect-video';
 
-    case 'original':
     default:
-      return 'aspect-[4/3]';
+      return 'aspect-video';
   }
 }
 
