@@ -147,8 +147,13 @@ export function UploadNovelForm() {
       if (chMatch) {
         const num = chMatch[1];
         setChapterNumber(num);
-        // Extract everything after "Chapter X" as the title
-        const name = line2.replace(new RegExp(`chapter\\s+${num}`, 'i'), '').trim();
+        // Extract everything after "Chapter X" as the title, stripping colons, dashes, and stray numbers
+        const name = line2
+          .replace(new RegExp(`chapter\\s+${num}`, 'i'), '')
+          .replace(/^[\s:\-–—]+/, '')   // leading colons, dashes, em/en-dashes
+          .replace(/[\s:\-–—]+$/, '')   // trailing colons, dashes
+          .replace(/^\d+[\s.\-:]*/, '') // leading standalone numbers (e.g. "1." or "42 -")
+          .trim();
         setChapterTitle(name);
         linesToRemove.push(contentLines[1].index);
       }
