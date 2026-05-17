@@ -153,8 +153,8 @@ function SearchContent() {
               />
             </div>
 
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-xl shadow-xl overflow-hidden z-50">
+                 {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-xl shadow-xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto">
                 {suggestions.map((s) => (
                   <button
                     key={s.id}
@@ -164,17 +164,29 @@ function SearchContent() {
                     }}
                     className="w-full flex items-center gap-3 p-3 hover:bg-muted transition text-left"
                   >
-                    <div className="bg-muted rounded-lg p-2">
-                      <Book className="h-4 w-4" />
-                    </div>
+                    {s.coverImage ? (
+                      <img
+                        src={s.coverImage}
+                        alt={s.title}
+                        className="h-14 w-10 object-cover rounded-md shrink-0"
+                      />
+                    ) : (
+                      <div className="bg-muted rounded-md h-14 w-10 flex items-center justify-center shrink-0">
+                        <Book className="h-4 w-4" />
+                      </div>
+                    )}
                     <div className="min-w-0">
                       <p className="font-semibold truncate">{s.title}</p>
                       <p className="text-sm text-muted-foreground truncate">{s.author}</p>
+                      {s.genre?.length > 0 && (
+                        <p className="text-xs text-muted-foreground/60 truncate">{s.genre.slice(0, 2).join(', ')}</p>
+                      )}
                     </div>
                   </button>
                 ))}
               </div>
             )}
+
           </div>
         </div>
 
