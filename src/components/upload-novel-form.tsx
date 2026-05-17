@@ -190,22 +190,19 @@ export function UploadNovelForm() {
     setAuthor(existing.author);
     setSelectedGenres(existing.genre);
 
-    if (contentLines.length >= 2) {
+     if (contentLines.length >= 2) {
       const line2 = contentLines[1].text;
-      const chMatch = line2.match(/chapter\s+(\d+)/i);
+      const chMatch = line2.match(
+        /chapter\s+(\d+)(?:\s*[-\u2013\u2014]\s*\d+\s*:\s*|\s*[-\u2013\u2014]\s*|\s*:\s*|\s+)(.*)/i
+      );
       if (chMatch) {
         const num = chMatch[1];
         setChapterNumber(num);
-        // Single regex handles all formats:
-        // "Chapter 51 - 51: Title", "Chapter 51: Title", "Chapter 51 Title", "Chapter 51 - Title"
-        const titleMatch = line2.match(
-          /chapter\s+\d+(?:\s*[-\u2013\u2014]\s*\d+\s*:\s*|\s*[-\u2013\u2014]\s*|\s*:\s*|\s+)(.*)/i
-        );
-        const name = titleMatch ? titleMatch[1].trim() : "";
-        setChapterTitle(name);
+        setChapterTitle(chMatch[2].trim());
         linesToRemove.push(contentLines[1].index);
       }
     }
+
 
     if (contentLines.length >= 3) {
       const line3 = contentLines[2].text;
