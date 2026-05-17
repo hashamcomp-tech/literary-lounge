@@ -1,97 +1,221 @@
 import { NextRequest, NextResponse } from "next/server";
-import JSZip from 'jszip';
-import { JSDOM } from 'jsdom';
+import JSZip from "jszip";
+import { JSDOM } from "jsdom";
+import path from "path";
 
-/**
- * @fileOverview Pure JS High-Reliability EPUB Ingestion API.
- * Uses JSZip and JSDOM to extract structured chapters without native binary dependencies.
- */
+type ParsedChapter = {
+  title: string;
+  content: string;
+};
+
+function cleanText(text: string) {
+  return text
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function resolvePath(baseDir: string, href: string) {
+  const joined = path.posix.join(baseDir, href);
+  return joined.replace(/^\/+/, "");
+}
+
+function extractChapterTitle(
+  doc: Document,
+  fallbackIndex: number
+) {
+  const heading =
+    doc.querySelector("h1")?.textContent?.trim() ||
+    doc.querySelector("h2")?.textContent?.trim() ||
+    doc.querySelector("h3")?.textContent?.trim() ||
+    doc.querySelector("title")?.textContent?.trim();
+
+  if (!heading || heading.length > 120) {
+    return `Chapter ${fallbackIndex}`;
+  }
+
+  return heading;
+}
+
+function extractReadableText(doc: Document) {
+  doc.querySelectorAll(
+    "script, style, nav, footer, header, noscript, svg"
+  ).forEach((el) => el.remove());
+
+  const blocks = Array.from(
+    doc.querySelectorAll(
+      "p, div, article, section, blockquote, li"
+    )
+  );
+
+  const lines: string[] = [];
+
+  for (const block of blocks) {
+    const text = block.textContent?.trim();
+
+    if (!text) continue;
+
+    if (text.length < 2) continue;
+
+    if (lines.includes(text)) continue;
+
+    lines.push(text);
+  }
+
+  if (lines.length > 0) {
+    return cleanText(lines.join("\n\n"));
+  }
+
+  return cleanText(doc.body?.textContent || "");
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get('file') as File;
-    
+
+    const file = formData.get("file") as File | null;
+
     if (!file) {
-      return NextResponse.json({ error: "No digital volume detected." }, { status: 400 });
+      return NextResponse.json(
+        { error: "No EPUB file uploaded." },
+        { status: 400 }
+      );
+    }
+
+    if (!file.name.toLowerCase().endsWith(".epub")) {
+      return NextResponse.json(
+        { error: "Only EPUB files are supported." },
+        { status: 400 }
+      );
     }
 
     const buffer = await file.arrayBuffer();
+
     const zip = await JSZip.loadAsync(buffer);
 
-    // 1. Locate OPF
-    const containerXml = await zip.file("META-INF/container.xml")?.async("string");
-    const containerDom = new JSDOM(containerXml || "", { contentType: 'text/xml' });
-    const opfPath = containerDom.window.document.querySelector("rootfile")?.getAttribute("full-path");
-    if (!opfPath) throw new Error("Invalid EPUB: OPF path not found.");
+    const containerFile = zip.file("META-INF/container.xml");
 
-    // 2. Parse OPF Manifest and Spine
-    const opfXml = await zip.file(opfPath)?.async("string");
-    const opfDom = new JSDOM(opfXml || "", { contentType: 'text/xml' });
-    const opfDoc = opfDom.window.document;
+    if (!containerFile) {
+      throw new Error("container.xml missing.");
+    }
 
-    const manifest: Record<string, string> = {};
-    opfDoc.querySelectorAll("manifest item").forEach(item => {
-      const id = item.getAttribute("id");
-      const href = item.getAttribute("href");
-      if (id && href) manifest[id] = href;
+    const containerXml = await containerFile.async("string");
+
+    const containerDom = new JSDOM(containerXml, {
+      contentType: "text/xml",
     });
 
-    const spineIds = Array.from(opfDoc.querySelectorAll("spine itemref")).map(ref => ref.getAttribute("idref"));
-    const baseDir = opfPath.substring(0, opfPath.lastIndexOf('/') + 1);
+    const opfPath =
+      containerDom.window.document
+        .querySelector("rootfile")
+        ?.getAttribute("full-path");
 
-    // 3. Extract Chapters sequentially
-    const chapters: { title: string; content: string }[] = [];
+    if (!opfPath) {
+      throw new Error("Unable to locate OPF package.");
+    }
 
-    for (let i = 0; i < spineIds.length; i++) {
-      const id = spineIds[i];
-      if (!id) continue;
-      const href = manifest[id];
+    const opfFile = zip.file(opfPath);
+
+    if (!opfFile) {
+      throw new Error("OPF file missing from archive.");
+    }
+
+    const opfXml = await opfFile.async("string");
+
+    const opfDom = new JSDOM(opfXml, {
+      contentType: "text/xml",
+    });
+
+    const opfDoc = opfDom.window.document;
+
+    const manifest = new Map<string, string>();
+
+    opfDoc.querySelectorAll("manifest item").forEach((item) => {
+      const id = item.getAttribute("id");
+      const href = item.getAttribute("href");
+
+      if (id && href) {
+        manifest.set(id, href);
+      }
+    });
+
+    const spine = Array.from(
+      opfDoc.querySelectorAll("spine itemref")
+    )
+      .map((item) => item.getAttribute("idref"))
+      .filter(Boolean) as string[];
+
+    const baseDir = opfPath.includes("/")
+      ? opfPath.substring(0, opfPath.lastIndexOf("/") + 1)
+      : "";
+
+    const chapters: ParsedChapter[] = [];
+
+    for (let i = 0; i < spine.length; i++) {
+      const idref = spine[i];
+
+      const href = manifest.get(idref);
+
       if (!href) continue;
 
-      const fullPath = baseDir + href;
-      const htmlContent = await zip.file(fullPath)?.async("string");
-      if (!htmlContent) continue;
+      const resolvedPath = resolvePath(baseDir, href);
 
-      const chapterDom = new JSDOM(htmlContent);
-      const chapterDoc = chapterDom.window.document;
+      const chapterFile = zip.file(resolvedPath);
 
-      // Sanitize
-      chapterDoc.querySelectorAll('style, script, link').forEach(el => el.remove());
+      if (!chapterFile) continue;
 
-      // Identify Title
-      let title = chapterDoc.querySelector('h1, h2, h3')?.textContent?.trim();
-      if (!title || /^chapter\s+\d+$/i.test(title)) {
-        title = `Chapter ${chapters.length + 1}`;
+      const rawHtml = await chapterFile.async("string");
+
+      if (!rawHtml?.trim()) continue;
+
+      const chapterDom = new JSDOM(rawHtml);
+
+      const doc = chapterDom.window.document;
+
+      const content = extractReadableText(doc);
+
+      if (!content || content.length < 120) {
+        continue;
       }
 
-      // Extract text content with paragraph preservation
-      const pTags = Array.from(chapterDoc.querySelectorAll('p, div, blockquote'));
-      let bodyText = "";
+      const title = extractChapterTitle(
+        doc,
+        chapters.length + 1
+      );
 
-      if (pTags.length > 5) {
-        bodyText = pTags
-          .map(p => p.textContent?.trim())
-          .filter(Boolean)
-          .join('\n\n');
-      } else {
-        bodyText = chapterDoc.body.textContent?.trim() || "";
-      }
+      chapters.push({
+        title,
+        content,
+      });
+    }
 
-      if (bodyText.length > 100) {
-        chapters.push({ title, content: bodyText });
-      }
+    if (chapters.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "No readable chapters detected inside EPUB.",
+        },
+        { status: 422 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      chapters: chapters.map(ch => ({
-        title: ch.title,
-        content: ch.content.replace(/\n{3,}/g, "\n\n")
-      }))
+      totalChapters: chapters.length,
+      chapters,
     });
+  } catch (error: any) {
+    console.error("EPUB parser failure:", error);
 
-  } catch (err: any) {
-    console.error("EPUB Ingestion Failure:", err);
-    return NextResponse.json({ error: 'Archive Processing Error: ' + err.message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          error?.message ||
+          "Unknown EPUB parsing failure.",
+      },
+      { status: 500 }
+    );
   }
 }
