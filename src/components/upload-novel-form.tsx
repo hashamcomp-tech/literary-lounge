@@ -297,17 +297,14 @@ export function UploadNovelForm() {
   };
 
   // ─── Permission check ─────────────────────────────────────────────────────
-  // FIX #1 + #2: Removed `uploadMode` from the dependency array — it caused a
-  // re-run on every mode change, creating a feedback loop. Also, we now guard
-  // on `preferencesLoaded` before acting on uploadMode so we don't force a
-  // reset to "local" before the user's saved preference has been applied.
+  // Wait until preferences are loaded before running this effect so we never
+  // race against the preference-loading effect and accidentally reset the mode.
   useEffect(() => {
+    if (!preferencesLoaded) return;
+
     if (isOfflineMode || !db || !user || user.isAnonymous) {
       setCanUploadCloud(false);
-      // Only override the mode once we know the user's saved preference.
-      if (preferencesLoaded) {
-        setUploadMode("local");
-      }
+      setUploadMode("local");
       return;
     }
 
@@ -319,16 +316,12 @@ export function UploadNovelForm() {
         user.email === "hashamcomp@gmail.com" || data?.role === "admin";
       setCanUploadCloud(permitted);
 
-      // Only downgrade the mode if preferences have already been applied so
-      // we don't race against the preference-loading effect.
-      if (!permitted && preferencesLoaded) {
+      if (!permitted) {
         setUploadMode("local");
       }
     };
 
     checkPermissions();
-    // FIX #1: `uploadMode` intentionally omitted — permission doesn't depend
-    // on which mode the user has currently selected.
   }, [user, db, isOfflineMode, preferencesLoaded]);
 
   // ─── Submit handler ───────────────────────────────────────────────────────
@@ -559,6 +552,16 @@ export function UploadNovelForm() {
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
+  // Block render until preferences and user-loading are done to prevent the
+  // form from flashing between states (the root cause of the instability).
+  if (!preferencesLoaded || isUserLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[300px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-xl mx-auto pb-20">
       <Card className="border-none shadow-2xl bg-card/80 backdrop-blur rounded-[2.5rem] overflow-hidden">
