@@ -201,7 +201,7 @@ export function UploadNovelForm() {
         const titleMatch = line2.match(
           /chapter\s+\d+(?:\s*[-\u2013\u2014]\s*\d+\s*:\s*|\s*[-\u2013\u2014]\s*|\s*:\s*|\s+)(.*)/i
         );
-        const name = titleMatch ? titleMatch[1].trim() : "";
+                const name = (titleMatch ? titleMatch[1].trim() : "").replace(/^[-\u2013\u2014\s\d.:]+/, "").trim();
         setChapterTitle(name);
         linesToRemove.push(contentLines[1].index);
       }
