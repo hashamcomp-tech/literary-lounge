@@ -1,3 +1,4 @@
+ 
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -145,6 +146,16 @@ export function UploadNovelForm() {
   // ─── Paste detection ──────────────────────────────────────────────────────
   // FIX #4: Read from ref so the closure always has the latest book list.
   const processManuscriptPaste = (rawText: string) => {
+    // Guard: if the library index hasn't loaded yet, don't give a false
+    // "No Series Match" — let the user know to wait a moment.
+    if (allBooksRef.current.length === 0) {
+      setPastedText(rawText);
+      toast({
+        title: "Library Loading",
+        description: "The series index is still loading. Please paste again in a moment.",
+      });
+      return;
+    }
     const lines = rawText.split("\n");
     const contentLines: { text: string; index: number }[] = [];
     for (let i = 0; i < lines.length; i++) {
@@ -218,7 +229,10 @@ export function UploadNovelForm() {
   };
 
   // ─── Fetch library index ──────────────────────────────────────────────────
+  // Wait for preferences so we fetch from the correct source (cloud vs local)
+  // from the very first fetch, not after a mode flip causes a double-fetch.
   useEffect(() => {
+    if (!preferencesLoaded) return;
     const fetchLibraryIndex = async () => {
       try {
         if (uploadMode === "cloud" && db) {
@@ -257,7 +271,7 @@ export function UploadNovelForm() {
     };
 
     fetchLibraryIndex();
-  }, [uploadMode, db]);
+  }, [uploadMode, db, preferencesLoaded]);
 
   // ─── Title autocomplete filter ────────────────────────────────────────────
   useEffect(() => {
