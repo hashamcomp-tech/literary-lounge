@@ -1,21 +1,26 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { collection, getDocs } from 'firebase/firestore';
+
 import Navbar from '@/components/navbar';
 import NovelCard from '@/components/novel-card';
-import { Search, Loader2, BookX, Book } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useFirebase } from '@/firebase/provider';
-import { collection, getDocs } from 'firebase/firestore';
 import { getAllLocalBooks } from '@/lib/local-library';
+
+import { Search, Loader2, BookX, BookOpen } from 'lucide-react';
 
 type BookResult = {
   id: string;
   title: string;
-  author: string;
-  genre: string[];
-  coverImage: string;
+  author?: string;
+  genre?: string[];
+  coverImage?: string;
+  isLocalOnly?: boolean;
+  _isLocal?: boolean;
+  isCloud?: boolean;
 };
 
 function SearchContent() {
@@ -23,190 +28,263 @@ function SearchContent() {
   const searchParams = useSearchParams();
   const { firestore: db, isOfflineMode } = useFirebase();
 
-  const [query, setQuery] = useState(searchParams.get('q') || '');
-  const [allBooks, setAllBooks] = useState<BookResult[]>([]);
-  const [results, setResults] = useState<BookResult[]>([]);
-  const [suggestions, setSuggestions] = useState<BookResult[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [loading, setLoading] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load all books once on mount
-  useEffect(() => {
-    const load = async () => {
-      try {
-        if (!isOfflineMode && db) {
-          const snap = await getDocs(collection(db, 'books'));
-          const books = snap.docs.map((doc) => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              title: data.title || '',
-              author: data.author || '',
-              genre: data.genre || [],
-              coverImage: data.coverImage || '',
-            };
-          });
-          setAllBooks(books);
-        } else {
-          const local = await getAllLocalBooks();
-          const books = local.map((b) => ({
-            id: b.id,
-            title: b.title,
-            author: b.author,
-            genre: Array.isArray(b.genre) ? b.genre : [b.genre],
-            coverImage: b.coverImage || '',
-          }));
-          setAllBooks(books);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [db, isOfflineMode]);
+  const urlQuery = searchParams.get('q') || '';
 
-  // Close dropdown on outside click
+  const [query, setQuery] = useState(urlQuery);
+  const [books, setBooks] = useState<BookResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+    setQuery(urlQuery);
+  }, [urlQuery]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setShowSuggestions(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+
+    document.addEventListener('mousedown', handleOutsideClick);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
   }, []);
 
-  // Filter on query change
   useEffect(() => {
-    const q = query.trim().toLowerCase();
+    let mounted = true;
 
-    if (q.length < 3) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      if (q.length === 0) setResults([]);
-      return;
-    }
+    const loadBooks = async () => {
+      try {
+        setLoading(true);
 
-    const matched = allBooks.filter(
-      (b) =>
-        b.title.toLowerCase().includes(q) ||
-        b.author.toLowerCase().includes(q)
-    );
+        if (!isOfflineMode && db) {
+          const snapshot = await getDocs(collection(db, 'books'));
 
-    setSuggestions(matched.slice(0, 8));
-    setShowSuggestions(matched.length > 0);
+          const firebaseBooks: BookResult[] = snapshot.docs.map((doc) => {
+            const data = doc.data();
 
-    // Also update full results if query matches URL param
-    if (query.trim() === (searchParams.get('q') || '')) {
-      setResults(matched);
-    }
-  }, [query, allBooks, searchParams]);
+            return {
+              id: doc.id,
+              title: data.title || 'Untitled',
+              author: data.author || 'Unknown Author',
+              genre: Array.isArray(data.genre)
+                ? data.genre
+                : data.genre
+                ? [data.genre]
+                : [],
+              coverImage:
+                data.coverImage ||
+                data.coverURL ||
+                data.metadata?.info?.coverURL ||
+                '',
+              isCloud: true,
+            };
+          });
 
-  // Run full search when URL q param changes
-  useEffect(() => {
-    const q = (searchParams.get('q') || '').trim().toLowerCase();
-    if (!q || q.length < 3) { setResults([]); return; }
-    const matched = allBooks.filter(
-      (b) =>
-        b.title.toLowerCase().includes(q) ||
-        b.author.toLowerCase().includes(q)
-    );
-    setResults(matched);
-  }, [searchParams, allBooks]);
+          if (mounted) {
+            setBooks(firebaseBooks);
+          }
+        } else {
+          const localBooks = await getAllLocalBooks();
 
-  const commitSearch = (value: string) => {
-    const q = value.trim();
-    if (!q) return;
+          const normalized: BookResult[] = localBooks.map((book: any) => ({
+            id: book.id,
+            title: book.title || 'Untitled',
+            author: book.author || 'Unknown Author',
+            genre: Array.isArray(book.genre)
+              ? book.genre
+              : book.genre
+              ? [book.genre]
+              : [],
+            coverImage: book.coverImage || '',
+            isLocalOnly: true,
+            _isLocal: true,
+          }));
+
+          if (mounted) {
+            setBooks(normalized);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load books:', error);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadBooks();
+
+    return () => {
+      mounted = false;
+    };
+  }, [db, isOfflineMode]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredBooks = useMemo(() => {
+    if (normalizedQuery.length < 2) return [];
+
+    return books.filter((book) => {
+      const title = book.title?.toLowerCase() || '';
+      const author = book.author?.toLowerCase() || '';
+      const genres = (book.genre || []).join(' ').toLowerCase();
+
+      return (
+        title.includes(normalizedQuery) ||
+        author.includes(normalizedQuery) ||
+        genres.includes(normalizedQuery)
+      );
+    });
+  }, [books, normalizedQuery]);
+
+  const suggestions = filteredBooks.slice(0, 6);
+
+  const handleSearch = (value: string) => {
+    const trimmed = value.trim();
+
+    if (!trimmed) return;
+
     setShowSuggestions(false);
-    router.push(`/search?q=${encodeURIComponent(q)}`);
+
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
   return (
     <div className="min-h-screen bg-background pb-20">
       <Navbar />
-      <div className="container mx-auto px-4 pt-8">
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+      <div className="container mx-auto px-4 pt-8">
+        <div className="mb-10 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-black">Search</h1>
-            <p className="text-muted-foreground">
-              {loading ? 'Loading library...' : `${results.length} results`}
+            <h1 className="text-4xl font-black tracking-tight">
+              Search Library
+            </h1>
+
+            <p className="mt-2 text-muted-foreground">
+              {loading
+                ? 'Loading books...'
+                : `${filteredBooks.length} result${
+                    filteredBooks.length === 1 ? '' : 's'
+                  } found`}
             </p>
           </div>
 
-          <div className="relative w-full md:max-w-md" ref={dropdownRef}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => query.trim().length >= 3 && setShowSuggestions(true)}
-                onKeyDown={(e) => e.key === 'Enter' && commitSearch(query)}
-                placeholder="Search books or authors..."
-                className="pl-9 rounded-xl"
-              />
-            </div>
+          <div
+            ref={dropdownRef}
+            className="relative w-full md:max-w-lg"
+          >
+            <Search className="absolute left-4 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
-                 {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-card border rounded-xl shadow-xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto">
-                {suggestions.map((s) => (
+            <Input
+              value={query}
+              placeholder="Search by title, author, or genre..."
+              className="h-12 rounded-2xl pl-11 text-base"
+              onFocus={() => {
+                if (normalizedQuery.length >= 2) {
+                  setShowSuggestions(true);
+                }
+              }}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch(query);
+                }
+              }}
+            />
+
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute top-[110%] z-50 w-full overflow-hidden rounded-2xl border bg-card shadow-2xl">
+                {suggestions.map((book) => (
                   <button
-                    key={s.id}
+                    key={book.id}
+                    type="button"
                     onClick={() => {
-                      setQuery(s.title);
-                      commitSearch(s.title);
+                      setQuery(book.title);
+                      handleSearch(book.title);
                     }}
-                    className="w-full flex items-center gap-3 p-3 hover:bg-muted transition text-left"
+                    className="flex w-full items-center gap-3 border-b p-3 text-left transition hover:bg-muted last:border-b-0"
                   >
-                    {s.coverImage ? (
+                    {book.coverImage ? (
                       <img
-                        src={s.coverImage}
-                        alt={s.title}
-                        className="h-14 w-10 object-cover rounded-md shrink-0"
+                        src={book.coverImage}
+                        alt={book.title}
+                        className="h-16 w-12 rounded-md object-cover"
                       />
                     ) : (
-                      <div className="bg-muted rounded-md h-14 w-10 flex items-center justify-center shrink-0">
-                        <Book className="h-4 w-4" />
+                      <div className="flex h-16 w-12 items-center justify-center rounded-md bg-muted">
+                        <BookOpen className="h-5 w-5 opacity-50" />
                       </div>
                     )}
+
                     <div className="min-w-0">
-                      <p className="font-semibold truncate">{s.title}</p>
-                      <p className="text-sm text-muted-foreground truncate">{s.author}</p>
-                      {s.genre?.length > 0 && (
-                        <p className="text-xs text-muted-foreground/60 truncate">{s.genre.slice(0, 2).join(', ')}</p>
+                      <p className="truncate font-semibold">
+                        {book.title}
+                      </p>
+
+                      <p className="truncate text-sm text-muted-foreground">
+                        {book.author}
+                      </p>
+
+                      {book.genre && book.genre.length > 0 && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {book.genre.slice(0, 3).join(', ')}
+                        </p>
                       )}
                     </div>
                   </button>
                 ))}
               </div>
             )}
-
           </div>
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="h-10 w-10 animate-spin opacity-30" />
+          <div className="flex justify-center py-24">
+            <Loader2 className="h-12 w-12 animate-spin opacity-40" />
           </div>
-        ) : results.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-6">
-            {results.map((book) => (
+        ) : filteredBooks.length > 0 ? (
+          <div className="grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+            {filteredBooks.map((book) => (
               <NovelCard key={book.id} novel={book} />
             ))}
           </div>
+        ) : normalizedQuery.length >= 2 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <BookX className="mb-4 h-14 w-14 opacity-20" />
+
+            <h2 className="text-2xl font-bold">
+              No books found
+            </h2>
+
+            <p className="mt-2 text-muted-foreground">
+              Try a different title, author, or genre.
+            </p>
+          </div>
         ) : (
-          query.trim().length >= 3 && (
-            <div className="text-center py-24">
-              <BookX className="mx-auto h-14 w-14 opacity-20 mb-4" />
-              <h2 className="text-2xl font-bold">No results found</h2>
-            </div>
-          )
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <Search className="mb-4 h-14 w-14 opacity-20" />
+
+            <h2 className="text-2xl font-bold">
+              Start searching
+            </h2>
+
+            <p className="mt-2 text-muted-foreground">
+              Search your entire library instantly.
+            </p>
+          </div>
         )}
       </div>
     </div>
@@ -215,7 +293,13 @@ function SearchContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-10 w-10 animate-spin opacity-40" />
+        </div>
+      }
+    >
       <SearchContent />
     </Suspense>
   );
