@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import ePub from "epubjs";
+import TurndownService from "turndown";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -52,6 +54,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import JSZip from "jszip";
+
+const turndown =
+  new TurndownService();
 
 interface Suggestion {
   id: string;
@@ -228,6 +233,91 @@ export function UploadNovelForm() {
       description: `Detected metadata for "${existing.title}". Fields auto-filled and headers stripped.`,
     });
   };
+
+async function parseEpub(file: File) {
+  try {
+    setLoading(true);
+
+    const buffer =
+      await file.arrayBuffer();
+
+    const book = ePub(buffer);
+
+    await book.ready;
+
+    const metadata =
+      await book.loaded.metadata;
+
+    // Autofill metadata
+    setTitle(
+      metadata.title || ""
+    );
+
+    setAuthor(
+      metadata.creator || ""
+    );
+
+    const spineItems =
+      book.spine.spineItems;
+
+    let extractedText = "";
+
+    for (
+      let i = 0;
+      i < spineItems.length;
+      i++
+    ) {
+      const item = spineItems[i];
+
+      try {
+        await item.load(
+          book.load.bind(book)
+        );
+
+        const html =
+          item.document
+            ?.documentElement
+            ?.innerHTML || "";
+
+        const markdown =
+          turndown.turndown(html);
+
+        extractedText +=
+          "\n\n" + markdown;
+
+        item.unload();
+      } catch (err) {
+        console.error(
+          "Failed chapter:",
+          item.href
+        );
+      }
+    }
+
+    setPastedText(
+      extractedText
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    );
+
+    toast({
+      title: "EPUB Imported",
+      description:
+        "Book parsed successfully.",
+    });
+  } catch (error) {
+    console.error(error);
+
+    toast({
+      title: "EPUB Failed",
+      description:
+        "Could not parse EPUB.",
+      variant: "destructive",
+    });
+  } finally {
+    setLoading(false);
+  }
+}
 
   // ─── Fetch library index ──────────────────────────────────────────────────
   // Wait for preferences so we fetch from the correct source (cloud vs local)
@@ -767,9 +857,22 @@ export function UploadNovelForm() {
                       type="file"
                       accept=".txt,.md,.epub"
                       className="hidden"
-                      onChange={(e) =>
-                        setSelectedFile(e.target.files?.[0] ?? null)
-                      }
+                      onChange={async (e) => {
+  const file = e.target.files?.[0];
+
+  if (!file) return;
+
+  // EPUB ingestion
+  if (
+    file.name.toLowerCase().endsWith(".epub")
+  ) {
+    await parseEpub(file);
+    return;
+  }
+
+  // Normal files
+  setSelectedFile(file);
+}}
                     />
                     {selectedFile && (
                       <Button
