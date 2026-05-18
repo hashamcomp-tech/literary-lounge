@@ -1,7 +1,23 @@
 import Navbar from '@/components/navbar';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { UploadNovelForm } from '@/components/upload-novel-form';
+import { redirect } from "next/navigation";
 
+const ADMIN_EMAILS = [
+  "hashamcomp@gmail.com",
+];
+
+export default async function UploadPage() {
+  const userEmail = "TODO";
+
+  if (!ADMIN_EMAILS.includes(userEmail)) {
+    redirect("/");
+  }
+
+  return (
+    // existing page
+  );
+}
 /**
  * @fileOverview Server Component for the Upload Page.
  * Acts as a shell that renders the Client Component form.
